@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vi } from "vitest";
@@ -23,10 +23,49 @@ describe("vision provider settings", () => {
     try {
       const status = await saveVisionSettings({ apiKey: "secret-test-key", model: "vision-model", baseUrl: "https://example.com/v1" });
       expect(status).toEqual({ mode: "connected", model: "vision-model", host: "example.com", baseUrl: "https://example.com/v1" });
-      expect(await readFile(join(directory, "vision-provider.json"), "utf8")).not.toContain("secret-test-key");
+      const saved = await readFile(join(directory, "vision-provider.json"), "utf8");
+      expect(saved).not.toContain("secret-test-key");
+      expect(saved).not.toContain("example.com");
+      expect(saved).not.toContain("vision-model");
+      expect(JSON.parse(saved).version).toBe(2);
       expect((await visionCredentials())?.apiKey).toBe("secret-test-key");
       expect(await visionStatus()).toEqual(status);
       await clearVisionSettings();
+    } finally {
+      delete process.env.REN_TEST_SETTINGS_DIR;
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the saved destination bound to its encrypted key", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "ren-vision-"));
+    process.env.REN_TEST_SETTINGS_DIR = directory;
+    try {
+      await saveVisionSettings({ apiKey: "secret-test-key", model: "vision-model", baseUrl: "https://example.com/v1" });
+      const path = join(directory, "vision-provider.json");
+      const saved = JSON.parse(await readFile(path, "utf8"));
+      await writeFile(path, JSON.stringify({ ...saved, baseUrl: "https://attacker.example/v1" }));
+      expect(await visionCredentials()).toEqual({ apiKey: "secret-test-key", model: "vision-model", baseUrl: "https://example.com/v1" });
+      await writeFile(path, JSON.stringify({ version: 2, encryptedConfig: Buffer.from("encrypted:bad-json").toString("base64") }));
+      await expect(visionCredentials()).rejects.toThrow(/unlock the saved vision provider/);
+      await saveVisionSettings({ apiKey: "replacement-key", model: "vision-model", baseUrl: "https://example.com/v1" });
+      expect((await visionCredentials())?.apiKey).toBe("replacement-key");
+    } finally {
+      delete process.env.REN_TEST_SETTINGS_DIR;
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("migrates a legacy key and destination into one encrypted payload", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "ren-vision-"));
+    process.env.REN_TEST_SETTINGS_DIR = directory;
+    try {
+      const path = join(directory, "vision-provider.json");
+      await writeFile(path, JSON.stringify({ version: 1, encryptedKey: Buffer.from("encrypted:old-key").toString("base64"), model: "old-model", baseUrl: "https://old.example/v1" }));
+      expect(await visionCredentials()).toEqual({ apiKey: "old-key", model: "old-model", baseUrl: "https://old.example/v1" });
+      const saved = await readFile(path, "utf8");
+      expect(JSON.parse(saved).version).toBe(2);
+      expect(saved).not.toContain("old.example");
     } finally {
       delete process.env.REN_TEST_SETTINGS_DIR;
       await rm(directory, { recursive: true, force: true });
