@@ -33,4 +33,8 @@ geometry tests and package creation do not substitute for them.
   expanded Ren panel must stay on that display.
 - Draw an open stroke, press Escape, click during a gesture, and cross displays.
   Each must cancel without submitting a question.
+- Draw an annotation, then scroll with a mouse wheel and trackpad. The drawing
+  must disappear before it can point to a different part of the page.
+- Begin a circle and scroll before releasing. The circle must cancel. Disconnect
+  or resize the selected display and confirm old selections and drawings clear.
 - Verify the underlying app receives no synthetic click or typing from Ren.

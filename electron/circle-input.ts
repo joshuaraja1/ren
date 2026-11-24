@@ -6,6 +6,7 @@ type Hooks = {
   onProgress(displayId: number, points: FocusRegion["points"]): void;
   onComplete(displayId: number, focus: FocusRegion): void;
   onCancel(): void;
+  onScroll(): void;
 };
 
 const require = createRequire(import.meta.url);
@@ -40,6 +41,7 @@ export function startCircleInput(hooks: Hooks) {
       if (modifierKeys.has(event.keycode)) finish();
     });
     uIOhook.on("mousedown", cancel);
+    uIOhook.on("wheel", () => { cancel(); hooks.onScroll(); });
     uIOhook.on("mousemove", (event) => {
       if (!active) return;
       if (!event.ctrlKey || !event.altKey) { finish(); return; }

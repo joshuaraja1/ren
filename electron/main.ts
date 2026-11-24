@@ -126,6 +126,15 @@ app.whenReady().then(() => {
     overlayWindow.webContents.send("ren:annotations", [{ id: "circle-focus", type: "path", points, color: "#327d87" }]);
     overlayWindow.showInactive();
   }
+  function invalidateSpatialContext() {
+    selectedFocus = null;
+    overlayWindow?.hide();
+  }
+  screen.on("display-removed", () => {
+    invalidateSpatialContext();
+    positionMainWindow(mainWindow?.getBounds().width === expandedSize.width);
+  });
+  screen.on("display-metrics-changed", invalidateSpatialContext);
   function enableCircleInput() {
     if (process.platform === "darwin" && !systemPreferences.isTrustedAccessibilityClient(false)) return false;
     circleInputActive = startCircleInput({
@@ -138,6 +147,7 @@ app.whenReady().then(() => {
         mainWindow?.webContents.send("ren:focus-selection");
       },
       onCancel: () => { selectedFocus = null; overlayWindow?.hide(); },
+      onScroll: invalidateSpatialContext,
     });
     return circleInputActive;
   }
