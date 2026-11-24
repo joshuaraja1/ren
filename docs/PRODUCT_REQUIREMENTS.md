@@ -15,8 +15,9 @@ and act, not silently take control of their computer.
    makes the active sharing state unmistakable.
 2. **Teach before doing.** Explanations, questions, and reversible visual hints
    are preferred to hidden automation.
-3. **Provider-neutral.** Models, OCR engines, and domain tools are adapters, not
-   assumptions embedded in the interface.
+3. **Zero-configuration intelligence.** The learner asks naturally. Ren chooses
+   how to interpret and explain the screen without exposing tools, modes, or
+   capability setup.
 4. **Local-first privacy.** Screenshots are ephemeral by default. No analytics,
    recording, or cloud upload is enabled without explicit consent.
 5. **Honest capability.** Ren states uncertainty and never claims to understand
@@ -37,7 +38,9 @@ and act, not silently take control of their computer.
 
 - User chooses a display or application window.
 - The selected source is shown with a visible sharing indicator and preview.
-- A still frame is captured only when a question is submitted in v0.1.
+- An on-demand visual context burst is captured when a question is submitted;
+  the learner does not need to pause, crop, identify the subject, or pick a
+  specialized tool.
 - Capture can be stopped immediately from the main panel.
 - Password managers and explicitly configured apps can be excluded.
 
@@ -46,7 +49,10 @@ and act, not silently take control of their computer.
 - Text questions work everywhere.
 - Push-to-talk uses operating-system/browser speech recognition when available.
 - Requests contain the current question, a bounded conversation history, and
-  the current captured frame.
+  the current visual context burst.
+- Ren infers the subject and teaching strategy automatically. Chemistry on a
+  video, algebra on a worksheet, code in an editor, and geometry in a CAD app
+  all use the same ask-and-teach interaction.
 - OpenAI-compatible vision endpoints are supported through an adapter.
 - A deterministic demo provider makes the complete app usable without an API
   key and keeps tests offline.
@@ -54,7 +60,8 @@ and act, not silently take control of their computer.
 
 ### R4. Visual guidance overlay
 
-- Ren can return typed annotation commands: arrow, rectangle, point, and text.
+- Ren can return typed teaching visuals: arrow, rectangle, point, text, freehand
+  path, and a small diagram card.
 - Commands are validated, bounded to normalized coordinates, and rendered in a
   transparent click-through window over the chosen display.
 - The user can clear or hide every annotation instantly.
@@ -89,13 +96,14 @@ and act, not silently take control of their computer.
 
 ## Capability roadmap
 
-- **0.2 Domain tools:** OCR, math structure recognition, browser DOM context,
-  CAD file/selection adapters, slicer and G-code inspection.
+- **0.2 Automatic context engine:** temporal video context, optional system-audio
+  transcript, OCR, math structure recognition, and subject-aware teaching plans.
 - **0.3 Collaborative canvas:** multi-step lessons, editable annotations,
   checkpoints, and exportable learning notes.
 - **0.4 Local intelligence:** local vision/language adapters and offline voice.
-- **1.0 Trustworthy extensibility:** signed capability manifests, sandboxed
-  plugins, permissions per tool, and reproducible signed releases.
+- **1.0 Trustworthy extensibility:** invisible sandboxed capabilities selected by
+  Ren, permissions based on data access rather than subjects, and reproducible
+  signed releases. Users never install or select a chemistry/math/CAD “tool.”
 
 ## Acceptance scenario
 
@@ -103,6 +111,6 @@ A learner opens a math worksheet, chooses that window, holds the microphone
 button and asks, “Why is this term moved to the other side?” Ren captures one
 frame, explains the operation, and draws an arrow between the relevant regions.
 The learner clears the arrow, asks a follow-up by text, and stops sharing. The
-same request/annotation protocol can later serve CAD, code, design, or slicer
-tools without changing the core UI.
+same automatic interaction works on a chemistry video, CAD viewport, code,
+design, or slicer without changing modes or installing anything.
 

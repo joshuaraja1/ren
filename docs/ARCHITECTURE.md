@@ -30,13 +30,15 @@ is exposed explicitly through the preload bridge.
 6. Main validates and forwards commands to the transparent overlay window.
 7. The renderer discards the frame and shows the answer.
 
-## Extension seam
+## Automatic capability seam
 
-`AssistantProvider` is the initial capability boundary. Future tools implement
-small, permission-scoped contracts and contribute structured context instead of
-gaining blanket computer access. A CAD adapter, for example, should expose the
-selected body's geometry and validation output through its host application's
-documented API; it should not scrape arbitrary memory or fake mouse input.
+`AssistantProvider` is the initial capability boundary. Ren's orchestrator may
+later invoke internal, permission-scoped context enrichers automatically; these
+are implementation details, never modes or add-ons the learner must configure.
+The default experience remains “share, ask, learn.” A future CAD enricher, for
+example, may use a documented host API after one data-access permission, while
+Ren still presents a single teacher interface and never asks the learner to
+choose a CAD tool.
 
 ## Threat model summary
 
