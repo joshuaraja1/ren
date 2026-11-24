@@ -55,6 +55,8 @@ export function App() {
   const lastVoiceAtRef = useRef(0);
   const voicedFramesRef = useRef(0);
   const feedChainRef = useRef<Promise<unknown>>(Promise.resolve());
+  const queuedFeedsRef = useRef(0);
+  const dictationSessionRef = useRef(0);
   const pendingAudioRef = useRef<number[][]>([]);
   const expandedRef = useRef(false);
   const askingRef = useRef(false);
@@ -121,10 +123,21 @@ export function App() {
                 voicedFramesRef.current += 1;
                 lastVoiceAtRef.current = now;
               }
-              feedChainRef.current = feedChainRef.current.then(() => window.ren!.speechFeed(samples)).catch(() => {
+              if (queuedFeedsRef.current >= 8) {
+                setError("Local dictation could not keep up. Type your question instead.");
+                stopNativeDictation();
+                return;
+              }
+              const session = dictationSessionRef.current;
+              queuedFeedsRef.current += 1;
+              feedChainRef.current = feedChainRef.current.then(async () => {
+                if (session !== dictationSessionRef.current) return;
+                if (!await window.ren!.speechFeed(samples)) throw new Error("Local speech feed stopped");
+              }).catch(() => {
+                if (session !== dictationSessionRef.current) return;
                 setError("Local dictation stopped. Type your question instead.");
                 stopNativeDictation();
-              });
+              }).finally(() => { if (session === dictationSessionRef.current) queuedFeedsRef.current -= 1; });
               if ((voicedFramesRef.current >= 2 && now - lastVoiceAtRef.current > 1500) || now - dictationStartedAtRef.current > (voicedFramesRef.current ? 28_000 : 8_000)) void finishNativeDictation();
               return;
             }
@@ -198,6 +211,7 @@ export function App() {
   }
 
   function stopNativeDictation() {
+    dictationSessionRef.current += 1;
     dictationActiveRef.current = false;
     dictationReadyRef.current = false;
     pendingAudioRef.current = [];
@@ -207,22 +221,30 @@ export function App() {
   async function startNativeDictation(greeting = false, preRoll: number[][] = []) {
     if (!window.ren || !nativeSpeechRef.current || dictationActiveRef.current) return;
     dictationActiveRef.current = true;
+    const session = ++dictationSessionRef.current;
     dictationReadyRef.current = false;
     dictationStartedAtRef.current = Date.now();
     lastVoiceAtRef.current = 0;
     voicedFramesRef.current = 0;
     feedChainRef.current = Promise.resolve();
+    queuedFeedsRef.current = 0;
     pendingAudioRef.current = preRoll;
     await setExpanded(true);
+    if (session !== dictationSessionRef.current) return;
     setVoiceState("listening"); keepAwake();
     if (greeting) setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: "Hey, I'm here. Ask me about what you're pointing at." }]);
     try {
       if (!await window.ren.speechStart(sampleRateRef.current)) throw new Error("Local dictation could not start");
+      if (session !== dictationSessionRef.current) return;
       for (const samples of pendingAudioRef.current.splice(0)) {
-        feedChainRef.current = feedChainRef.current.then(() => window.ren!.speechFeed(samples));
+        feedChainRef.current = feedChainRef.current.then(async () => {
+          if (session !== dictationSessionRef.current) return;
+          if (!await window.ren!.speechFeed(samples)) throw new Error("Local speech pre-roll stopped");
+        });
       }
       dictationReadyRef.current = true;
     } catch {
+      if (session !== dictationSessionRef.current) return;
       stopNativeDictation();
       setVoiceState("idle");
       setError("Local dictation is unavailable. Type your question instead.");
@@ -231,15 +253,19 @@ export function App() {
 
   async function finishNativeDictation() {
     if (!dictationActiveRef.current || !window.ren) return;
+    const session = dictationSessionRef.current;
     dictationActiveRef.current = false;
     dictationReadyRef.current = false;
     setVoiceState("processing");
     try {
       await feedChainRef.current;
+      if (session !== dictationSessionRef.current) return;
       const transcript = (await window.ren.speechFinish()).replace(/^(?:hey\s+)?(?:ren|run)\b[.,:;\s-]*/i, "").trim();
+      if (session !== dictationSessionRef.current) return;
       if (transcript) await askQuestion(transcript);
       else { setVoiceState("idle"); setError("I didn't catch that. Say “Hey Ren” and try again, or type your question."); }
     } catch {
+      if (session !== dictationSessionRef.current) return;
       setVoiceState("idle");
       setError("Local dictation could not finish. Type your question instead.");
       stopNativeDictation();
