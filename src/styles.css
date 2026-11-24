@@ -187,6 +187,11 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--listen);
 .ambient-conversation article span { display: block; margin-bottom: 4px; color: oklch(53% 0.12 45); font-size: 8px; font-weight: 780; letter-spacing: .14em; }
 .ambient-conversation article.user span { color: oklch(77% 0.10 52); }
 .ambient-conversation article p { margin: 0; }
+.follow-ups { display: flex; flex-direction: column; gap: 6px; margin-top: 11px; }
+.follow-ups button { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 8px 10px; border: 1px solid oklch(82% 0.035 225); border-radius: 10px; background: oklch(96% 0.015 225); color: oklch(38% 0.08 225); text-align: left; font: inherit; font-size: 10px; line-height: 1.35; cursor: pointer; }
+.follow-ups button:hover:not(:disabled), .follow-ups button:focus-visible { border-color: oklch(62% 0.09 225); background: oklch(92% 0.028 225); }
+.follow-ups button:disabled { cursor: default; opacity: .55; }
+.follow-ups button b { flex: none; font-size: 12px; }
 
 .ambient-composer {
   display: grid;
