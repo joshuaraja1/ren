@@ -39,7 +39,14 @@ describe("provider privacy boundary", () => {
       const answer = await askTeacher({ question: "Explain this", frames: ["data:image/png;base64,test"], history: [] }, { apiKey: "test-key", model: "vision-model", baseUrl: "https://example.com/v1" });
       expect(answer.provider).toBe("vision");
       expect(answer.followUps).toEqual(["Why does this part matter?"]);
-      expect(fetchCall).toHaveBeenCalledWith("https://example.com/v1/chat/completions", expect.objectContaining({ headers: expect.objectContaining({ authorization: "Bearer test-key" }) }));
+      expect(fetchCall).toHaveBeenCalledWith("https://example.com/v1/chat/completions", expect.objectContaining({ headers: expect.objectContaining({ authorization: "Bearer test-key" }), signal: expect.any(AbortSignal) }));
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("returns an actionable error when the provider times out", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new DOMException("aborted", "TimeoutError"); }));
+    try {
+      await expect(askTeacher({ question: "Explain this", frames: [], history: [] }, { apiKey: "test-key", model: "vision-model", baseUrl: "https://example.com/v1" })).rejects.toThrow(/took too long/);
     } finally { vi.unstubAllGlobals(); }
   });
 });
