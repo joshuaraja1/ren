@@ -10,6 +10,7 @@ based on this repository.
 | --- | --- | --- |
 | Top-edge assistant that wakes by voice | Bundled offline “Hey Ren” detector and pebble | Real microphone testing on macOS and Windows |
 | Ask aloud or type about any visible app | Local English dictation, typed questions, cursor-display screenshots, vision adapter | Test noisy video, CAD, math, accents, and dictation corrections |
+| Hold a shortcut and circle a region | Ctrl+Shift gesture, visible selection, focused crop and automatic explanation | Hardware QA for global input permission and every display layout |
 | Spoken answers and drawings | Speech synthesis; validated arrows, paths, points, text and diagrams | Anchor drawings to scrolled content; test display changes |
 | Guided follow-up | Bounded conversation history; freeform follow-up | Suggest useful next questions and show progress through a lesson |
 | Privacy | No continuous screen recording; on-demand frames in memory; local wake and transcription | Add visible provider disclosure and capture audit in UI |

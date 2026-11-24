@@ -23,12 +23,14 @@ export type AskRequest = {
   pointer?: Point;
 };
 
-export type ScreenContext = { frames: string[]; pointer: Point };
+export type FocusBounds = { x: number; y: number; width: number; height: number };
+export type ScreenContext = { frames: string[]; pointer: Point; focus?: FocusBounds };
 
 export type AmbientStatus = {
   ready: boolean;
   microphone: string;
   screen: string;
+  interaction?: string;
 };
 
 export type AskResponse = {
@@ -43,6 +45,7 @@ export type RenBridge = {
   listSources(): Promise<ScreenSource[]>;
   primarySource(): Promise<ScreenSource>;
   permissionStatus(): Promise<AmbientStatus>;
+  enableCircleInput(): Promise<AmbientStatus>;
   requestPermissions(): Promise<AmbientStatus>;
   openPermissionSettings(): Promise<void>;
   setExpanded(expanded: boolean): Promise<void>;
@@ -61,5 +64,6 @@ export type RenBridge = {
   showAnnotations(annotations: Annotation[]): Promise<void>;
   clearAnnotations(): Promise<void>;
   onAnnotations(listener: (annotations: Annotation[]) => void): () => void;
+  onFocusSelection(listener: () => void): () => void;
 };
 

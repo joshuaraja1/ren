@@ -21,3 +21,16 @@ Physical release checks on each OS:
 
 These physical checks require the respective OS and two displays; automated
 geometry tests and package creation do not substitute for them.
+
+# Circle-to-focus checks
+
+- Grant Accessibility and Input Monitoring once on macOS, restart Ren if the OS
+  requests it, and verify the shortcut works in another app without a new prompt.
+- Hold Ctrl+Shift and draw a closed circle on the primary display. Confirm the
+  visible path follows the cursor, closes on release, and Ren explains the
+  selected region using a close crop.
+- Repeat on a display left of and above the primary. The selection, crop, and
+  expanded Ren panel must stay on that display.
+- Draw an open stroke, press Escape, click during a gesture, and cross displays.
+  Each must cancel without submitting a question.
+- Verify the underlying app receives no synthetic click or typing from Ren.

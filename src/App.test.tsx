@@ -1,5 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { vi } from "vitest";
 import { App } from "./App";
+import type { RenBridge } from "./contracts";
 
 describe("Ren ambient shell", () => {
   it("presents a zero-configuration wake and point flow", async () => {
@@ -28,5 +30,32 @@ describe("Ren ambient shell", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(/local speech recognition is unavailable/i);
     expect(input).toHaveFocus();
     expect(screen.getByRole("heading", { name: /how can i help/i })).toBeVisible();
+  });
+
+  it("asks about the circled region without requiring a typed prompt", async () => {
+    let selected: (() => void) | undefined;
+    const ask = vi.fn(async () => ({ answer: "Look at the circled part.", annotations: [], provider: "demo" as const }));
+    window.ren = {
+      permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
+      primarySource: async () => ({ id: "screen", name: "Main display", thumbnail: "" }),
+      wakeAvailable: async () => false,
+      onFocusSelection: (listener: () => void) => { selected = listener; return () => { selected = undefined; }; },
+      setExpanded: async () => {},
+      speechStop: async () => {},
+      captureContext: async () => ({ frames: ["data:image/png;base64,dGVzdA=="], pointer: { x: 0.5, y: 0.5 }, focus: { x: 0.3, y: 0.3, width: 0.2, height: 0.2 } }),
+      ask,
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
+      await screen.findByText(/point at anything/i);
+      act(() => selected?.());
+      await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({
+        question: expect.stringContaining("area I circled"),
+        focus: { x: 0.3, y: 0.3, width: 0.2, height: 0.2 },
+      })));
+    } finally {
+      window.ren = undefined;
+    }
   });
 });
