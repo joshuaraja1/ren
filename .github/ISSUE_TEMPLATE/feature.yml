@@ -1,0 +1,33 @@
+name: Capability proposal
+description: Propose a user-facing capability for Ren
+title: "[Capability]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Learning problem
+      description: What is the learner trying to understand or accomplish?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Required context
+      description: What screen, file, or application data is actually needed?
+    validations:
+      required: true
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Privacy and permissions
+      description: What leaves the device and what explicit permission is needed?
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Acceptance criteria
+    validations:
+      required: true
+
