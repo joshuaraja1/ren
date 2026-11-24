@@ -10,6 +10,7 @@ Each milestone is designed to land as an independently reviewable pull request.
 - [x] M5 — automated tests, CI, staging artifacts, and release documentation
 - [ ] M6 — automatic temporal context, system-audio transcript, and visual OCR
 - [ ] M7 — circle-to-focus and invisible CAD/3D-print context enrichment
+- [ ] M8 — voice-created agents with visible plans and approved actions in other apps ([requirements](VOICE_AGENTS.md))
 
 Circle-to-focus has an initial implementation; the milestone stays open until
 physical multi-monitor gesture QA and CAD/3D-print context enrichment land.
