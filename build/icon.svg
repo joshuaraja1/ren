@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="ink" x1="160" y1="100" x2="860" y2="930" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#292d28"/>
+      <stop offset="1" stop-color="#171a17"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="34" stdDeviation="34" flood-color="#11130f" flood-opacity=".28"/>
+    </filter>
+  </defs>
+  <rect x="74" y="74" width="876" height="876" rx="218" fill="url(#ink)" filter="url(#shadow)"/>
+  <path d="M512 208c18 194 110 286 304 304-194 18-286 110-304 304-18-194-110-286-304-304 194-18 286-110 304-304Z" fill="#ED6A3D"/>
+  <circle cx="731" cy="293" r="31" fill="#F7F4EC"/>
+  <circle cx="293" cy="735" r="20" fill="#327D87"/>
+</svg>
