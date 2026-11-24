@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import type { AmbientStatus, AskResponse, ConversationTurn, ScreenContext, ScreenSource } from "./contracts";
+import type { AmbientStatus, AskResponse, ConversationTurn, ScreenContext, ScreenSource, VisionStatus } from "./contracts";
 
 type VoiceState = "idle" | "listening" | "processing" | "responding";
 type Message = ConversationTurn & { id: string; provider?: AskResponse["provider"] };
@@ -14,6 +14,7 @@ type SpeechRecognitionLike = {
 };
 
 const readyStatus: AmbientStatus = { ready: true, microphone: "preview", screen: "preview" };
+const demoVision: VisionStatus = { mode: "demo", model: "", host: "", baseUrl: "https://api.openai.com/v1" };
 const voiceLabels: Record<VoiceState, { title: string; detail: string }> = {
   idle: { title: "Ready", detail: "Say “Hey Ren”" },
   listening: { title: "Listening", detail: "Ask me anything" },
@@ -33,6 +34,11 @@ export function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [question, setQuestion] = useState("");
   const [error, setError] = useState("");
+  const [vision, setVision] = useState<VisionStatus>(demoVision);
+  const [visionOpen, setVisionOpen] = useState(false);
+  const [visionKey, setVisionKey] = useState("");
+  const [visionModel, setVisionModel] = useState("");
+  const [visionBase, setVisionBase] = useState(demoVision.baseUrl);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const wakeEnabledRef = useRef(false);
   const awakeUntilRef = useRef(0);
@@ -52,11 +58,22 @@ export function App() {
   const pendingAudioRef = useRef<number[][]>([]);
   const expandedRef = useRef(false);
   const askingRef = useRef(false);
+  const visionOpenRef = useRef(false);
 
   useEffect(() => { messagesRef.current = messages; }, [messages]);
   useEffect(() => { voiceStateRef.current = voiceState; }, [voiceState]);
   useEffect(() => () => { recognitionRef.current?.stop(); }, []);
+  useEffect(() => {
+    void window.ren?.visionStatus?.().then((status) => {
+      setVision(status);
+      setVisionModel(status.model);
+      setVisionBase(status.baseUrl);
+    }).catch(() => setError("Ren could not read the vision provider settings."));
+  }, []);
   useEffect(() => window.ren?.onFocusSelection(() => {
+    visionOpenRef.current = false;
+    setVisionOpen(false);
+    setVisionKey("");
     void setExpanded(true);
     void askQuestion("Explain what is inside the area I circled on my screen. Start with the part I selected, and show me how it connects to what I'm doing.");
   }), []);
@@ -91,7 +108,7 @@ export function App() {
           let pending = false;
           const recentAudio: number[][] = [];
           processor.onaudioprocess = (event) => {
-            if (disposed) return;
+            if (disposed || visionOpenRef.current) return;
             const samples = Array.from(event.inputBuffer.getChannelData(0));
             if (dictationActiveRef.current) {
               if (!dictationReadyRef.current) {
@@ -176,7 +193,7 @@ export function App() {
   async function setExpanded(value: boolean) {
     expandedRef.current = value;
     setExpandedState(value);
-    if (!value) stopNativeDictation();
+    if (!value) { stopNativeDictation(); visionOpenRef.current = false; setVisionOpen(false); setVisionKey(""); }
     await window.ren?.setExpanded(value);
   }
 
@@ -255,10 +272,42 @@ export function App() {
     else setError("");
   }
 
+  function openVisionSettings() {
+    stopNativeDictation();
+    visionOpenRef.current = true;
+    setVisionOpen(true);
+    setError("");
+  }
+
+  async function saveVision(event: FormEvent) {
+    event.preventDefault();
+    if (!window.ren) return;
+    try {
+      const status = await window.ren.saveVisionSettings({ apiKey: visionKey, model: visionModel, baseUrl: visionBase });
+      setVision(status);
+      setVisionKey("");
+      visionOpenRef.current = false;
+      setVisionOpen(false);
+      setError("");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not save the vision provider."); }
+  }
+
+  async function clearVision() {
+    if (!window.ren) return;
+    try {
+      const status = await window.ren.clearVisionSettings();
+      setVision(status);
+      setVisionModel(status.model);
+      setVisionBase(status.baseUrl);
+      setVisionKey("");
+      setError("");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not remove the vision provider."); }
+  }
+
   function keepAwake() {
     awakeUntilRef.current = Date.now() + 20_000;
     if (collapseTimerRef.current) clearTimeout(collapseTimerRef.current);
-    collapseTimerRef.current = setTimeout(() => { if (voiceStateRef.current === "idle" && !dictationActiveRef.current) void setExpanded(false); }, 20_000);
+    collapseTimerRef.current = setTimeout(() => { if (voiceStateRef.current === "idle" && !dictationActiveRef.current && !visionOpenRef.current) void setExpanded(false); }, 20_000);
   }
 
   function greet(text = "Hey—what’s up? How can I help?") {
@@ -312,11 +361,10 @@ export function App() {
     <header className={`ambient-header state-${voiceState}`}><div className="companion-orb"><Spark /></div><div className="header-copy"><p><span className="state-dot" /> REN</p><h1>{voiceState === "processing" ? "Looking closely…" : voiceState === "listening" ? "I’m listening." : voiceState === "responding" ? "Let’s work through it." : "How can I help?"}</h1></div><VoiceMeter active={voiceState !== "idle"} /><button className="collapse-button" onClick={() => void setExpanded(false)} aria-label="Collapse Ren">⌃</button></header>
 
     {!permission?.ready ? <section className="onboarding-card"><span className="step-kicker">ONE-TIME SETUP</span><h2>Give Ren permission once.</h2><p>Allow microphone, screen recording, and pointer access now. After that, Ren starts quietly with your computer and only captures the screen when you ask a question.</p><div className="permission-row"><span>Microphone</span><b>{permission?.microphone ?? "checking"}</b></div><div className="permission-row"><span>Screen recording</span><b>{permission?.screen ?? "checking"}</b></div><div className="permission-row"><span>Circle shortcut</span><b>{permission?.interaction ?? "checking"}</b></div><button className="allow-button" onClick={() => void requestOneTimePermissions()}>Allow and continue</button>{permission && !permission.ready && <button className="settings-link" onClick={() => void window.ren?.openPermissionSettings()}>Open system permission settings</button>}</section> : <>
-      <div className="ambient-status"><span className="privacy-lock" aria-hidden="true">●</span><span>Looks only when you ask</span><em>·</em><span className="display-name">{source?.name ?? "connecting to display"}</span><span className="wake-chip">Say “Hey Ren”</span></div>
-      <section className="ambient-conversation" aria-live="polite">{messages.length === 0 && <div className="empty-conversation"><div className="cursor-cue"><Spark /><span /></div><p>Point at anything on your screen</p><strong>“Hey Ren, explain this.”</strong><small>I’ll look, talk it through, and draw when it helps.</small></div>}{messages.map((message) => <article key={message.id} className={message.role}><span>{message.role === "assistant" ? "REN" : "YOU"}</span><p>{message.content}</p></article>)}</section>
+      <div className="ambient-status"><span className="privacy-lock" aria-hidden="true">●</span><span>{vision.mode === "demo" ? "Demo · screen stays local" : `On-demand · ${vision.host}`}</span><em>·</em><span className="display-name">{source?.name ?? "connecting to display"}</span><button className="provider-chip" onClick={openVisionSettings}>{vision.mode === "demo" ? "Connect AI" : "AI settings"}</button></div>
+      {visionOpen ? <form className="vision-settings" onSubmit={(event) => void saveVision(event)}><span className="step-kicker">SCREEN-AWARE ANSWERS</span><h2>Connect a vision model</h2><p>Ren sends your question and a screen snapshot to <strong>{visionBase ? (() => { try { return new URL(visionBase).host; } catch { return "the provider"; } })() : "the provider"}</strong> only when you ask. The microphone stays local. Your provider may charge for requests.</p><label>Provider URL<input aria-label="Provider URL" value={visionBase} onChange={(event) => setVisionBase(event.target.value)} spellCheck={false} /></label><label>Vision model<input aria-label="Vision model" value={visionModel} onChange={(event) => setVisionModel(event.target.value)} placeholder="Model name" spellCheck={false} /></label><label>API key<input aria-label="API key" type="password" value={visionKey} onChange={(event) => setVisionKey(event.target.value)} placeholder={vision.mode === "connected" ? "Leave blank to keep saved key" : "Paste your provider key"} autoComplete="off" /></label><div className="vision-actions"><button type="submit" className="allow-button">Save provider</button><button type="button" onClick={() => { visionOpenRef.current = false; setVisionOpen(false); setVisionKey(""); setError(""); }}>Back to Ren</button>{vision.mode === "connected" && <button type="button" onClick={() => void clearVision()}>Remove saved key</button>}</div></form> : <section className="ambient-conversation" aria-live="polite">{vision.mode === "demo" && <button className="demo-notice" onClick={openVisionSettings}>Demo answers cannot inspect your screen. Connect a vision model for specific guidance.</button>}{messages.length === 0 && <div className="empty-conversation"><div className="cursor-cue"><Spark /><span /></div><p>Point at anything on your screen</p><strong>“Hey Ren, explain this.”</strong><small>I’ll look, talk it through, and draw when it helps.</small></div>}{messages.map((message) => <article key={message.id} className={message.role}><span>{message.role === "assistant" ? `REN${message.provider ? ` · ${message.provider.toUpperCase()}` : ""}` : "YOU"}</span><p>{message.content}</p></article>)}</section>}
       {error && <div className="ambient-error" role="alert">{error}</div>}
-      <form className="ambient-composer" onSubmit={submit}><button type="button" className={`listen-button state-${voiceState}`} onClick={() => { if (nativeSpeechRef.current) { if (dictationActiveRef.current) void finishNativeDictation(); else void startNativeDictation(); return; } if (!recognitionRef.current) { setError("Local speech recognition is unavailable. Type your question here."); questionRef.current?.focus(); return; } keepAwake(); try { recognitionRef.current.start(); setVoiceState("listening"); } catch { setError("Speech recognition could not start. Type your question here."); questionRef.current?.focus(); } }} aria-label={dictationActiveRef.current ? "Finish speaking" : "Start listening"}><MicGlyph /></button><textarea ref={questionRef} aria-label="Ask Ren" value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askQuestion(question); } }} placeholder="Ask about what you’re pointing at…" rows={1} /><button type="submit" className="ask-button" disabled={!question.trim() || voiceState === "processing"} aria-label="Send question">↑</button></form>
-      <footer><span><i aria-hidden="true" /> Hold Ctrl+Shift and circle to focus</span>{permission?.interaction !== "granted" && <button onClick={() => void enableCircle()}>Enable circle</button>}<button onClick={() => void window.ren?.clearAnnotations()}>Clear drawings</button></footer>
+      {!visionOpen && <><form className="ambient-composer" onSubmit={submit}><button type="button" className={`listen-button state-${voiceState}`} onClick={() => { if (nativeSpeechRef.current) { if (dictationActiveRef.current) void finishNativeDictation(); else void startNativeDictation(); return; } if (!recognitionRef.current) { setError("Local speech recognition is unavailable. Type your question here."); questionRef.current?.focus(); return; } keepAwake(); try { recognitionRef.current.start(); setVoiceState("listening"); } catch { setError("Speech recognition could not start. Type your question here."); questionRef.current?.focus(); } }} aria-label={dictationActiveRef.current ? "Finish speaking" : "Start listening"}><MicGlyph /></button><textarea ref={questionRef} aria-label="Ask Ren" value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askQuestion(question); } }} placeholder="Ask about what you’re pointing at…" rows={1} /><button type="submit" className="ask-button" disabled={!question.trim() || voiceState === "processing"} aria-label="Send question">↑</button></form><footer><span><i aria-hidden="true" /> Hold Ctrl+Shift and circle to focus</span>{permission?.interaction !== "granted" && <button onClick={() => void enableCircle()}>Enable circle</button>}<button onClick={() => void window.ren?.clearAnnotations()}>Clear drawings</button></footer></>}
     </>}
   </main>;
 }

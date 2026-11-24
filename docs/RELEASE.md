@@ -12,6 +12,9 @@ Every merge to `main` packages unsigned macOS, Windows, and Linux artifacts on
 native GitHub runners. Artifacts are retained for 14 days and are for internal
 testing only. They are not a public release and operating systems may warn about
 their missing signature.
+On macOS, unsigned rebuilds can appear as different apps to Keychain, so
+stored provider keys may prompt again until Ren is signed with a stable
+identity. See [Electron safeStorage](https://www.electronjs.org/docs/latest/api/safe-storage).
 
 Local smoke package:
 

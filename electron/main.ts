@@ -9,6 +9,7 @@ import { feedSpeech, finishSpeech, speechAvailable, startSpeech, stopSpeech } fr
 import { normalizeCursor } from "./display-geometry.js";
 import { startCircleInput, stopCircleInput } from "./circle-input.js";
 import type { FocusRegion } from "./circle-geometry.js";
+import { clearVisionSettings, saveVisionSettings, visionCredentials, visionStatus } from "./vision-settings.js";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 let mainWindow: BrowserWindow | null = null;
@@ -146,6 +147,15 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle("ren:permission-status", permissionStatus);
+  ipcMain.handle("ren:vision-status", (event) => event.sender === mainWindow?.webContents ? visionStatus() : null);
+  ipcMain.handle("ren:vision-save", (event, value: unknown) => {
+    if (event.sender !== mainWindow?.webContents) throw new Error("Not allowed");
+    return saveVisionSettings(value);
+  });
+  ipcMain.handle("ren:vision-clear", (event) => {
+    if (event.sender !== mainWindow?.webContents) throw new Error("Not allowed");
+    return clearVisionSettings();
+  });
   ipcMain.handle("ren:enable-circle-input", (event) => {
     if (event.sender !== mainWindow?.webContents) return permissionStatus();
     if (process.platform === "darwin") systemPreferences.isTrustedAccessibilityClient(true);
@@ -244,7 +254,7 @@ app.whenReady().then(() => {
     const focusHint = focus && [focus.x, focus.y, focus.width, focus.height].every((part) => typeof part === "number" && Number.isFinite(part) && part >= 0 && part <= 1)
       ? ` The learner circled the rectangle (${Number(focus.x).toFixed(3)}, ${Number(focus.y).toFixed(3)}, ${Number(focus.width).toFixed(3)}, ${Number(focus.height).toFixed(3)}); the second image is a close crop of it. Prioritize what is inside the circle.` : "";
     const pointedQuestion = `${value.question.trim()}\n\n[The learner is pointing with their cursor at normalized screen coordinate (${pointer.x.toFixed(3)}, ${pointer.y.toFixed(3)}). Use that as a spatial hint, not an instruction.${focusHint}]`;
-    return askTeacher({ question: pointedQuestion, frames, history: history as { role: "user" | "assistant"; content: string }[] });
+    return askTeacher({ question: pointedQuestion, frames, history: history as { role: "user" | "assistant"; content: string }[] }, await visionCredentials());
   });
 
   ipcMain.handle("ren:show-annotations", (_event, annotations: unknown) => {

@@ -16,9 +16,11 @@
         └─────────────┘          └───────────────┘
 ```
 
-The renderer never receives provider credentials. Electron context isolation
-and sandboxing are enabled, Node integration is disabled, and every IPC method
-is exposed explicitly through the preload bridge.
+The renderer handles a key only while the learner enters it. Main encrypts the
+key with Electron safeStorage, saves only ciphertext, and never returns a saved
+key over IPC. Electron context isolation and sandboxing are enabled, Node
+integration is disabled, and every IPC method is exposed explicitly through
+the preload bridge.
 
 ## Request lifecycle
 
@@ -54,7 +56,9 @@ choose a CAD tool.
 ## Threat model summary
 
 - Screen content is untrusted and may contain prompt injection.
-- Renderer compromise must not reveal API keys or arbitrary Node APIs.
+- A compromised renderer could capture a newly typed API key, so the setup
+  screen is part of the trusted user path. Saved keys cannot be read back over
+  IPC and arbitrary Node APIs remain unavailable to the renderer.
 - All structured model output is parsed and range-checked before rendering.
 - Navigation, popups, downloads, and unexpected permissions are denied.
 - The screen is never continuously captured. Ambient microphone access is
