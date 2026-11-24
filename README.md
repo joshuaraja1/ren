@@ -57,6 +57,8 @@ it after a pause; the mic button can finish it sooner. Local dictation currently
 supports English, and typing remains available if it mishears. If the wake
 engine cannot start, the pebble stays clickable. System-audio
 transcript and richer temporal video understanding remain on the roadmap.
+Voice-created agents that act in other apps after showing an approved plan are
+specified in [the requirements](docs/VOICE_AGENTS.md) and are not yet available.
 
 ## License
 

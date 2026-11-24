@@ -15,7 +15,7 @@ based on this repository.
 | Guided follow-up | Bounded conversation history and tappable model-suggested questions | Evaluate question quality and show progress through a lesson |
 | Privacy | No continuous screen recording; on-demand frames in memory; local wake and transcription; configured provider shown in the panel | Add a capture audit and independent privacy review |
 | Mac and Windows packages | Unsigned staging artifacts on both | Signed, notarized releases and physical permission QA |
-| Connected-app agents and computer control | Not implemented | Separate opt-in design and safety review; not required for the learning loop |
+| Connected-app agents and computer control | Not implemented | [Voice-agent requirements](VOICE_AGENTS.md), explicit plan approval, bounded action backend, and physical QA |
 | Proactive tasks, routines, billing | Not implemented | Product decision after the core teacher experience is dependable |
 
 Ren's primary goal is the screen-aware teacher, not exact imitation. The

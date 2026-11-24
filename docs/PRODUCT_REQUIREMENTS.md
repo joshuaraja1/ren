@@ -1,6 +1,6 @@
 # Ren product requirements
 
-Status: v0.1 approved for implementation
+Status: v0.1 design baseline; release gates and later capabilities are tracked separately
 
 ## Product promise
 
@@ -48,7 +48,8 @@ and act, not silently take control of their computer.
   the learner does not need to pause, crop, identify the subject, or pick a
   specialized tool.
 - Ren's own overlay windows are hidden from captures.
-- Password managers and explicitly configured apps can be excluded.
+- Password-manager and user-configured app exclusions are required before a
+  public release; they are not implemented in the current prototype.
 
 ### R3. Multimodal conversation
 
@@ -60,9 +61,10 @@ and act, not silently take control of their computer.
   video, algebra on a worksheet, code in an editor, and geometry in a CAD app
   all use the same ask-and-teach interaction.
 - OpenAI-compatible vision endpoints are supported through an adapter.
-- A deterministic demo provider makes the complete app usable without an API
-  key and keeps tests offline.
-- Responses stream into the panel and can be read aloud on request.
+- A deterministic demo provider keeps the interaction testable without an API
+  key. It explicitly cannot inspect screen contents.
+- Responses appear in the panel and can be read aloud on request. Incremental
+  response streaming is future work.
 
 ### R4. Visual guidance overlay
 
@@ -117,6 +119,9 @@ and act, not silently take control of their computer.
 - **1.0 Trustworthy extensibility:** invisible sandboxed capabilities selected by
   Ren, permissions based on data access rather than subjects, and reproducible
   signed releases. Users never install or select a chemistry/math/CAD “tool.”
+- **Voice-created agents:** Ren proposes a finite plan from a spoken or typed
+  task and can act in another app only after approval of that exact plan. See
+  [the action contract](VOICE_AGENTS.md) and [issue #31](https://github.com/joshuaraja1/ren/issues/31).
 
 ## Acceptance scenario
 
