@@ -3,7 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "description": "A screen-aware learning companion",
-  "author": "Ren contributors",
+  "author": {
+    "name": "Ren contributors",
+    "email": "joshuaraja1@users.noreply.github.com"
+  },
+  "desktopName": "Ren.desktop",
   "license": "MIT",
   "repository": "https://github.com/joshuaraja1/ren",
   "main": "dist-electron/main.js",
@@ -77,6 +81,7 @@
     "linux": {
       "category": "Education",
       "icon": "build/icon.png",
+      "syncDesktopName": true,
       "target": [
         "AppImage",
         "deb"
