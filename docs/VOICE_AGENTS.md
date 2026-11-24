@@ -44,8 +44,9 @@ learner confirms that exact plan there; renderer IPC alone cannot approve it.
 ## Reviewable delivery
 
 1. **Plan and approval:** typed schema, strict validation, provider prompt,
-   voice/text intent routing, and a plan panel with explicit approval. No
-   cross-app execution in this PR.
+   voice/text intent routing, and a plan panel for review and editing. The
+   panel can request a native main-process confirmation; only that confirmation
+   records approval. No cross-app execution in this PR.
 2. **Bounded execution:** one platform at a time, a bundled action backend,
    target checks, expiration, stop, and a local result log. Test a real task
    in a packaged app before advertising that platform.
