@@ -52,6 +52,11 @@ export type RenBridge = {
   wakeStart(sampleRate: number): Promise<boolean>;
   wakeFeed(samples: number[]): Promise<boolean>;
   wakeStop(): Promise<void>;
+  speechAvailable(): Promise<boolean>;
+  speechStart(sampleRate: number): Promise<boolean>;
+  speechFeed(samples: number[]): Promise<boolean>;
+  speechFinish(): Promise<string>;
+  speechStop(): Promise<void>;
   ask(request: AskRequest): Promise<AskResponse>;
   showAnnotations(annotations: Annotation[]): Promise<void>;
   clearAnnotations(): Promise<void>;

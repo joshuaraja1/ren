@@ -24,7 +24,9 @@ is exposed explicitly through the preload bridge.
 
 1. One-time onboarding obtains OS screen/microphone permission and persists the
    operating system grant; routine launches do not show a source picker.
-2. An on-device wake gate expands the top-edge pebble after “Hey Ren.”
+2. An on-device wake gate expands the top-edge pebble after “Hey Ren.” A separate
+   local model transcribes the following English question. Neither ambient nor
+   dictated audio is sent to the answer provider.
 3. On a question, main hides Ren's windows and captures a short JPEG burst from
    the display containing the learner's cursor.
 4. Main validates the payload and delegates to the configured provider.

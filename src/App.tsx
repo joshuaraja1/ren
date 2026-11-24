@@ -29,6 +29,7 @@ export function App() {
   const [expanded, setExpandedState] = useState(false);
   const [source, setSource] = useState<ScreenSource | null>(null);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const voiceStateRef = useRef<VoiceState>("idle");
   const [messages, setMessages] = useState<Message[]>([]);
   const [question, setQuestion] = useState("");
   const [error, setError] = useState("");
@@ -40,8 +41,19 @@ export function App() {
   const messagesRef = useRef<Message[]>([]);
   const questionRef = useRef<HTMLTextAreaElement | null>(null);
   const nativeWakeRef = useRef(false);
+  const nativeSpeechRef = useRef(false);
+  const sampleRateRef = useRef(16_000);
+  const dictationActiveRef = useRef(false);
+  const dictationReadyRef = useRef(false);
+  const dictationStartedAtRef = useRef(0);
+  const lastVoiceAtRef = useRef(0);
+  const voicedFramesRef = useRef(0);
+  const feedChainRef = useRef<Promise<unknown>>(Promise.resolve());
+  const pendingAudioRef = useRef<number[][]>([]);
+  const expandedRef = useRef(false);
 
   useEffect(() => { messagesRef.current = messages; }, [messages]);
+  useEffect(() => { voiceStateRef.current = voiceState; }, [voiceState]);
   useEffect(() => () => { recognitionRef.current?.stop(); }, []);
 
   useEffect(() => {
@@ -62,19 +74,47 @@ export function App() {
     void (async () => {
       if (window.ren && await window.ren.wakeAvailable()) {
         try {
+          nativeSpeechRef.current = await window.ren.speechAvailable();
           media = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
           if (disposed) { media.getTracks().forEach((track) => track.stop()); return; }
           context = new AudioContext();
+          sampleRateRef.current = context.sampleRate;
           if (!await window.ren.wakeStart(context.sampleRate)) throw new Error("Local wake engine could not start");
           nativeWakeRef.current = true;
           const source = context.createMediaStreamSource(media);
           processor = context.createScriptProcessor(2048, 1, 1);
           let pending = false;
+          const recentAudio: number[][] = [];
           processor.onaudioprocess = (event) => {
-            if (pending || disposed || Date.now() < suppressSpeechUntilRef.current) return;
+            if (disposed) return;
+            const samples = Array.from(event.inputBuffer.getChannelData(0));
+            if (dictationActiveRef.current) {
+              if (!dictationReadyRef.current) {
+                if (pendingAudioRef.current.length < 36) pendingAudioRef.current.push(samples);
+                return;
+              }
+              const now = Date.now();
+              const level = Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
+              if (level > 0.012) {
+                voicedFramesRef.current += 1;
+                lastVoiceAtRef.current = now;
+              }
+              feedChainRef.current = feedChainRef.current.then(() => window.ren!.speechFeed(samples)).catch(() => {
+                setError("Local dictation stopped. Type your question instead.");
+                stopNativeDictation();
+              });
+              if ((voicedFramesRef.current >= 2 && now - lastVoiceAtRef.current > 1500) || now - dictationStartedAtRef.current > (voicedFramesRef.current ? 28_000 : 8_000)) void finishNativeDictation();
+              return;
+            }
+            if (pending || Date.now() < suppressSpeechUntilRef.current) return;
+            recentAudio.push(samples);
+            if (recentAudio.length > 24) recentAudio.shift();
             pending = true;
-            void window.ren!.wakeFeed(Array.from(event.inputBuffer.getChannelData(0))).then((woke) => {
-              if (woke && !disposed) handleAmbientTranscript("Hey Ren");
+            void window.ren!.wakeFeed(samples).then((woke) => {
+              if (woke && !disposed) {
+                if (nativeSpeechRef.current) void startNativeDictation(true, recentAudio.slice());
+                else handleAmbientTranscript("Hey Ren");
+              }
             }).catch(() => setError("Local wake engine stopped. Click Ren to ask.")).finally(() => { pending = false; });
           };
           source.connect(processor);
@@ -114,18 +154,74 @@ export function App() {
     return () => {
       disposed = true;
       nativeWakeRef.current = false;
+      nativeSpeechRef.current = false;
+      dictationActiveRef.current = false;
+      dictationReadyRef.current = false;
+      pendingAudioRef.current = [];
       wakeEnabledRef.current = false;
       recognitionRef.current?.stop();
       processor?.disconnect();
       media?.getTracks().forEach((track) => track.stop());
       void context?.close();
       void window.ren?.wakeStop();
+      void window.ren?.speechStop();
     };
   }, [permission?.ready]);
 
   async function setExpanded(value: boolean) {
+    expandedRef.current = value;
     setExpandedState(value);
+    if (!value) stopNativeDictation();
     await window.ren?.setExpanded(value);
+  }
+
+  function stopNativeDictation() {
+    dictationActiveRef.current = false;
+    dictationReadyRef.current = false;
+    pendingAudioRef.current = [];
+    void window.ren?.speechStop();
+  }
+
+  async function startNativeDictation(greeting = false, preRoll: number[][] = []) {
+    if (!window.ren || !nativeSpeechRef.current || dictationActiveRef.current) return;
+    dictationActiveRef.current = true;
+    dictationReadyRef.current = false;
+    dictationStartedAtRef.current = Date.now();
+    lastVoiceAtRef.current = 0;
+    voicedFramesRef.current = 0;
+    feedChainRef.current = Promise.resolve();
+    pendingAudioRef.current = preRoll;
+    await setExpanded(true);
+    setVoiceState("listening"); keepAwake();
+    if (greeting) setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: "Hey, I'm here. Ask me about what you're pointing at." }]);
+    try {
+      if (!await window.ren.speechStart(sampleRateRef.current)) throw new Error("Local dictation could not start");
+      for (const samples of pendingAudioRef.current.splice(0)) {
+        feedChainRef.current = feedChainRef.current.then(() => window.ren!.speechFeed(samples));
+      }
+      dictationReadyRef.current = true;
+    } catch {
+      stopNativeDictation();
+      setVoiceState("idle");
+      setError("Local dictation is unavailable. Type your question instead.");
+    }
+  }
+
+  async function finishNativeDictation() {
+    if (!dictationActiveRef.current || !window.ren) return;
+    dictationActiveRef.current = false;
+    dictationReadyRef.current = false;
+    setVoiceState("processing");
+    try {
+      await feedChainRef.current;
+      const transcript = (await window.ren.speechFinish()).replace(/^(?:hey\s+)?(?:ren|run)\b[.,:;\s-]*/i, "").trim();
+      if (transcript) await askQuestion(transcript);
+      else { setVoiceState("idle"); setError("I didn't catch that. Say “Hey Ren” and try again, or type your question."); }
+    } catch {
+      setVoiceState("idle");
+      setError("Local dictation could not finish. Type your question instead.");
+      stopNativeDictation();
+    }
   }
 
   async function startAutomaticCapture() {
@@ -147,7 +243,7 @@ export function App() {
   function keepAwake() {
     awakeUntilRef.current = Date.now() + 20_000;
     if (collapseTimerRef.current) clearTimeout(collapseTimerRef.current);
-    collapseTimerRef.current = setTimeout(() => { if (voiceState === "idle") void setExpanded(false); }, 20_000);
+    collapseTimerRef.current = setTimeout(() => { if (voiceStateRef.current === "idle" && !dictationActiveRef.current) void setExpanded(false); }, 20_000);
   }
 
   function greet(text = "Hey—what’s up? How can I help?") {
@@ -166,7 +262,9 @@ export function App() {
     if (!wakeMatch && !alreadyAwake) return;
     void setExpanded(true); keepAwake(); setVoiceState("listening");
     const remainder = wakeMatch ? transcript.slice((wakeMatch.index ?? 0) + wakeMatch[0].length).replace(/^[,.:;\s-]+/, "") : transcript;
-    if (remainder) void askQuestion(remainder); else greet(nativeWakeRef.current ? "Hey, I'm here. Type your question about what you're pointing at." : undefined);
+    if (remainder) void askQuestion(remainder);
+    else if (nativeWakeRef.current && nativeSpeechRef.current) void startNativeDictation(true);
+    else greet(nativeWakeRef.current ? "Hey, I'm here. Type your question about what you're pointing at." : undefined);
   }
 
   async function captureBurst() {
@@ -175,6 +273,7 @@ export function App() {
 
   async function askQuestion(rawQuestion: string) {
     const clean = rawQuestion.trim(); if (!clean || voiceState === "processing") return;
+    stopNativeDictation();
     setQuestion(""); setError(""); setVoiceState("processing"); keepAwake();
     setMessages((current) => [...current, { id: crypto.randomUUID(), role: "user", content: clean }]);
     try {
@@ -183,7 +282,7 @@ export function App() {
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: response.answer, provider: response.provider }]);
       if (response.annotations.length) await window.ren?.showAnnotations(response.annotations);
       setVoiceState("responding"); suppressSpeechUntilRef.current = Date.now() + Math.min(12_000, response.answer.length * 45);
-      const utterance = new SpeechSynthesisUtterance(response.answer); utterance.onend = () => { setVoiceState("listening"); keepAwake(); }; speechSynthesis.cancel(); speechSynthesis.speak(utterance);
+      const utterance = new SpeechSynthesisUtterance(response.answer); utterance.onend = () => { if (nativeSpeechRef.current && expandedRef.current) void startNativeDictation(); else { setVoiceState("listening"); keepAwake(); } }; speechSynthesis.cancel(); speechSynthesis.speak(utterance);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Ren couldn’t answer."); setVoiceState("idle"); }
   }
 
@@ -198,7 +297,7 @@ export function App() {
       <div className="ambient-status"><span className="privacy-lock" aria-hidden="true">●</span><span>Looks only when you ask</span><em>·</em><span className="display-name">{source?.name ?? "connecting to display"}</span><span className="wake-chip">Say “Hey Ren”</span></div>
       <section className="ambient-conversation" aria-live="polite">{messages.length === 0 && <div className="empty-conversation"><div className="cursor-cue"><Spark /><span /></div><p>Point at anything on your screen</p><strong>“Hey Ren, explain this.”</strong><small>I’ll look, talk it through, and draw when it helps.</small></div>}{messages.map((message) => <article key={message.id} className={message.role}><span>{message.role === "assistant" ? "REN" : "YOU"}</span><p>{message.content}</p></article>)}</section>
       {error && <div className="ambient-error" role="alert">{error}</div>}
-      <form className="ambient-composer" onSubmit={submit}><button type="button" className={`listen-button state-${voiceState}`} onClick={() => { if (!recognitionRef.current) { setError("Local speech recognition is unavailable. Type your question here."); questionRef.current?.focus(); return; } keepAwake(); try { recognitionRef.current.start(); setVoiceState("listening"); } catch { setError("Speech recognition could not start. Type your question here."); questionRef.current?.focus(); } }} aria-label="Start listening"><MicGlyph /></button><textarea ref={questionRef} aria-label="Ask Ren" value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askQuestion(question); } }} placeholder="Ask about what you’re pointing at…" rows={1} /><button type="submit" className="ask-button" disabled={!question.trim() || voiceState === "processing"} aria-label="Send question">↑</button></form>
+      <form className="ambient-composer" onSubmit={submit}><button type="button" className={`listen-button state-${voiceState}`} onClick={() => { if (nativeSpeechRef.current) { if (dictationActiveRef.current) void finishNativeDictation(); else void startNativeDictation(); return; } if (!recognitionRef.current) { setError("Local speech recognition is unavailable. Type your question here."); questionRef.current?.focus(); return; } keepAwake(); try { recognitionRef.current.start(); setVoiceState("listening"); } catch { setError("Speech recognition could not start. Type your question here."); questionRef.current?.focus(); } }} aria-label={dictationActiveRef.current ? "Finish speaking" : "Start listening"}><MicGlyph /></button><textarea ref={questionRef} aria-label="Ask Ren" value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askQuestion(question); } }} placeholder="Ask about what you’re pointing at…" rows={1} /><button type="submit" className="ask-button" disabled={!question.trim() || voiceState === "processing"} aria-label="Send question">↑</button></form>
       <footer><span><i aria-hidden="true" /> Cursor-aware</span><button onClick={() => void window.ren?.clearAnnotations()}>Clear drawings</button></footer>
     </>}
   </main>;
