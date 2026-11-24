@@ -7,9 +7,11 @@
     "skipLibCheck": true,
     "outDir": "dist-electron",
     "rootDir": "electron",
+    "tsBuildInfoFile": "dist-electron/.tsbuildinfo",
     "types": ["node"],
     "composite": true
   },
-  "include": ["electron/**/*.ts"]
+  "include": ["electron/**/*.ts", "electron/**/*.cts"],
+  "exclude": ["electron/**/*.test.ts"]
 }
 

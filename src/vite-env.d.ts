@@ -1,9 +1,12 @@
 /// <reference types="vite/client" />
 
-interface Window {
-  ren?: {
-    platform: string;
-    version: string;
-  };
+import type { RenBridge } from "./contracts";
+
+declare global {
+  interface Window {
+    ren?: RenBridge;
+  }
 }
+
+export {};
 
