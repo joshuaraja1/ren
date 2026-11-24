@@ -52,8 +52,15 @@ function ensureChild(): Promise<Child> {
       if (typeof reply.error === "string") task.reject(new Error(reply.error));
       else task.resolve(reply.result);
     });
-    process.once("error", () => { reject(new Error("Local speech worker could not start.")); process.kill(); reset(new Error("Local speech worker failed.")); });
-    process.once("exit", () => { reject(new Error("Local speech worker exited.")); reset(new Error("Local speech worker exited.")); });
+    process.once("error", () => {
+      reject(new Error("Local speech worker could not start."));
+      process.kill();
+      if (child === process) reset(new Error("Local speech worker failed."));
+    });
+    process.once("exit", () => {
+      reject(new Error("Local speech worker exited."));
+      if (child === process) reset(new Error("Local speech worker exited."));
+    });
   });
   return ready;
 }
@@ -80,7 +87,7 @@ export async function startSpeech(sampleRate: number) {
     active = started;
     budget = started ? new RealtimeAudioBudget(sampleRate) : null;
     return started;
-  } finally { starting = false; }
+  } finally { if (currentSession === session) starting = false; }
 }
 
 export async function feedSpeech(samples: unknown) {

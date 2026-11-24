@@ -235,7 +235,7 @@ export function App() {
     if (greeting) setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: "Hey, I'm here. Ask me about what you're pointing at." }]);
     try {
       if (!await window.ren.speechStart(sampleRateRef.current)) throw new Error("Local dictation could not start");
-      if (session !== dictationSessionRef.current) { void window.ren.speechStop(); return; }
+      if (session !== dictationSessionRef.current) return;
       for (const samples of pendingAudioRef.current.splice(0)) {
         feedChainRef.current = feedChainRef.current.then(async () => {
           if (session !== dictationSessionRef.current) return;
