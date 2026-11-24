@@ -103,7 +103,7 @@ and act, not silently take control of their computer.
 
 ## Capability roadmap
 
-- **Circle-to-focus gesture:** Hold Ctrl+Shift while tracing a closed region
+- **Circle-to-focus gesture:** Hold Control+Option (Control+Alt on Windows/Linux) while tracing a closed region
   with the cursor. Ren previews the path, captures only after release, adds a
   crop as visual context, and asks for an explanation automatically. Open
   strokes, clicks, Escape, and crossing displays cancel the gesture. Native
