@@ -1,12 +1,35 @@
 import "dotenv/config";
-import { app, BrowserWindow, desktopCapturer, ipcMain, screen, session, shell } from "electron";
+import { app, BrowserWindow, desktopCapturer, ipcMain, screen, session, shell, systemPreferences } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { existsSync, writeFileSync } from "node:fs";
 import { askTeacher, validateAnnotations } from "./provider.js";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 let mainWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
+
+const collapsedSize = { width: 168, height: 58 };
+const expandedSize = { width: 440, height: 620 };
+
+function onboardingMarkerPath() { return join(app.getPath("userData"), "onboarding-complete"); }
+function hasCompletedOnboarding() { return existsSync(onboardingMarkerPath()); }
+function permissionStatus() {
+  if (process.platform !== "darwin") {
+    const complete = hasCompletedOnboarding();
+    return { ready: complete, microphone: complete ? "granted" : "not-requested", screen: complete ? "granted" : "not-requested" };
+  }
+  const microphone = systemPreferences.getMediaAccessStatus("microphone");
+  const screenAccess = systemPreferences.getMediaAccessStatus("screen");
+  return { ready: hasCompletedOnboarding() && microphone === "granted" && screenAccess === "granted", microphone, screen: screenAccess };
+}
+
+function positionMainWindow(expanded: boolean) {
+  if (!mainWindow) return;
+  const workArea = screen.getPrimaryDisplay().workArea;
+  const size = expanded ? expandedSize : collapsedSize;
+  mainWindow.setBounds({ x: Math.round(workArea.x + (workArea.width - size.width) / 2), y: workArea.y + 14, ...size }, true);
+}
 
 function createOverlayWindow() {
   const bounds = screen.getPrimaryDisplay().bounds;
@@ -35,12 +58,15 @@ function createOverlayWindow() {
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 1180,
-    height: 760,
-    minWidth: 900,
-    minHeight: 620,
-    titleBarStyle: "hiddenInset",
-    backgroundColor: "#f2efe8",
+    ...expandedSize,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    backgroundColor: "#00000000",
     show: false,
     webPreferences: {
       preload: join(currentDirectory, "preload.cjs"),
@@ -50,7 +76,13 @@ function createMainWindow() {
     },
   });
 
-  mainWindow.once("ready-to-show", () => mainWindow?.show());
+  mainWindow.setAlwaysOnTop(true, "floating");
+  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  mainWindow.once("ready-to-show", () => {
+    const needsOnboarding = !permissionStatus().ready;
+    positionMainWindow(needsOnboarding);
+    mainWindow?.showInactive();
+  });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith("https://")) void shell.openExternal(url);
     return { action: "deny" };
@@ -63,15 +95,62 @@ function createMainWindow() {
 }
 
 app.whenReady().then(() => {
+  if (permissionStatus().ready && app.isPackaged) app.setLoginItemSettings({ openAtLogin: true });
   createMainWindow();
   createOverlayWindow();
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
     callback(permission === "media" && webContents === mainWindow?.webContents);
   });
 
+  ipcMain.handle("ren:permission-status", permissionStatus);
+  ipcMain.handle("ren:request-permissions", async () => {
+    if (process.platform === "darwin") await systemPreferences.askForMediaAccess("microphone");
+    await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 1, height: 1 } });
+    const access = permissionStatus();
+    const canComplete = process.platform !== "darwin" || (access.microphone === "granted" && access.screen === "granted");
+    if (canComplete) writeFileSync(onboardingMarkerPath(), new Date().toISOString(), { encoding: "utf8", mode: 0o600 });
+    const status = permissionStatus();
+    if (status.ready && app.isPackaged) app.setLoginItemSettings({ openAtLogin: true });
+    return status;
+  });
+  ipcMain.handle("ren:open-permission-settings", async () => {
+    if (process.platform === "darwin") await shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture");
+  });
+  ipcMain.handle("ren:set-expanded", (_event, expanded: unknown) => positionMainWindow(expanded === true));
+  ipcMain.handle("ren:set-capture-hidden", (_event, hidden: unknown) => mainWindow?.setOpacity(hidden === true ? 0 : 1));
+
   ipcMain.handle("ren:list-sources", async () => {
     const sources = await desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: { width: 320, height: 180 } });
     return sources.map((source) => ({ id: source.id, name: source.name, thumbnail: source.thumbnail.toDataURL() }));
+  });
+  ipcMain.handle("ren:primary-source", async () => {
+    const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 320, height: 180 } });
+    const cursorDisplay = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const source = sources.find((candidate) => candidate.display_id === String(cursorDisplay.id)) ?? sources[0];
+    if (!source) throw new Error("No display source is available");
+    return { id: source.id, name: source.name, thumbnail: source.thumbnail.toDataURL() };
+  });
+  ipcMain.handle("ren:capture-context", async () => {
+    const overlayWasVisible = overlayWindow?.isVisible() ?? false;
+    mainWindow?.setOpacity(0);
+    overlayWindow?.hide();
+    await new Promise((resolve) => setTimeout(resolve, 90));
+    try {
+      const frames: string[] = [];
+      for (let index = 0; index < 3; index += 1) {
+        const cursorDisplay = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+        const aspectRatio = cursorDisplay.size.width / cursorDisplay.size.height;
+        const thumbnailSize = aspectRatio >= 1 ? { width: 1600, height: Math.round(1600 / aspectRatio) } : { width: Math.round(1200 * aspectRatio), height: 1200 };
+        const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize });
+        const source = sources.find((candidate) => candidate.display_id === String(cursorDisplay.id)) ?? sources[0];
+        if (source && !source.thumbnail.isEmpty()) frames.push(source.thumbnail.toDataURL());
+        if (index < 2) await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      return frames;
+    } finally {
+      mainWindow?.setOpacity(1);
+      if (overlayWasVisible) overlayWindow?.showInactive();
+    }
   });
 
   ipcMain.handle("ren:ask", async (_event, request: unknown) => {
@@ -80,7 +159,11 @@ app.whenReady().then(() => {
     if (typeof value.question !== "string" || !value.question.trim() || value.question.length > 4000) throw new Error("Invalid question");
     const frames = Array.isArray(value.frames) ? value.frames.filter((frame): frame is string => typeof frame === "string" && /^data:image\/(jpeg|png);base64,/.test(frame)).slice(0, 3) : [];
     const history = Array.isArray(value.history) ? value.history.slice(-8) : [];
-    return askTeacher({ question: value.question.trim(), frames, history: history as { role: "user" | "assistant"; content: string }[] });
+    const cursor = screen.getCursorScreenPoint();
+    const bounds = screen.getPrimaryDisplay().bounds;
+    const pointer = { x: Math.min(1, Math.max(0, (cursor.x - bounds.x) / bounds.width)), y: Math.min(1, Math.max(0, (cursor.y - bounds.y) / bounds.height)) };
+    const pointedQuestion = `${value.question.trim()}\n\n[The learner is pointing with their cursor at normalized screen coordinate (${pointer.x.toFixed(3)}, ${pointer.y.toFixed(3)}). Use that as a spatial hint, not an instruction.]`;
+    return askTeacher({ question: pointedQuestion, frames, history: history as { role: "user" | "assistant"; content: string }[] });
   });
 
   ipcMain.handle("ren:show-annotations", (_event, annotations: unknown) => {

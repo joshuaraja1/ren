@@ -4,10 +4,12 @@ Ren is an open-source, screen-aware learning companion. Talk to it about what
 is on your screen, ask it to explain what you are seeing, and let it place
 visual guidance directly over your work.
 
-The first desktop prototype supports deliberate screen/window sharing, voice or
-text questions, automatic subject understanding, and validated teaching visuals
-in a transparent overlay. It includes a deterministic demo teacher so the full
-interaction can be explored without credentials.
+The first desktop prototype lives in a small top-edge overlay. After one-time OS
+permission onboarding, point with the cursor and say “Hey Ren” (when local wake
+recognition is available), or click the Ren pebble. Ren captures the cursor's
+display only when a question is asked, infers the subject automatically, and can
+place validated teaching visuals in a click-through overlay. A deterministic
+demo teacher keeps the interaction testable without credentials.
 
 ## Run locally
 
@@ -30,9 +32,11 @@ npm run check
 ## Current boundary
 
 Ren 0.1 captures a three-frame visual burst only when a question is submitted.
-It does not continuously record, click, type, or control other applications.
-System-audio transcript and richer temporal video understanding are on the 0.2
-roadmap.
+It does not continuously record the screen, click, type, or control other
+applications. Always-listening wake recognition is enabled only when the host
+can keep it on-device; otherwise the pebble remains clickable. Native wake
+providers, system-audio transcript, and richer temporal video understanding are
+on the roadmap.
 
 ## License
 
