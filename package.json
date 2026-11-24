@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "6.3.0",
+    "dotenv": "^18.0.10",
     "electron": "45.4.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
@@ -38,4 +39,3 @@
     "wait-on": "^9.0.3"
   }
 }
-

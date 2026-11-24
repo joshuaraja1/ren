@@ -5,7 +5,7 @@ Each milestone is designed to land as an independently reviewable pull request.
 - [x] M0 — public repository, MIT license, and project identity
 - [x] M1 — product requirements, architecture, governance, issue templates
 - [x] M2 — secure Electron shell and distinctive assistant interface
-- [ ] M3 — capture, voice, provider adapter, and visual overlay loop
+- [x] M3 — capture, voice, provider adapter, and visual overlay loop
 - [ ] M4 — automated tests, CI, staging artifacts, and release documentation
 - [ ] M5 — automatic temporal context, system-audio transcript, and visual OCR
 - [ ] M6 — invisible CAD and 3D-print context enrichment through host APIs
