@@ -55,6 +55,7 @@ export function App() {
   const lastVoiceAtRef = useRef(0);
   const voicedFramesRef = useRef(0);
   const feedChainRef = useRef<Promise<unknown>>(Promise.resolve());
+  const queuedFeedsRef = useRef(0);
   const pendingAudioRef = useRef<number[][]>([]);
   const expandedRef = useRef(false);
   const askingRef = useRef(false);
@@ -121,10 +122,18 @@ export function App() {
                 voicedFramesRef.current += 1;
                 lastVoiceAtRef.current = now;
               }
-              feedChainRef.current = feedChainRef.current.then(() => window.ren!.speechFeed(samples)).catch(() => {
+              if (queuedFeedsRef.current >= 8) {
+                setError("Local dictation could not keep up. Type your question instead.");
+                stopNativeDictation();
+                return;
+              }
+              queuedFeedsRef.current += 1;
+              feedChainRef.current = feedChainRef.current.then(async () => {
+                if (!dictationActiveRef.current || !await window.ren!.speechFeed(samples)) throw new Error("Local speech feed stopped");
+              }).catch(() => {
                 setError("Local dictation stopped. Type your question instead.");
                 stopNativeDictation();
-              });
+              }).finally(() => { queuedFeedsRef.current -= 1; });
               if ((voicedFramesRef.current >= 2 && now - lastVoiceAtRef.current > 1500) || now - dictationStartedAtRef.current > (voicedFramesRef.current ? 28_000 : 8_000)) void finishNativeDictation();
               return;
             }
@@ -212,6 +221,7 @@ export function App() {
     lastVoiceAtRef.current = 0;
     voicedFramesRef.current = 0;
     feedChainRef.current = Promise.resolve();
+    queuedFeedsRef.current = 0;
     pendingAudioRef.current = preRoll;
     await setExpanded(true);
     setVoiceState("listening"); keepAwake();

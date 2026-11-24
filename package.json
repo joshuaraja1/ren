@@ -55,6 +55,8 @@
     "productName": "Ren",
     "asar": true,
     "asarUnpack": [
+      "dist-electron/speech-worker.js",
+      "dist-electron/speech-engine.js",
       "node_modules/sherpa-onnx-*/**/*",
       "node_modules/uiohook-napi/prebuilds/**/*"
     ],

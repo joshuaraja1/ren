@@ -185,7 +185,7 @@ app.whenReady().then(() => {
   ipcMain.handle("ren:speech-start", (event, sampleRate: unknown) => event.sender === mainWindow?.webContents && typeof sampleRate === "number" && startSpeech(sampleRate));
   ipcMain.handle("ren:speech-feed", (event, samples: unknown) => event.sender === mainWindow?.webContents && feedSpeech(samples));
   ipcMain.handle("ren:speech-finish", (event) => event.sender === mainWindow?.webContents ? finishSpeech() : "");
-  ipcMain.handle("ren:speech-stop", (event) => { if (event.sender === mainWindow?.webContents) stopSpeech(); });
+  ipcMain.handle("ren:speech-stop", (event) => event.sender === mainWindow?.webContents ? stopSpeech() : undefined);
   ipcMain.handle("ren:request-permissions", async (event) => {
     requireMainRenderer(event);
     if (process.platform === "darwin") await systemPreferences.askForMediaAccess("microphone");
