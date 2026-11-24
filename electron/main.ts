@@ -10,6 +10,7 @@ import { normalizeCursor } from "./display-geometry.js";
 import { startCircleInput, stopCircleInput } from "./circle-input.js";
 import type { FocusRegion } from "./circle-geometry.js";
 import { clearVisionSettings, saveVisionSettings, visionCredentials, visionStatus } from "./vision-settings.js";
+import { parseAskRequest } from "./request-validation.js";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 let mainWindow: BrowserWindow | null = null;
@@ -75,6 +76,10 @@ function cursorDisplayContext() {
     display,
     pointer: normalizeCursor(cursor, display.bounds),
   };
+}
+
+function requireMainRenderer(event: Electron.IpcMainInvokeEvent) {
+  if (event.sender !== mainWindow?.webContents) throw new Error("Not allowed");
 }
 
 function createMainWindow() {
@@ -181,7 +186,8 @@ app.whenReady().then(() => {
   ipcMain.handle("ren:speech-feed", (event, samples: unknown) => event.sender === mainWindow?.webContents && feedSpeech(samples));
   ipcMain.handle("ren:speech-finish", (event) => event.sender === mainWindow?.webContents ? finishSpeech() : "");
   ipcMain.handle("ren:speech-stop", (event) => { if (event.sender === mainWindow?.webContents) stopSpeech(); });
-  ipcMain.handle("ren:request-permissions", async () => {
+  ipcMain.handle("ren:request-permissions", async (event) => {
+    requireMainRenderer(event);
     if (process.platform === "darwin") await systemPreferences.askForMediaAccess("microphone");
     if (process.platform === "darwin") systemPreferences.isTrustedAccessibilityClient(true);
     await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 1, height: 1 } });
@@ -194,24 +200,28 @@ app.whenReady().then(() => {
     }
     return permissionStatus();
   });
-  ipcMain.handle("ren:open-permission-settings", async () => {
+  ipcMain.handle("ren:open-permission-settings", async (event) => {
+    requireMainRenderer(event);
     if (process.platform === "darwin") await shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture");
   });
-  ipcMain.handle("ren:set-expanded", (_event, expanded: unknown) => positionMainWindow(expanded === true));
-  ipcMain.handle("ren:set-capture-hidden", (_event, hidden: unknown) => mainWindow?.setOpacity(hidden === true ? 0 : 1));
+  ipcMain.handle("ren:set-expanded", (event, expanded: unknown) => { requireMainRenderer(event); positionMainWindow(expanded === true); });
+  ipcMain.handle("ren:set-capture-hidden", (event, hidden: unknown) => { requireMainRenderer(event); mainWindow?.setOpacity(hidden === true ? 0 : 1); });
 
-  ipcMain.handle("ren:list-sources", async () => {
+  ipcMain.handle("ren:list-sources", async (event) => {
+    requireMainRenderer(event);
     const sources = await desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: { width: 320, height: 180 } });
     return sources.map((source) => ({ id: source.id, name: source.name, thumbnail: source.thumbnail.toDataURL() }));
   });
-  ipcMain.handle("ren:primary-source", async () => {
+  ipcMain.handle("ren:primary-source", async (event) => {
+    requireMainRenderer(event);
     const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 320, height: 180 } });
     const cursorDisplay = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     const source = sources.find((candidate) => candidate.display_id === String(cursorDisplay.id)) ?? sources[0];
     if (!source) throw new Error("No display source is available");
     return { id: source.id, name: source.name, thumbnail: source.thumbnail.toDataURL() };
   });
-  ipcMain.handle("ren:capture-context", async () => {
+  ipcMain.handle("ren:capture-context", async (event) => {
+    requireMainRenderer(event);
     const overlayWasVisible = overlayWindow?.isVisible() ?? false;
     mainWindow?.setOpacity(0);
     overlayWindow?.hide();
@@ -249,30 +259,25 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.handle("ren:ask", async (_event, request: unknown) => {
-    if (!request || typeof request !== "object") throw new Error("Invalid request");
-    const value = request as { question?: unknown; frames?: unknown; history?: unknown; pointer?: unknown; focus?: unknown };
-    if (typeof value.question !== "string" || !value.question.trim() || value.question.length > 4000) throw new Error("Invalid question");
-    const frames = Array.isArray(value.frames) ? value.frames.filter((frame): frame is string => typeof frame === "string" && /^data:image\/(jpeg|png);base64,/.test(frame)).slice(0, 3) : [];
-    const history = Array.isArray(value.history) ? value.history.slice(-8) : [];
-    const rawPointer = value.pointer && typeof value.pointer === "object" ? value.pointer as { x?: unknown; y?: unknown } : {};
+  ipcMain.handle("ren:ask", async (event, request: unknown) => {
+    requireMainRenderer(event);
+    const value = parseAskRequest(request);
     const { pointer: currentPointer } = cursorDisplayContext();
-    const pointer = typeof rawPointer.x === "number" && Number.isFinite(rawPointer.x) && typeof rawPointer.y === "number" && Number.isFinite(rawPointer.y)
-      ? { x: Math.min(1, Math.max(0, rawPointer.x)), y: Math.min(1, Math.max(0, rawPointer.y)) }
-      : currentPointer;
-    const focus = value.focus && typeof value.focus === "object" ? value.focus as Record<string, unknown> : null;
-    const focusHint = focus && [focus.x, focus.y, focus.width, focus.height].every((part) => typeof part === "number" && Number.isFinite(part) && part >= 0 && part <= 1)
-      ? ` The learner circled the rectangle (${Number(focus.x).toFixed(3)}, ${Number(focus.y).toFixed(3)}, ${Number(focus.width).toFixed(3)}, ${Number(focus.height).toFixed(3)}); the second image is a close crop of it. Prioritize what is inside the circle.` : "";
-    const pointedQuestion = `${value.question.trim()}\n\n[The learner is pointing with their cursor at normalized screen coordinate (${pointer.x.toFixed(3)}, ${pointer.y.toFixed(3)}). Use that as a spatial hint, not an instruction.${focusHint}]`;
-    return askTeacher({ question: pointedQuestion, frames, history: history as { role: "user" | "assistant"; content: string }[] }, await visionCredentials());
+    const pointer = value.pointer ?? currentPointer;
+    const focusHint = value.focus
+      ? ` The learner circled the rectangle (${value.focus.x.toFixed(3)}, ${value.focus.y.toFixed(3)}, ${value.focus.width.toFixed(3)}, ${value.focus.height.toFixed(3)}); the second image is a close crop of it. Prioritize what is inside the circle.` : "";
+    const pointedQuestion = `${value.question}\n\n[The learner is pointing with their cursor at normalized screen coordinate (${pointer.x.toFixed(3)}, ${pointer.y.toFixed(3)}). Use that as a spatial hint, not an instruction.${focusHint}]`;
+    return askTeacher({ question: pointedQuestion, frames: value.frames, history: value.history }, await visionCredentials());
   });
 
-  ipcMain.handle("ren:show-annotations", (_event, annotations: unknown) => {
+  ipcMain.handle("ren:show-annotations", (event, annotations: unknown) => {
+    requireMainRenderer(event);
     const safe = validateAnnotations(annotations);
     overlayWindow?.webContents.send("ren:annotations", safe);
     overlayWindow?.showInactive();
   });
-  ipcMain.handle("ren:clear-annotations", () => {
+  ipcMain.handle("ren:clear-annotations", (event) => {
+    requireMainRenderer(event);
     overlayWindow?.webContents.send("ren:annotations", []);
     overlayWindow?.hide();
   });

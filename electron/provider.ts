@@ -102,6 +102,7 @@ export async function askTeacher(request: AskRequest, credentials: VisionCredent
   const history = request.history.slice(-8).map((turn) => ({ role: turn.role, content: turn.content }));
   const response = await fetch(`${base}/chat/completions`, {
     method: "POST",
+    signal: AbortSignal.timeout(45_000),
     headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
       model,
@@ -113,6 +114,12 @@ export async function askTeacher(request: AskRequest, credentials: VisionCredent
         { role: "user", content: [{ type: "text", text: request.question }, ...visualContent] },
       ],
     }),
+  }).catch((error: unknown) => {
+    const name = error && typeof error === "object" && "name" in error ? error.name : null;
+    if (name === "TimeoutError" || name === "AbortError") {
+      throw new Error("The vision provider took too long to respond. Try again.");
+    }
+    throw error;
   });
   if (!response.ok) throw new Error(`Vision provider returned ${response.status}`);
   const payload = await response.json() as { choices?: { message?: { content?: string } }[] };
