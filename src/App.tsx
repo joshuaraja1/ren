@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import type { AmbientStatus, AskResponse, ConversationTurn, ScreenSource } from "./contracts";
+import type { AmbientStatus, AskResponse, ConversationTurn, ScreenContext, ScreenSource } from "./contracts";
 
 type VoiceState = "idle" | "listening" | "processing" | "responding";
 type Message = ConversationTurn & { id: string; provider?: AskResponse["provider"] };
@@ -38,6 +38,7 @@ export function App() {
   const suppressSpeechUntilRef = useRef(0);
   const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesRef = useRef<Message[]>([]);
+  const questionRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => { messagesRef.current = messages; }, [messages]);
   useEffect(() => () => { recognitionRef.current?.stop(); }, []);
@@ -56,13 +57,13 @@ export function App() {
     const browserWindow = window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
     const Recognition = browserWindow.SpeechRecognition || browserWindow.webkitSpeechRecognition;
     if (!Recognition) { setError("Wake phrase is unavailable on this system; click Ren or use the text box."); return; }
-    wakeEnabledRef.current = true;
     const recognition = new Recognition();
     if (!("processLocally" in recognition)) {
       setError("Local wake-word recognition is unavailable here. Click Ren to talk; room audio will not be sent to a cloud wake service.");
       return;
     }
     recognition.processLocally = true;
+    wakeEnabledRef.current = true;
     recognition.continuous = true; recognition.interimResults = false; recognition.lang = navigator.language;
     recognition.onresult = (event) => {
       const finals = Array.from(event.results).filter((result) => result.isFinal).map((result) => result[0].transcript.trim()).filter(Boolean);
@@ -126,7 +127,7 @@ export function App() {
   }
 
   async function captureBurst() {
-    return window.ren ? window.ren.captureContext() : [];
+    return window.ren ? window.ren.captureContext() : { frames: [], pointer: { x: .5, y: .5 } } satisfies ScreenContext;
   }
 
   async function askQuestion(rawQuestion: string) {
@@ -135,7 +136,7 @@ export function App() {
     setMessages((current) => [...current, { id: crypto.randomUUID(), role: "user", content: clean }]);
     try {
       const history = messagesRef.current.slice(-8).map(({ role, content }) => ({ role, content }));
-      const response = window.ren ? await window.ren.ask({ question: clean, frames: await captureBurst(), history }) : { answer: "I can see the interaction working in preview mode. The packaged desktop app will use your current screen and cursor as context.", annotations: [], provider: "demo" as const };
+      const response = window.ren ? await (async () => { const context = await captureBurst(); return window.ren!.ask({ question: clean, ...context, history }); })() : { answer: "I can see the interaction working in preview mode. The packaged desktop app will use your current screen and cursor as context.", annotations: [], provider: "demo" as const };
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: response.answer, provider: response.provider }]);
       if (response.annotations.length) await window.ren?.showAnnotations(response.annotations);
       setVoiceState("responding"); suppressSpeechUntilRef.current = Date.now() + Math.min(12_000, response.answer.length * 45);
@@ -154,7 +155,7 @@ export function App() {
       <div className="ambient-status"><span className="privacy-lock" aria-hidden="true">●</span><span>Looks only when you ask</span><em>·</em><span className="display-name">{source?.name ?? "connecting to display"}</span><span className="wake-chip">Say “Hey Ren”</span></div>
       <section className="ambient-conversation" aria-live="polite">{messages.length === 0 && <div className="empty-conversation"><div className="cursor-cue"><Spark /><span /></div><p>Point at anything on your screen</p><strong>“Hey Ren, explain this.”</strong><small>I’ll look, talk it through, and draw when it helps.</small></div>}{messages.map((message) => <article key={message.id} className={message.role}><span>{message.role === "assistant" ? "REN" : "YOU"}</span><p>{message.content}</p></article>)}</section>
       {error && <div className="ambient-error" role="alert">{error}</div>}
-      <form className="ambient-composer" onSubmit={submit}><button type="button" className={`listen-button state-${voiceState}`} onClick={() => { void setExpanded(true); keepAwake(); setVoiceState("listening"); }} aria-label="Start listening"><MicGlyph /></button><textarea aria-label="Ask Ren" value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askQuestion(question); } }} placeholder="Ask about what you’re pointing at…" rows={1} /><button type="submit" className="ask-button" disabled={!question.trim() || voiceState === "processing"} aria-label="Send question">↑</button></form>
+      <form className="ambient-composer" onSubmit={submit}><button type="button" className={`listen-button state-${voiceState}`} onClick={() => { if (!recognitionRef.current) { setError("Local speech recognition is unavailable. Type your question here."); questionRef.current?.focus(); return; } keepAwake(); try { recognitionRef.current.start(); setVoiceState("listening"); } catch { setError("Speech recognition could not start. Type your question here."); questionRef.current?.focus(); } }} aria-label="Start listening"><MicGlyph /></button><textarea ref={questionRef} aria-label="Ask Ren" value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askQuestion(question); } }} placeholder="Ask about what you’re pointing at…" rows={1} /><button type="submit" className="ask-button" disabled={!question.trim() || voiceState === "processing"} aria-label="Send question">↑</button></form>
       <footer><span><i aria-hidden="true" /> Cursor-aware</span><button onClick={() => void window.ren?.clearAnnotations()}>Clear drawings</button></footer>
     </>}
   </main>;

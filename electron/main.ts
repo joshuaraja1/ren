@@ -56,6 +56,18 @@ function createOverlayWindow() {
   else void overlayWindow.loadFile(join(currentDirectory, "../dist/overlay.html"));
 }
 
+function cursorDisplayContext() {
+  const cursor = screen.getCursorScreenPoint();
+  const display = screen.getDisplayNearestPoint(cursor);
+  return {
+    display,
+    pointer: {
+      x: Math.min(1, Math.max(0, (cursor.x - display.bounds.x) / display.bounds.width)),
+      y: Math.min(1, Math.max(0, (cursor.y - display.bounds.y) / display.bounds.height)),
+    },
+  };
+}
+
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     ...expandedSize,
@@ -136,17 +148,19 @@ app.whenReady().then(() => {
     overlayWindow?.hide();
     await new Promise((resolve) => setTimeout(resolve, 90));
     try {
+      const { display, pointer } = cursorDisplayContext();
       const frames: string[] = [];
       for (let index = 0; index < 3; index += 1) {
-        const cursorDisplay = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-        const aspectRatio = cursorDisplay.size.width / cursorDisplay.size.height;
+        const aspectRatio = display.size.width / display.size.height;
         const thumbnailSize = aspectRatio >= 1 ? { width: 1600, height: Math.round(1600 / aspectRatio) } : { width: Math.round(1200 * aspectRatio), height: 1200 };
         const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize });
-        const source = sources.find((candidate) => candidate.display_id === String(cursorDisplay.id)) ?? sources[0];
+        const source = sources.find((candidate) => candidate.display_id === String(display.id));
         if (source && !source.thumbnail.isEmpty()) frames.push(source.thumbnail.toDataURL());
         if (index < 2) await new Promise((resolve) => setTimeout(resolve, 100));
       }
-      return frames;
+      if (!frames.length) throw new Error("The display under your cursor could not be captured");
+      overlayWindow?.setBounds(display.bounds);
+      return { frames, pointer };
     } finally {
       mainWindow?.setOpacity(1);
       if (overlayWasVisible) overlayWindow?.showInactive();
@@ -155,13 +169,15 @@ app.whenReady().then(() => {
 
   ipcMain.handle("ren:ask", async (_event, request: unknown) => {
     if (!request || typeof request !== "object") throw new Error("Invalid request");
-    const value = request as { question?: unknown; frames?: unknown; history?: unknown };
+    const value = request as { question?: unknown; frames?: unknown; history?: unknown; pointer?: unknown };
     if (typeof value.question !== "string" || !value.question.trim() || value.question.length > 4000) throw new Error("Invalid question");
     const frames = Array.isArray(value.frames) ? value.frames.filter((frame): frame is string => typeof frame === "string" && /^data:image\/(jpeg|png);base64,/.test(frame)).slice(0, 3) : [];
     const history = Array.isArray(value.history) ? value.history.slice(-8) : [];
-    const cursor = screen.getCursorScreenPoint();
-    const bounds = screen.getPrimaryDisplay().bounds;
-    const pointer = { x: Math.min(1, Math.max(0, (cursor.x - bounds.x) / bounds.width)), y: Math.min(1, Math.max(0, (cursor.y - bounds.y) / bounds.height)) };
+    const rawPointer = value.pointer && typeof value.pointer === "object" ? value.pointer as { x?: unknown; y?: unknown } : {};
+    const { pointer: currentPointer } = cursorDisplayContext();
+    const pointer = typeof rawPointer.x === "number" && Number.isFinite(rawPointer.x) && typeof rawPointer.y === "number" && Number.isFinite(rawPointer.y)
+      ? { x: Math.min(1, Math.max(0, rawPointer.x)), y: Math.min(1, Math.max(0, rawPointer.y)) }
+      : currentPointer;
     const pointedQuestion = `${value.question.trim()}\n\n[The learner is pointing with their cursor at normalized screen coordinate (${pointer.x.toFixed(3)}, ${pointer.y.toFixed(3)}). Use that as a spatial hint, not an instruction.]`;
     return askTeacher({ question: pointedQuestion, frames, history: history as { role: "user" | "assistant"; content: string }[] });
   });
