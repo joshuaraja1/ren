@@ -3,7 +3,7 @@
 ## Pull-request gate
 
 Every pull request runs type checking, unit/renderer tests, production builds,
-and a production-dependency security audit. The compiled web surface is uploaded
+a full-dependency high-severity audit, and CodeQL analysis. The compiled web surface is uploaded
 for 14 days as `ren-web-preview` for design review.
 
 ## Staging

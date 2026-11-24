@@ -8,6 +8,10 @@ Thank you for helping build a learning tool people can trust.
 4. Run `npm run check` before requesting review.
 5. Explain privacy, accessibility, and platform effects in the PR body.
 
+See [Engineering lifecycle](docs/ENGINEERING_LIFECYCLE.md) for review, merge,
+staging, and release gates. Security-sensitive PRs need focused trust-boundary
+review before they are merged.
+
 Ren follows conventional commits. By participating, you agree to the project
 code of conduct.
 

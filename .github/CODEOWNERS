@@ -1,0 +1,5 @@
+* @joshuaraja1
+
+# Route external contributions touching sensitive boundaries to the owner.
+/electron/ @joshuaraja1
+/.github/ @joshuaraja1
