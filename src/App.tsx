@@ -39,6 +39,7 @@ export function App() {
   const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesRef = useRef<Message[]>([]);
   const questionRef = useRef<HTMLTextAreaElement | null>(null);
+  const nativeWakeRef = useRef(false);
 
   useEffect(() => { messagesRef.current = messages; }, [messages]);
   useEffect(() => () => { recognitionRef.current?.stop(); }, []);
@@ -54,6 +55,38 @@ export function App() {
 
   useEffect(() => {
     if (!permission?.ready) return;
+    let disposed = false;
+    let media: MediaStream | null = null;
+    let context: AudioContext | null = null;
+    let processor: ScriptProcessorNode | null = null;
+    void (async () => {
+      if (window.ren && await window.ren.wakeAvailable()) {
+        try {
+          media = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+          if (disposed) { media.getTracks().forEach((track) => track.stop()); return; }
+          context = new AudioContext();
+          if (!await window.ren.wakeStart(context.sampleRate)) throw new Error("Local wake engine could not start");
+          nativeWakeRef.current = true;
+          const source = context.createMediaStreamSource(media);
+          processor = context.createScriptProcessor(2048, 1, 1);
+          let pending = false;
+          processor.onaudioprocess = (event) => {
+            if (pending || disposed || Date.now() < suppressSpeechUntilRef.current) return;
+            pending = true;
+            void window.ren!.wakeFeed(Array.from(event.inputBuffer.getChannelData(0))).then((woke) => {
+              if (woke && !disposed) handleAmbientTranscript("Hey Ren");
+            }).catch(() => setError("Local wake engine stopped. Click Ren to ask.")).finally(() => { pending = false; });
+          };
+          source.connect(processor);
+          processor.connect(context.destination);
+          return;
+        } catch {
+          media?.getTracks().forEach((track) => track.stop());
+          void context?.close();
+          await window.ren.wakeStop();
+        }
+      }
+      if (disposed) return;
     const browserWindow = window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
     const Recognition = browserWindow.SpeechRecognition || browserWindow.webkitSpeechRecognition;
     if (!Recognition) { setError("Wake phrase is unavailable on this system; click Ren or use the text box."); return; }
@@ -77,7 +110,17 @@ export function App() {
     recognition.onerror = () => setVoiceState("idle");
     recognitionRef.current = recognition;
     try { recognition.start(); } catch { /* permission flow will retry on remount */ }
-    return () => { wakeEnabledRef.current = false; recognition.stop(); };
+    })();
+    return () => {
+      disposed = true;
+      nativeWakeRef.current = false;
+      wakeEnabledRef.current = false;
+      recognitionRef.current?.stop();
+      processor?.disconnect();
+      media?.getTracks().forEach((track) => track.stop());
+      void context?.close();
+      void window.ren?.wakeStop();
+    };
   }, [permission?.ready]);
 
   async function setExpanded(value: boolean) {
@@ -113,7 +156,7 @@ export function App() {
     suppressSpeechUntilRef.current = Date.now() + 2_500;
     speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.onend = () => setVoiceState("listening");
+    utterance.onend = () => setVoiceState(nativeWakeRef.current ? "idle" : "listening");
     speechSynthesis.speak(utterance);
   }
 
@@ -123,7 +166,7 @@ export function App() {
     if (!wakeMatch && !alreadyAwake) return;
     void setExpanded(true); keepAwake(); setVoiceState("listening");
     const remainder = wakeMatch ? transcript.slice((wakeMatch.index ?? 0) + wakeMatch[0].length).replace(/^[,.:;\s-]+/, "") : transcript;
-    if (remainder) void askQuestion(remainder); else greet();
+    if (remainder) void askQuestion(remainder); else greet(nativeWakeRef.current ? "Hey, I'm here. Type your question about what you're pointing at." : undefined);
   }
 
   async function captureBurst() {
