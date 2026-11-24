@@ -70,6 +70,9 @@
     "mac": {
       "category": "public.app-category.education",
       "icon": "build/icon.icns",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Ren listens locally for Hey Ren and captures your question only when invited."
+      },
       "target": [
         "dmg",
         "zip"
