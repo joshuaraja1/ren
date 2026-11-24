@@ -48,6 +48,10 @@ export type RenBridge = {
   setExpanded(expanded: boolean): Promise<void>;
   setCaptureHidden(hidden: boolean): Promise<void>;
   captureContext(): Promise<ScreenContext>;
+  wakeAvailable(): Promise<boolean>;
+  wakeStart(sampleRate: number): Promise<boolean>;
+  wakeFeed(samples: number[]): Promise<boolean>;
+  wakeStop(): Promise<void>;
   ask(request: AskRequest): Promise<AskResponse>;
   showAnnotations(annotations: Annotation[]): Promise<void>;
   clearAnnotations(): Promise<void>;

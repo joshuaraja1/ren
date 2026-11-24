@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, writeFileSync } from "node:fs";
 import { askTeacher, validateAnnotations } from "./provider.js";
+import { feedWake, startWake, stopWake, wakeAvailable } from "./wake.js";
+import { normalizeCursor } from "./display-geometry.js";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 let mainWindow: BrowserWindow | null = null;
@@ -61,10 +63,7 @@ function cursorDisplayContext() {
   const display = screen.getDisplayNearestPoint(cursor);
   return {
     display,
-    pointer: {
-      x: Math.min(1, Math.max(0, (cursor.x - display.bounds.x) / display.bounds.width)),
-      y: Math.min(1, Math.max(0, (cursor.y - display.bounds.y) / display.bounds.height)),
-    },
+    pointer: normalizeCursor(cursor, display.bounds),
   };
 }
 
@@ -115,6 +114,10 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle("ren:permission-status", permissionStatus);
+  ipcMain.handle("ren:wake-available", () => wakeAvailable());
+  ipcMain.handle("ren:wake-start", (event, sampleRate: unknown) => event.sender === mainWindow?.webContents && typeof sampleRate === "number" && startWake(sampleRate));
+  ipcMain.handle("ren:wake-feed", (event, samples: unknown) => event.sender === mainWindow?.webContents && feedWake(samples));
+  ipcMain.handle("ren:wake-stop", (event) => { if (event.sender === mainWindow?.webContents) stopWake(); });
   ipcMain.handle("ren:request-permissions", async () => {
     if (process.platform === "darwin") await systemPreferences.askForMediaAccess("microphone");
     await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 1, height: 1 } });

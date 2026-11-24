@@ -29,7 +29,8 @@
   "dependencies": {
     "dotenv": "^18.0.10",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "sherpa-onnx-node": "^2.0.3"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
@@ -52,6 +53,8 @@
     "appId": "ai.ren.teacher",
     "productName": "Ren",
     "asar": true,
+    "asarUnpack": ["node_modules/sherpa-onnx-*/**/*"],
+    "extraResources": [{ "from": "models/ren-kws", "to": "ren-kws" }],
     "directories": {
       "output": "release"
     },
@@ -59,6 +62,8 @@
       "dist/**/*",
       "dist-electron/**/*",
       "node_modules/dotenv/**/*",
+      "node_modules/sherpa-onnx-node/**/*",
+      "node_modules/sherpa-onnx-*/**/*",
       "package.json"
     ],
     "artifactName": "Ren-${version}-${os}-${arch}.${ext}",
