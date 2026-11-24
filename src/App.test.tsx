@@ -8,7 +8,7 @@ describe("Ren ambient shell", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /how can i help/i })).toBeVisible();
-    expect(screen.getByText(/say “hey ren”/i)).toBeVisible();
+    expect(screen.getByText(/hey ren, explain this/i)).toBeVisible();
     expect(screen.getByText(/point at anything on your screen/i)).toBeVisible();
     expect(screen.getByRole("textbox", { name: /ask ren/i })).toBeVisible();
   });
@@ -30,6 +30,14 @@ describe("Ren ambient shell", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(/local speech recognition is unavailable/i);
     expect(input).toHaveFocus();
     expect(screen.getByRole("heading", { name: /how can i help/i })).toBeVisible();
+  });
+
+  it("shows where screen images will go before accepting a provider key", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /connect ai/i }));
+    expect(screen.getByText(/sends your question and a screen snapshot to/i)).toBeVisible();
+    expect(screen.getByRole("textbox", { name: /provider url/i })).toHaveValue("https://api.openai.com/v1");
+    expect(screen.getByLabelText(/api key/i)).toHaveAttribute("type", "password");
   });
 
   it("asks about the circled region without requiring a typed prompt", async () => {

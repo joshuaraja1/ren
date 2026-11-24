@@ -39,12 +39,18 @@ export type AskResponse = {
   provider: "demo" | "vision";
 };
 
+export type VisionStatus = { mode: "connected" | "environment" | "demo"; model: string; host: string; baseUrl: string };
+export type VisionSettingsInput = { apiKey: string; model: string; baseUrl: string };
+
 export type RenBridge = {
   platform: string;
   version: string;
   listSources(): Promise<ScreenSource[]>;
   primarySource(): Promise<ScreenSource>;
   permissionStatus(): Promise<AmbientStatus>;
+  visionStatus(): Promise<VisionStatus>;
+  saveVisionSettings(value: VisionSettingsInput): Promise<VisionStatus>;
+  clearVisionSettings(): Promise<VisionStatus>;
   enableCircleInput(): Promise<AmbientStatus>;
   requestPermissions(): Promise<AmbientStatus>;
   openPermissionSettings(): Promise<void>;

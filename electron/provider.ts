@@ -87,12 +87,10 @@ function demoAnswer(question: string): ProviderResponse {
   };
 }
 
-export async function askTeacher(request: AskRequest): Promise<ProviderResponse> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  const model = process.env.REN_MODEL;
-  if (!apiKey || !model) return demoAnswer(request.question);
+export async function askTeacher(request: AskRequest, credentials: VisionCredentials | null): Promise<ProviderResponse> {
+  if (!credentials) return demoAnswer(request.question);
 
-  const base = (process.env.REN_API_BASE || "https://api.openai.com/v1").replace(/\/$/, "");
+  const { apiKey, model, baseUrl: base } = credentials;
   const visualContent = request.frames.slice(0, 3).map((url) => ({ type: "image_url", image_url: { url, detail: "high" } }));
   const history = request.history.slice(-8).map((turn) => ({ role: turn.role, content: turn.content }));
   const response = await fetch(`${base}/chat/completions`, {
@@ -118,4 +116,6 @@ export async function askTeacher(request: AskRequest): Promise<ProviderResponse>
   if (!answer) throw new Error("Vision provider answer was invalid");
   return { answer, annotations: validateAnnotations(parsed.annotations), provider: "vision" };
 }
+
+import type { VisionCredentials } from "./vision-settings.js";
 

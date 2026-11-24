@@ -75,8 +75,9 @@ and act, not silently take control of their computer.
 
 ### R5. Safety, privacy, and trust
 
-- API keys are read from the OS process environment in v0.1 and never sent to
-  the renderer or written to logs.
+- An API key can be entered once in Ren or supplied through the process
+  environment for development. Saved keys use OS-backed encryption and are
+  never returned to the renderer or written to logs.
 - Requests disclose whether a frame will leave the device.
 - Captured frames are held in memory and discarded after the request.
 - Logs redact image data, authorization headers, and common credential shapes.

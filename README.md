@@ -29,10 +29,16 @@ npm install
 npm run dev
 ```
 
-To connect a vision model, copy `.env.example` to `.env` and provide
-`OPENAI_API_KEY` plus `REN_MODEL`. Ren uses the OpenAI-compatible chat
-completions contract and never exposes the key to the renderer. Environment
-files are ignored by git.
+To get screen-specific answers in the desktop app, open **Connect AI** in Ren
+and enter an HTTPS provider URL, a vision-capable model name, and its API key
+once. Ren stores the key encrypted with the operating system's secure storage,
+and sends screenshots to that provider only when you ask. The provider may
+charge for requests. On Linux, saving a key requires a system keyring.
+
+For development, `.env.example` still supports `OPENAI_API_KEY`, `REN_MODEL`,
+and an optional `REN_API_BASE`. Ren uses the OpenAI-compatible chat completions
+contract. Environment files are ignored by git. Without a configured provider,
+Ren shows an explicit demo notice and cannot inspect screen contents.
 
 ```bash
 npm run check
