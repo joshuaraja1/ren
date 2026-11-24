@@ -18,7 +18,7 @@ type Resampler = { resample(samples: Float32Array): Float32Array; flush(samples:
 const require = createRequire(import.meta.url);
 const maxSamples = 16_000 * 30;
 let recognizer: Recognizer | null = null;
-let chunks: Float32Array[] | null = null;
+let stream: Stream | null = null;
 let sampleCount = 0;
 let resampler: Resampler | null = null;
 
@@ -36,40 +36,7 @@ export function startSpeech(sampleRate: number) {
   try {
     const sherpa = require("sherpa-onnx-node");
     resampler = sampleRate === 16_000 ? null : new sherpa.LinearResampler(sampleRate, 16_000) as Resampler;
-    chunks = [];
-    sampleCount = 0;
-    return true;
-  } catch {
-    stopSpeech();
-    return false;
-  }
-}
-
-export function feedSpeech(samples: unknown) {
-  if (!chunks || !Array.isArray(samples) || samples.length === 0 || samples.length > 8192) return false;
-  if (!samples.every((value) => typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= 1)) return false;
-  const input = Float32Array.from(samples);
-  const audio = resampler ? resampler.resample(input) : input;
-  if (sampleCount + audio.length > maxSamples) return false;
-  chunks.push(audio);
-  sampleCount += audio.length;
-  return true;
-}
-
-export function stopSpeech() {
-  chunks = null;
-  sampleCount = 0;
-  resampler = null;
-}
-
-export function finishSpeech() {
-  if (!chunks) return "";
-  try {
-    const tail = resampler?.flush(new Float32Array(0));
-    if (tail?.length) { chunks.push(tail); sampleCount += tail.length; }
-    if (sampleCount < 16_000 * 0.35) return "";
     if (!recognizer) {
-      const sherpa = require("sherpa-onnx-node");
       const path = modelPath();
       recognizer = new sherpa.OnlineRecognizer({
         featConfig: { sampleRate: 16_000, featureDim: 80 },
@@ -80,11 +47,42 @@ export function finishSpeech() {
         decodingMethod: "greedy_search",
       }) as Recognizer;
     }
-    const stream = recognizer.createStream();
-    for (const chunk of chunks) {
-      stream.acceptWaveform({ samples: chunk, sampleRate: 16_000 });
-      while (recognizer.isReady(stream)) recognizer.decode(stream);
+    stream = recognizer!.createStream();
+    sampleCount = 0;
+    return true;
+  } catch {
+    stopSpeech();
+    return false;
+  }
+}
+
+export function feedSpeech(samples: unknown) {
+  if (!stream || !recognizer || !Array.isArray(samples) || samples.length === 0 || samples.length > 8192) return false;
+  if (!samples.every((value) => typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= 1)) return false;
+  const input = Float32Array.from(samples);
+  const audio = resampler ? resampler.resample(input) : input;
+  if (sampleCount + audio.length > maxSamples) return false;
+  stream.acceptWaveform({ samples: audio, sampleRate: 16_000 });
+  while (recognizer.isReady(stream)) recognizer.decode(stream);
+  sampleCount += audio.length;
+  return true;
+}
+
+export function stopSpeech() {
+  stream = null;
+  sampleCount = 0;
+  resampler = null;
+}
+
+export function finishSpeech() {
+  if (!stream || !recognizer) return "";
+  try {
+    const tail = resampler?.flush(new Float32Array(0));
+    if (tail?.length) {
+      stream.acceptWaveform({ samples: tail, sampleRate: 16_000 });
+      sampleCount += tail.length;
     }
+    if (sampleCount < 16_000 * 0.35) return "";
     stream.inputFinished();
     while (recognizer.isReady(stream)) recognizer.decode(stream);
     return recognizer.getResult(stream).text.trim();
