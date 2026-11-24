@@ -29,6 +29,9 @@ files are ignored by git.
 npm run check
 ```
 
+Merges to `main` produce unsigned macOS, Windows, and Linux staging artifacts.
+See [the release guide](docs/RELEASE.md) for the production signing gates.
+
 ## Current boundary
 
 Ren 0.1 captures a three-frame visual burst only when a question is submitted.
