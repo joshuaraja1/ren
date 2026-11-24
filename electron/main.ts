@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { existsSync, writeFileSync } from "node:fs";
 import { askTeacher, validateAnnotations } from "./provider.js";
 import { feedWake, startWake, stopWake, wakeAvailable } from "./wake.js";
+import { feedSpeech, finishSpeech, speechAvailable, startSpeech, stopSpeech } from "./speech.js";
 import { normalizeCursor } from "./display-geometry.js";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
@@ -118,6 +119,11 @@ app.whenReady().then(() => {
   ipcMain.handle("ren:wake-start", (event, sampleRate: unknown) => event.sender === mainWindow?.webContents && typeof sampleRate === "number" && startWake(sampleRate));
   ipcMain.handle("ren:wake-feed", (event, samples: unknown) => event.sender === mainWindow?.webContents && feedWake(samples));
   ipcMain.handle("ren:wake-stop", (event) => { if (event.sender === mainWindow?.webContents) stopWake(); });
+  ipcMain.handle("ren:speech-available", (event) => event.sender === mainWindow?.webContents && speechAvailable());
+  ipcMain.handle("ren:speech-start", (event, sampleRate: unknown) => event.sender === mainWindow?.webContents && typeof sampleRate === "number" && startSpeech(sampleRate));
+  ipcMain.handle("ren:speech-feed", (event, samples: unknown) => event.sender === mainWindow?.webContents && feedSpeech(samples));
+  ipcMain.handle("ren:speech-finish", (event) => event.sender === mainWindow?.webContents ? finishSpeech() : "");
+  ipcMain.handle("ren:speech-stop", (event) => { if (event.sender === mainWindow?.webContents) stopSpeech(); });
   ipcMain.handle("ren:request-permissions", async () => {
     if (process.platform === "darwin") await systemPreferences.askForMediaAccess("microphone");
     await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 1, height: 1 } });

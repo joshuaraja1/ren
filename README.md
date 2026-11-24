@@ -6,9 +6,11 @@ visual guidance directly over your work.
 
 The first desktop prototype lives in a small top-edge overlay. After one-time OS
 permission onboarding, point with the cursor and say “Hey Ren,” or click the Ren
-pebble. The bundled wake model recognizes “Hey Ren” on-device. Ren captures the cursor's
-display only when a question is asked, infers the subject automatically, and can
-place validated teaching visuals in a click-through overlay. A deterministic
+pebble. The bundled wake model recognizes “Hey Ren” on-device. Ren then
+transcribes an English question locally, or accepts a typed question. Ren
+captures the cursor's display only when a question is asked, infers the subject
+automatically, and can place validated teaching visuals in a click-through
+overlay. A deterministic
 demo teacher keeps the interaction testable without credentials.
 
 ## Run locally
@@ -37,9 +39,10 @@ See [the release guide](docs/RELEASE.md) for the production signing gates.
 Ren 0.1 captures a three-frame visual burst only when a question is submitted.
 It does not continuously record the screen, click, type, or control other
 applications. Wake recognition runs on-device and sends no ambient audio to the
-answer provider. The wake phrase opens Ren; question dictation still needs a
-separate local speech-to-text milestone, so typing is the reliable path after
-waking. If the wake engine cannot start, the pebble stays clickable. System-audio
+answer provider. After the wake phrase, Ren listens for a question and submits
+it after a pause; the mic button can finish it sooner. Local dictation currently
+supports English, and typing remains available if it mishears. If the wake
+engine cannot start, the pebble stays clickable. System-audio
 transcript and richer temporal video understanding remain on the roadmap.
 
 ## License

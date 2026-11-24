@@ -54,7 +54,7 @@
     "productName": "Ren",
     "asar": true,
     "asarUnpack": ["node_modules/sherpa-onnx-*/**/*"],
-    "extraResources": [{ "from": "models/ren-kws", "to": "ren-kws" }],
+    "extraResources": [{ "from": "models/ren-kws", "to": "ren-kws" }, { "from": "models/ren-asr", "to": "ren-asr" }],
     "directories": {
       "output": "release"
     },
