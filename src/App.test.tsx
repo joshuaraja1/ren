@@ -1,22 +1,22 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { App } from "./App";
 
-describe("Ren app shell", () => {
-  it("presents the zero-configuration learning flow", () => {
+describe("Ren ambient shell", () => {
+  it("presents a zero-configuration wake and point flow", async () => {
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: /learn right where you are/i })).toBeVisible();
-    expect(screen.getByRole("button", { name: /choose a screen/i })).toBeEnabled();
-    expect(screen.getByLabelText(/ask about your screen/i)).toBeVisible();
-    expect(screen.getByText(/no subject setup required/i)).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /how can i help/i })).toBeVisible();
+    expect(screen.getByText(/say “hey ren”/i)).toBeVisible();
+    expect(screen.getByText(/point with your cursor/i)).toBeVisible();
+    expect(screen.getByLabelText(/ask ren/i)).toBeVisible();
   });
 
-  it("explains the private on-demand capture before sharing", async () => {
+  it("supports the click and type fallback without a desktop bridge", async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /choose a screen/i }));
+    const input = await screen.findByLabelText(/ask ren/i);
+    fireEvent.change(input, { target: { value: "Explain the part I am pointing at" } });
+    fireEvent.click(screen.getByRole("button", { name: "↑" }));
 
-    expect(await screen.findByRole("dialog", { name: /choose a screen or window/i })).toBeVisible();
-    expect(screen.getByText(/only captures a short visual burst/i)).toBeVisible();
-    expect(screen.getByRole("button", { name: /browser preview/i })).toBeEnabled();
+    expect(await screen.findByText(/packaged desktop app will use your current screen/i)).toBeVisible();
   });
 });

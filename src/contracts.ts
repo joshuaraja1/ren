@@ -22,6 +22,12 @@ export type AskRequest = {
   history: ConversationTurn[];
 };
 
+export type AmbientStatus = {
+  ready: boolean;
+  microphone: string;
+  screen: string;
+};
+
 export type AskResponse = {
   answer: string;
   annotations: Annotation[];
@@ -32,6 +38,13 @@ export type RenBridge = {
   platform: string;
   version: string;
   listSources(): Promise<ScreenSource[]>;
+  primarySource(): Promise<ScreenSource>;
+  permissionStatus(): Promise<AmbientStatus>;
+  requestPermissions(): Promise<AmbientStatus>;
+  openPermissionSettings(): Promise<void>;
+  setExpanded(expanded: boolean): Promise<void>;
+  setCaptureHidden(hidden: boolean): Promise<void>;
+  captureContext(): Promise<string[]>;
   ask(request: AskRequest): Promise<AskResponse>;
   showAnnotations(annotations: Annotation[]): Promise<void>;
   clearAnnotations(): Promise<void>;

@@ -1,147 +1,154 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import type { Annotation, AskResponse, ConversationTurn, ScreenSource } from "./contracts";
+import type { AmbientStatus, AskResponse, ConversationTurn, ScreenSource } from "./contracts";
 
-const Spark = () => <svg aria-hidden="true" viewBox="0 0 32 32" className="spark"><path d="M16 2c.8 8.6 5.4 13.2 14 14-8.6.8-13.2 5.4-14 14-.8-8.6-5.4-13.2-14-14 8.6-.8 13.2-5.4 14-14Z" /></svg>;
-const ScreenGlyph = () => <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></svg>;
-const MicGlyph = () => <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="8" y="3" width="8" height="12" rx="4" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8" /></svg>;
-
+type VoiceState = "idle" | "listening" | "processing" | "responding";
 type Message = ConversationTurn & { id: string; provider?: AskResponse["provider"] };
+type RecognitionResult = { 0: { transcript: string }; isFinal: boolean };
 type SpeechRecognitionLike = {
   continuous: boolean; interimResults: boolean; lang: string;
+  processLocally?: boolean;
   start(): void; stop(): void;
-  onresult: ((event: { results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => void) | null;
+  onresult: ((event: { results: ArrayLike<RecognitionResult> }) => void) | null;
   onend: (() => void) | null;
+  onerror: (() => void) | null;
 };
 
-const starter: Message = { id: "welcome", role: "assistant", content: "I’m ready when you are. Share what you’re looking at, then ask me about anything on screen." };
-
-function InlineAnnotations({ annotations }: { annotations: Annotation[] }) {
-  return <svg className="inline-annotations" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
-    <defs><marker id="inline-arrow" markerWidth="12" markerHeight="12" refX="9" refY="4" orient="auto"><path d="M0,0 L0,8 L10,4 z" /></marker></defs>
-    {annotations.map((item) => {
-      const color = item.color || "#e7653a";
-      if (item.type === "arrow") return <line key={item.id} x1={item.from.x * 1000} y1={item.from.y * 1000} x2={item.to.x * 1000} y2={item.to.y * 1000} markerEnd="url(#inline-arrow)" style={{ color }} />;
-      if (item.type === "rectangle") return <rect key={item.id} x={item.at.x * 1000} y={item.at.y * 1000} width={item.width * 1000} height={item.height * 1000} rx="18" style={{ color }} />;
-      if (item.type === "path") return <polyline key={item.id} points={item.points.map((p) => `${p.x * 1000},${p.y * 1000}`).join(" ")} style={{ color }} />;
-      return null;
-    })}
-  </svg>;
-}
+const readyStatus: AmbientStatus = { ready: true, microphone: "preview", screen: "preview" };
+const Spark = () => <svg aria-hidden="true" viewBox="0 0 32 32" className="spark"><path d="M16 2c.8 8.6 5.4 13.2 14 14-8.6.8-13.2 5.4-14 14-.8-8.6-5.4-13.2-14-14 8.6-.8 13.2-5.4 14-14Z" /></svg>;
+const MicGlyph = () => <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="8" y="3" width="8" height="12" rx="4" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8" /></svg>;
 
 export function App() {
-  const [sources, setSources] = useState<ScreenSource[]>([]);
-  const [showSources, setShowSources] = useState(false);
-  const [selected, setSelected] = useState<ScreenSource | null>(null);
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  const [messages, setMessages] = useState<Message[]>([starter]);
+  const [permission, setPermission] = useState<AmbientStatus | null>(null);
+  const [expanded, setExpandedState] = useState(false);
+  const [source, setSource] = useState<ScreenSource | null>(null);
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const [messages, setMessages] = useState<Message[]>([]);
   const [question, setQuestion] = useState("");
-  const [annotations, setAnnotations] = useState<Annotation[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [listening, setListening] = useState(false);
   const [error, setError] = useState("");
-  const videoRef = useRef<HTMLVideoElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const wakeEnabledRef = useRef(false);
+  const awakeUntilRef = useRef(0);
+  const suppressSpeechUntilRef = useRef(0);
+  const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const messagesRef = useRef<Message[]>([]);
 
-  useEffect(() => () => stream?.getTracks().forEach((track) => track.stop()), [stream]);
-  useEffect(() => { if (videoRef.current && stream) videoRef.current.srcObject = stream; }, [stream]);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  useEffect(() => () => { recognitionRef.current?.stop(); }, []);
 
-  async function openSourcePicker() {
+  useEffect(() => {
+    void (async () => {
+      const status = window.ren ? await window.ren.permissionStatus() : readyStatus;
+      setPermission(status);
+      if (!status.ready || !window.ren) await setExpanded(true);
+      if (status.ready) await startAutomaticCapture();
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!permission?.ready) return;
+    const browserWindow = window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
+    const Recognition = browserWindow.SpeechRecognition || browserWindow.webkitSpeechRecognition;
+    if (!Recognition) { setError("Wake phrase is unavailable on this system; click Ren or use the text box."); return; }
+    wakeEnabledRef.current = true;
+    const recognition = new Recognition();
+    if (!("processLocally" in recognition)) {
+      setError("Local wake-word recognition is unavailable here. Click Ren to talk; room audio will not be sent to a cloud wake service.");
+      return;
+    }
+    recognition.processLocally = true;
+    recognition.continuous = true; recognition.interimResults = false; recognition.lang = navigator.language;
+    recognition.onresult = (event) => {
+      const finals = Array.from(event.results).filter((result) => result.isFinal).map((result) => result[0].transcript.trim()).filter(Boolean);
+      const transcript = finals.at(-1);
+      if (!transcript || Date.now() < suppressSpeechUntilRef.current) return;
+      handleAmbientTranscript(transcript);
+    };
+    recognition.onend = () => {
+      if (wakeEnabledRef.current) window.setTimeout(() => { try { recognition.start(); } catch { /* already running */ } }, 250);
+    };
+    recognition.onerror = () => setVoiceState("idle");
+    recognitionRef.current = recognition;
+    try { recognition.start(); } catch { /* permission flow will retry on remount */ }
+    return () => { wakeEnabledRef.current = false; recognition.stop(); };
+  }, [permission?.ready]);
+
+  async function setExpanded(value: boolean) {
+    setExpandedState(value);
+    await window.ren?.setExpanded(value);
+  }
+
+  async function startAutomaticCapture() {
+    if (!window.ren) { setSource({ id: "preview", name: "current display", thumbnail: "" }); return; }
+    try {
+      setSource(await window.ren.primarySource());
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Ren couldn’t access the current display."); }
+  }
+
+  async function requestOneTimePermissions() {
     setError("");
     try {
-      if (!window.ren) setSources([{ id: "preview", name: "Browser preview", thumbnail: "" }]);
-      else setSources(await window.ren.listSources());
-      setShowSources(true);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Couldn’t list screens. Check screen-recording permission.");
-    }
+      const status = window.ren ? await window.ren.requestPermissions() : readyStatus;
+      setPermission(status);
+      if (status.ready) { await startAutomaticCapture(); greet("All set. From now on, just say “Hey Ren.”"); }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Permissions could not be completed."); }
   }
 
-  async function chooseSource(source: ScreenSource) {
-    setShowSources(false);
-    stream?.getTracks().forEach((track) => track.stop());
-    if (source.id === "preview") { setSelected(source); return; }
-    try {
-      const next = await navigator.mediaDevices.getUserMedia({ audio: false, video: { mandatory: { chromeMediaSource: "desktop", chromeMediaSourceId: source.id, maxFrameRate: 12 } } as MediaTrackConstraints });
-      setSelected(source); setStream(next);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Screen sharing was not allowed."); }
+  function keepAwake() {
+    awakeUntilRef.current = Date.now() + 20_000;
+    if (collapseTimerRef.current) clearTimeout(collapseTimerRef.current);
+    collapseTimerRef.current = setTimeout(() => { if (voiceState === "idle") void setExpanded(false); }, 20_000);
   }
 
-  async function stopSharing() {
-    stream?.getTracks().forEach((track) => track.stop());
-    setStream(null); setSelected(null); setAnnotations([]);
-    await window.ren?.clearAnnotations();
+  function greet(text = "Hey—what’s up? How can I help?") {
+    setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: text }]);
+    setVoiceState("responding"); keepAwake();
+    suppressSpeechUntilRef.current = Date.now() + 2_500;
+    speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.onend = () => setVoiceState("listening");
+    speechSynthesis.speak(utterance);
+  }
+
+  function handleAmbientTranscript(transcript: string) {
+    const wakeMatch = transcript.match(/\b(?:hey\s+(?:ren|run)|ren)\b/i);
+    const alreadyAwake = Date.now() < awakeUntilRef.current;
+    if (!wakeMatch && !alreadyAwake) return;
+    void setExpanded(true); keepAwake(); setVoiceState("listening");
+    const remainder = wakeMatch ? transcript.slice((wakeMatch.index ?? 0) + wakeMatch[0].length).replace(/^[,.:;\s-]+/, "") : transcript;
+    if (remainder) void askQuestion(remainder); else greet();
   }
 
   async function captureBurst() {
-    const video = videoRef.current;
-    if (!video || video.readyState < 2) return [];
-    const canvas = document.createElement("canvas");
-    const scale = Math.min(1, 1600 / video.videoWidth);
-    canvas.width = Math.max(1, Math.round(video.videoWidth * scale)); canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
-    const context = canvas.getContext("2d");
-    if (!context) return [];
-    const frames: string[] = [];
-    for (let index = 0; index < 3; index += 1) {
-      context.drawImage(video, 0, 0, canvas.width, canvas.height); frames.push(canvas.toDataURL("image/jpeg", .82));
-      if (index < 2) await new Promise((resolve) => setTimeout(resolve, 120));
-    }
-    return frames;
+    return window.ren ? window.ren.captureContext() : [];
   }
 
-  async function submit(event?: FormEvent) {
-    event?.preventDefault();
-    const clean = question.trim();
-    if (!clean || busy) return;
-    setQuestion(""); setBusy(true); setError("");
-    const userMessage: Message = { id: crypto.randomUUID(), role: "user", content: clean };
-    setMessages((current) => [...current, userMessage]);
+  async function askQuestion(rawQuestion: string) {
+    const clean = rawQuestion.trim(); if (!clean || voiceState === "processing") return;
+    setQuestion(""); setError(""); setVoiceState("processing"); keepAwake();
+    setMessages((current) => [...current, { id: crypto.randomUUID(), role: "user", content: clean }]);
     try {
-      const request = { question: clean, frames: await captureBurst(), history: messages.filter((message) => message.id !== "welcome").map(({ role, content }) => ({ role, content })) };
-      const response = window.ren ? await window.ren.ask(request) : { answer: "Preview mode is ready. Launch Ren as a desktop app to let me see and teach from your screen.", annotations: [], provider: "demo" as const };
+      const history = messagesRef.current.slice(-8).map(({ role, content }) => ({ role, content }));
+      const response = window.ren ? await window.ren.ask({ question: clean, frames: await captureBurst(), history }) : { answer: "I can see the interaction working in preview mode. The packaged desktop app will use your current screen and cursor as context.", annotations: [], provider: "demo" as const };
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: response.answer, provider: response.provider }]);
-      setAnnotations(response.annotations);
       if (response.annotations.length) await window.ren?.showAnnotations(response.annotations);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Ren couldn’t answer. Try again."); }
-    finally { setBusy(false); }
+      setVoiceState("responding"); suppressSpeechUntilRef.current = Date.now() + Math.min(12_000, response.answer.length * 45);
+      const utterance = new SpeechSynthesisUtterance(response.answer); utterance.onend = () => { setVoiceState("listening"); keepAwake(); }; speechSynthesis.cancel(); speechSynthesis.speak(utterance);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Ren couldn’t answer."); setVoiceState("idle"); }
   }
 
-  function toggleVoice() {
-    if (listening) { recognitionRef.current?.stop(); return; }
-    const browserWindow = window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
-    const Recognition = browserWindow.SpeechRecognition || browserWindow.webkitSpeechRecognition;
-    if (!Recognition) { setError("Voice recognition isn’t available on this system yet. You can still type your question."); return; }
-    const recognition = new Recognition();
-    recognition.continuous = false; recognition.interimResults = true; recognition.lang = navigator.language;
-    recognition.onresult = (event) => setQuestion(Array.from(event.results).map((result) => result[0].transcript).join(""));
-    recognition.onend = () => setListening(false);
-    recognitionRef.current = recognition; recognition.start(); setListening(true);
-  }
+  function submit(event: FormEvent) { event.preventDefault(); void askQuestion(question); }
 
-  function speak(answer: string) { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(answer)); }
+  if (!expanded) return <button className={`ren-pebble state-${voiceState}`} onClick={() => void setExpanded(true)} aria-label="Open Ren"><span className="pebble-mark"><Spark /></span><span>Ren</span><i /></button>;
 
-  return <main className="app-shell">
-    <aside className="rail" aria-label="Ren navigation"><div className="brand-mark"><Spark /><span>ren</span></div><nav><button className="rail-button active" aria-label="Learn now"><Spark /></button><button className="rail-button" aria-label="Past sessions">↺</button></nav><button className="avatar" aria-label="Settings">JR</button></aside>
-    <section className="workspace">
-      <header className="topbar"><div><p className="eyebrow">LIVE LEARNING SPACE</p><h1>Learn right where you are.</h1></div><div className={`privacy-pill ${selected ? "sharing" : ""}`}><span /> {selected ? `Seeing ${selected.name}` : "Private by default"}</div></header>
-      <div className={`stage ${selected ? "is-sharing" : ""}`} aria-label="Shared screen preview">
-        {stream && <video ref={videoRef} className="screen-video" autoPlay muted playsInline />}
-        {selected?.id === "preview" && <div className="preview-placeholder">Desktop preview mode</div>}
-        <InlineAnnotations annotations={annotations} />
-        {!selected && <><div className="stage-grid" /><div className="stage-note note-one">share a window</div><div className="stage-note note-two">ask naturally</div><div className="empty-lesson"><div className="orb"><ScreenGlyph /></div><p className="step-number">01</p><h2>Show Ren what<br />you’re learning.</h2><p>Choose any screen or app. Ren understands the visible context—no subject setup required.</p><button className="primary-button" onClick={openSourcePicker}><ScreenGlyph /> Choose a screen</button></div><div className="annotation-demo" aria-hidden="true"><svg viewBox="0 0 180 100"><path d="M8 82C62 86 85 60 142 22" /><path d="m130 20 16 0-4 15" /></svg><span>Ren draws here</span></div></>}
-        {selected && <div className="sharing-controls"><button onClick={openSourcePicker}>Change screen</button><button onClick={() => void stopSharing()}>Stop sharing</button><button onClick={() => { setAnnotations([]); void window.ren?.clearAnnotations(); }}>Clear drawings</button></div>}
-      </div>
-      {error && <div className="error-banner" role="alert">{error}</div>}
-    </section>
-    <aside className="teacher-panel" aria-label="Conversation with Ren">
-      <div className="teacher-heading"><div className="ren-face"><Spark /></div><div><p>YOUR TEACHER</p><h2>Ask Ren</h2></div><span className="online-dot" title="Ready" /></div>
-      <div className="conversation" aria-live="polite">
-        {messages.map((message) => <div key={message.id} className={`message ${message.role === "assistant" ? "ren-message" : "user-message"}`}><span className="message-label">{message.role === "assistant" ? "REN" : "YOU"}{message.provider === "demo" ? " · DEMO" : ""}</span><p>{message.content}</p>{message.role === "assistant" && message.id !== "welcome" && <button className="speak-button" onClick={() => speak(message.content)} aria-label="Read answer aloud">◖))</button>}</div>)}
-        {messages.length === 1 && <div className="suggestions">{["Explain what’s happening here", "Point out the important part", "Teach me this step by step"].map((prompt) => <button key={prompt} onClick={() => setQuestion(prompt)}>“{prompt}”</button>)}</div>}
-        {busy && <div className="thinking"><i /><i /><i /> Looking closely…</div>}
-      </div>
-      <form className="composer" onSubmit={submit}><label htmlFor="question">Ask about your screen</label><textarea id="question" value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder="What don’t you understand?" rows={3} /><div className="composer-actions"><button type="button" className={`mic-button ${listening ? "listening" : ""}`} onClick={toggleVoice} aria-label={listening ? "Stop listening" : "Hold to talk"}><MicGlyph /></button><span>{listening ? "Listening…" : "Tap to talk"}</span><button type="submit" className="send-button" aria-label="Send question" disabled={!question.trim() || busy}>↑</button></div></form>
-      <p className="panel-footnote">Ren can make mistakes. Think together and verify important work.</p>
-    </aside>
-    {showSources && <div className="source-backdrop" role="presentation" onMouseDown={() => setShowSources(false)}><section className="source-dialog" role="dialog" aria-modal="true" aria-labelledby="source-title" onMouseDown={(event) => event.stopPropagation()}><div><p className="eyebrow">WHAT SHOULD REN SEE?</p><h2 id="source-title">Choose a screen or window</h2><p>Ren only captures a short visual burst when you ask a question.</p></div><div className="source-grid">{sources.map((source) => <button key={source.id} onClick={() => void chooseSource(source)}>{source.thumbnail ? <img src={source.thumbnail} alt="" /> : <div className="source-fallback"><ScreenGlyph /></div>}<span>{source.name}</span></button>)}</div><button className="dialog-close" onClick={() => setShowSources(false)}>Cancel</button></section></div>}
+  return <main className="ambient-panel">
+    <header className="ambient-header"><div className={`companion-orb state-${voiceState}`}><Spark />{voiceState !== "idle" && <div className="voice-bars"><i /><i /><i /></div>}</div><div><p>REN · AMBIENT TEACHER</p><h1>{voiceState === "processing" ? "Looking closely…" : voiceState === "listening" ? "I’m listening." : "How can I help?"}</h1></div><button onClick={() => void setExpanded(false)} aria-label="Collapse Ren">—</button></header>
+
+    {!permission?.ready ? <section className="onboarding-card"><span className="step-kicker">ONE-TIME SETUP</span><h2>Give Ren permission once.</h2><p>Allow microphone and screen recording now. After that, Ren starts quietly with your computer and only captures the screen when you ask a question.</p><div className="permission-row"><span>Microphone</span><b>{permission?.microphone ?? "checking"}</b></div><div className="permission-row"><span>Screen recording</span><b>{permission?.screen ?? "checking"}</b></div><button className="allow-button" onClick={() => void requestOneTimePermissions()}>Allow and continue</button>{permission && !permission.ready && <button className="settings-link" onClick={() => void window.ren?.openPermissionSettings()}>Open system permission settings</button>}</section> : <>
+      <div className="ambient-status"><span className="status-live" /> Watching only when asked <em>·</em> {source?.name ?? "connecting to display"}<span className="wake-chip">Say “Hey Ren”</span></div>
+      <section className="ambient-conversation" aria-live="polite">{messages.length === 0 && <div className="empty-conversation"><Spark /><p>Point with your cursor, then say:</p><strong>“Hey Ren, explain this to me.”</strong></div>}{messages.map((message) => <article key={message.id} className={message.role}><span>{message.role === "assistant" ? "REN" : "YOU"}</span><p>{message.content}</p></article>)}</section>
+      {error && <div className="ambient-error" role="alert">{error}</div>}
+      <form className="ambient-composer" onSubmit={submit}><button type="button" className={`listen-button state-${voiceState}`} onClick={() => { void setExpanded(true); keepAwake(); setVoiceState("listening"); }} aria-label="Listen"><MicGlyph /></button><textarea aria-label="Ask Ren" value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askQuestion(question); } }} placeholder="Or type a question…" rows={2} /><button type="submit" className="ask-button" disabled={!question.trim() || voiceState === "processing"}>↑</button></form>
+      <footer><span>Cursor position adds pointing context</span><button onClick={() => void window.ren?.clearAnnotations()}>Clear drawings</button></footer>
+    </>}
   </main>;
 }

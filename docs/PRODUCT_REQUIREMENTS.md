@@ -27,21 +27,27 @@ and act, not silently take control of their computer.
 
 ## Release 0.1 — complete learning loop
 
-### R1. Desktop shell
+### R1. Ambient desktop shell
 
 - macOS, Windows, and Linux Electron application.
-- Compact always-on-top assistant panel with a clear quit path.
-- Permission onboarding for screen capture and microphone.
+- One-time permission onboarding for screen capture, microphone, and local
+  speech recognition; OS grants are reused and revalidated on later launches.
+- A small always-on-top top-edge “Ren pebble” starts with the computer, stays
+  out of the dock/taskbar, joins every workspace, and expands without stealing
+  focus from the learner's work.
+- “Hey Ren” wakes the pebble into a listening teacher panel. Wake detection must
+  run on-device; when local recognition is unavailable, Ren fails closed and
+  offers click/keyboard activation rather than streaming ambient audio remotely.
 - App state survives a renderer refresh without leaking secrets.
 
 ### R2. Deliberate screen context
 
-- User chooses a display or application window.
-- The selected source is shown with a visible sharing indicator and preview.
+- Ren automatically uses the display currently containing the learner's cursor;
+  there is no source picker during normal use.
 - An on-demand visual context burst is captured when a question is submitted;
   the learner does not need to pause, crop, identify the subject, or pick a
   specialized tool.
-- Capture can be stopped immediately from the main panel.
+- Ren's own overlay windows are hidden from captures.
 - Password managers and explicitly configured apps can be excluded.
 
 ### R3. Multimodal conversation
@@ -107,10 +113,11 @@ and act, not silently take control of their computer.
 
 ## Acceptance scenario
 
-A learner opens a math worksheet, chooses that window, holds the microphone
-button and asks, “Why is this term moved to the other side?” Ren captures one
-frame, explains the operation, and draws an arrow between the relevant regions.
-The learner clears the arrow, asks a follow-up by text, and stops sharing. The
+A learner opens a math worksheet, points at a term, and says, “Hey Ren, why is
+this term moved to the other side?” The top-edge pebble expands, Ren captures a
+short burst from the cursor's display, explains the operation, and draws an
+arrow between the relevant regions. The learner clears the arrow and asks a
+follow-up by text. The
 same automatic interaction works on a chemistry video, CAD viewport, code,
 design, or slicer without changing modes or installing anything.
 
