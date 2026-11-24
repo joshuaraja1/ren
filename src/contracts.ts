@@ -36,6 +36,7 @@ export type AmbientStatus = {
 export type AskResponse = {
   answer: string;
   annotations: Annotation[];
+  followUps?: string[];
   provider: "demo" | "vision";
 };
 

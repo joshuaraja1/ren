@@ -12,7 +12,7 @@ based on this repository.
 | Ask aloud or type about any visible app | Local English dictation, typed questions, cursor-display screenshots, vision adapter | Test noisy video, CAD, math, accents, and dictation corrections |
 | Hold a shortcut and circle a region | Control+Option gesture (Control+Alt on Windows/Linux), visible selection, focused crop and automatic explanation | Hardware QA for global input permission and every display layout |
 | Spoken answers and drawings | Speech synthesis; validated arrows, paths, points, text and diagrams | Anchor drawings to scrolled content; test display changes |
-| Guided follow-up | Bounded conversation history; freeform follow-up | Suggest useful next questions and show progress through a lesson |
+| Guided follow-up | Bounded conversation history and tappable model-suggested questions | Evaluate question quality and show progress through a lesson |
 | Privacy | No continuous screen recording; on-demand frames in memory; local wake and transcription; configured provider shown in the panel | Add a capture audit and independent privacy review |
 | Mac and Windows packages | Unsigned staging artifacts on both | Signed, notarized releases and physical permission QA |
 | Connected-app agents and computer control | Not implemented | Separate opt-in design and safety review; not required for the learning loop |

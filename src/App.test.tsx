@@ -66,4 +66,30 @@ describe("Ren ambient shell", () => {
       window.ren = undefined;
     }
   });
+
+  it("asks a suggested follow-up with a fresh screen context", async () => {
+    const captureContext = vi.fn(async () => ({ frames: ["data:image/png;base64,dGVzdA=="], pointer: { x: 0.5, y: 0.5 } }));
+    const ask = vi.fn(async () => ({ answer: "Look at the highlighted step.", annotations: [], followUps: ["Why does that step work?"], provider: "vision" as const }));
+    window.ren = {
+      permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
+      primarySource: async () => ({ id: "screen", name: "Main display", thumbnail: "" }),
+      wakeAvailable: async () => false,
+      onFocusSelection: () => () => {},
+      setExpanded: async () => {},
+      speechStop: async () => {},
+      captureContext,
+      ask,
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
+      const input = await screen.findByRole("textbox", { name: /ask ren/i });
+      fireEvent.change(input, { target: { value: "Explain this step" } });
+      fireEvent.click(screen.getByRole("button", { name: /send question/i }));
+      fireEvent.click(await screen.findByRole("button", { name: /why does that step work/i }));
+      await waitFor(() => expect(ask).toHaveBeenCalledTimes(2));
+      expect(captureContext).toHaveBeenCalledTimes(2);
+      expect(ask).toHaveBeenLastCalledWith(expect.objectContaining({ question: "Why does that step work?" }));
+    } finally { window.ren = undefined; }
+  });
 });
