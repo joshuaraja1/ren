@@ -11,6 +11,7 @@ import { startCircleInput, stopCircleInput } from "./circle-input.js";
 import type { FocusRegion } from "./circle-geometry.js";
 import { clearVisionSettings, saveVisionSettings, visionCredentials, visionStatus } from "./vision-settings.js";
 import { parseAskRequest } from "./request-validation.js";
+import { hasMeaningfulMotion } from "./frame-motion.js";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 let mainWindow: BrowserWindow | null = null;
@@ -230,29 +231,39 @@ app.whenReady().then(() => {
       const { display, pointer } = cursorDisplayContext();
       const focus = selectedFocus && selectedFocus.displayId === display.id && Date.now() - selectedFocus.createdAt < 30_000 ? selectedFocus.region : null;
       selectedFocus = null;
-      const frames: string[] = [];
-      for (let index = 0; index < 3; index += 1) {
-        const aspectRatio = display.size.width / display.size.height;
-        const thumbnailSize = aspectRatio >= 1 ? { width: 1600, height: Math.round(1600 / aspectRatio) } : { width: Math.round(1200 * aspectRatio), height: 1200 };
+      const aspectRatio = display.size.width / display.size.height;
+      const thumbnailSize = aspectRatio >= 1 ? { width: 1600, height: Math.round(1600 / aspectRatio) } : { width: Math.round(1200 * aspectRatio), height: 1200 };
+      const capture = async () => {
         const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize });
         const source = sources.find((candidate) => candidate.display_id === String(display.id));
-        if (source && !source.thumbnail.isEmpty()) {
-          if (frames.length < 3) frames.push(source.thumbnail.toDataURL());
-          if (index === 0 && focus) {
-            const size = source.thumbnail.getSize();
-            const crop = {
-              x: Math.floor(focus.bounds.x * size.width), y: Math.floor(focus.bounds.y * size.height),
-              width: Math.max(1, Math.floor(focus.bounds.width * size.width)),
-              height: Math.max(1, Math.floor(focus.bounds.height * size.height)),
-            };
-            frames.push(source.thumbnail.crop(crop).toDataURL());
-          }
-        }
-        if (index < 2) await new Promise((resolve) => setTimeout(resolve, 100));
+        return source && !source.thumbnail.isEmpty() ? source.thumbnail : null;
+      };
+      const encodeMotion = (image: Electron.NativeImage) => `data:image/jpeg;base64,${image.toJPEG(82).toString("base64")}`;
+      const motionSample = (image: Electron.NativeImage) => image.resize({ width: 64, height: 36 }).toBitmap();
+      const first = await capture();
+      if (!first) throw new Error("The display under your cursor could not be captured");
+      const frames = [first.toDataURL()];
+      if (focus) {
+        const size = first.getSize();
+        const crop = {
+          x: Math.floor(focus.bounds.x * size.width), y: Math.floor(focus.bounds.y * size.height),
+          width: Math.max(1, Math.floor(focus.bounds.width * size.width)),
+          height: Math.max(1, Math.floor(focus.bounds.height * size.height)),
+        };
+        frames.push(first.crop(crop).toDataURL());
       }
-      if (!frames.length) throw new Error("The display under your cursor could not be captured");
+      await new Promise((resolve) => setTimeout(resolve, 130));
+      const second = await capture();
+      if (second && hasMeaningfulMotion(motionSample(first), motionSample(second))) {
+        frames.push(encodeMotion(second));
+        if (!focus) {
+          await new Promise((resolve) => setTimeout(resolve, 130));
+          const third = await capture();
+          if (third && hasMeaningfulMotion(motionSample(second), motionSample(third))) frames.push(encodeMotion(third));
+        }
+      }
       overlayWindow?.setBounds(display.bounds);
-      return { frames: frames.slice(0, 3), pointer, focus: focus?.bounds };
+      return { frames, pointer, focus: focus?.bounds };
     } finally {
       mainWindow?.setOpacity(1);
       if (overlayWasVisible) overlayWindow?.showInactive();
