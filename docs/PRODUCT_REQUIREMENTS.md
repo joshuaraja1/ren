@@ -102,6 +102,12 @@ and act, not silently take control of their computer.
 
 ## Capability roadmap
 
+- **Circle-to-focus gesture:** Hold Ctrl+Shift while tracing a closed region
+  with the cursor. Ren previews the path, captures only after release, adds a
+  crop as visual context, and asks for an explanation automatically. Open
+  strokes, clicks, Escape, and crossing displays cancel the gesture. Native
+  global input permission is requested during one-time onboarding where the
+  operating system requires it.
 - **0.2 Automatic context engine:** temporal video context, optional system-audio
   transcript, OCR, math structure recognition, and subject-aware teaching plans.
 - **0.3 Collaborative canvas:** multi-step lessons, editable annotations,

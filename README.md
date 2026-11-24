@@ -13,6 +13,13 @@ automatically, and can place validated teaching visuals in a click-through
 overlay. A deterministic
 demo teacher keeps the interaction testable without credentials.
 
+To focus on one part of the screen, hold **Ctrl+Shift**, move the cursor in a
+circle around it, and release. Ren opens, captures that display on demand,
+includes a close crop of the selected region, and explains it. The gesture
+does not click or alter the app underneath. On macOS, the one-time setup also
+requests Accessibility access for the global shortcut; Input Monitoring may
+need to be enabled in System Settings.
+
 ## Run locally
 
 Requirements: Node.js 22+ and the screen-recording permission for your OS.

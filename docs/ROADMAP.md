@@ -11,6 +11,9 @@ Each milestone is designed to land as an independently reviewable pull request.
 - [ ] M6 — automatic temporal context, system-audio transcript, and visual OCR
 - [ ] M7 — circle-to-focus and invisible CAD/3D-print context enrichment
 
+Circle-to-focus has an initial implementation; the milestone stays open until
+physical multi-monitor gesture QA and CAD/3D-print context enrichment land.
+
 The first four milestones form Ren 0.1. Later milestones should be proposed as
 RFCs and must include permission, privacy, and failure-mode analysis.
 

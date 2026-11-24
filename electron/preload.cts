@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("ren", {
   listSources: () => ipcRenderer.invoke("ren:list-sources"),
   primarySource: () => ipcRenderer.invoke("ren:primary-source"),
   permissionStatus: () => ipcRenderer.invoke("ren:permission-status"),
+  enableCircleInput: () => ipcRenderer.invoke("ren:enable-circle-input"),
   requestPermissions: () => ipcRenderer.invoke("ren:request-permissions"),
   openPermissionSettings: () => ipcRenderer.invoke("ren:open-permission-settings"),
   setExpanded: (expanded: boolean) => ipcRenderer.invoke("ren:set-expanded", expanded),
@@ -27,5 +28,10 @@ contextBridge.exposeInMainWorld("ren", {
     const handler = (_event: Electron.IpcRendererEvent, annotations: unknown[]) => listener(annotations);
     ipcRenderer.on("ren:annotations", handler);
     return () => ipcRenderer.removeListener("ren:annotations", handler);
+  },
+  onFocusSelection: (listener: () => void) => {
+    const handler = () => listener();
+    ipcRenderer.on("ren:focus-selection", handler);
+    return () => ipcRenderer.removeListener("ren:focus-selection", handler);
   },
 });

@@ -51,10 +51,15 @@ export function App() {
   const feedChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const pendingAudioRef = useRef<number[][]>([]);
   const expandedRef = useRef(false);
+  const askingRef = useRef(false);
 
   useEffect(() => { messagesRef.current = messages; }, [messages]);
   useEffect(() => { voiceStateRef.current = voiceState; }, [voiceState]);
   useEffect(() => () => { recognitionRef.current?.stop(); }, []);
+  useEffect(() => window.ren?.onFocusSelection(() => {
+    void setExpanded(true);
+    void askQuestion("Explain what is inside the area I circled on my screen. Start with the part I selected, and show me how it connects to what I'm doing.");
+  }), []);
 
   useEffect(() => {
     void (async () => {
@@ -240,6 +245,16 @@ export function App() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Permissions could not be completed."); }
   }
 
+  async function enableCircle() {
+    if (!window.ren) return;
+    const status = await window.ren.enableCircleInput();
+    setPermission(status);
+    if (status.interaction !== "granted") setError(window.ren.platform === "darwin"
+      ? "Allow Ren in Accessibility and Input Monitoring in System Settings, then click Enable circle again."
+      : "The global circle shortcut is unavailable on this desktop. You can still point and ask Ren.");
+    else setError("");
+  }
+
   function keepAwake() {
     awakeUntilRef.current = Date.now() + 20_000;
     if (collapseTimerRef.current) clearTimeout(collapseTimerRef.current);
@@ -272,7 +287,9 @@ export function App() {
   }
 
   async function askQuestion(rawQuestion: string) {
-    const clean = rawQuestion.trim(); if (!clean || voiceState === "processing") return;
+    const clean = rawQuestion.trim(); if (!clean) return;
+    if (askingRef.current) { setError("Ren is still answering. Try the circle again when the answer finishes."); return; }
+    askingRef.current = true;
     stopNativeDictation();
     setQuestion(""); setError(""); setVoiceState("processing"); keepAwake();
     setMessages((current) => [...current, { id: crypto.randomUUID(), role: "user", content: clean }]);
@@ -284,6 +301,7 @@ export function App() {
       setVoiceState("responding"); suppressSpeechUntilRef.current = Date.now() + Math.min(12_000, response.answer.length * 45);
       const utterance = new SpeechSynthesisUtterance(response.answer); utterance.onend = () => { if (nativeSpeechRef.current && expandedRef.current) void startNativeDictation(); else { setVoiceState("listening"); keepAwake(); } }; speechSynthesis.cancel(); speechSynthesis.speak(utterance);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Ren couldn’t answer."); setVoiceState("idle"); }
+    finally { askingRef.current = false; }
   }
 
   function submit(event: FormEvent) { event.preventDefault(); void askQuestion(question); }
@@ -293,12 +311,12 @@ export function App() {
   return <main className="ambient-panel">
     <header className={`ambient-header state-${voiceState}`}><div className="companion-orb"><Spark /></div><div className="header-copy"><p><span className="state-dot" /> REN</p><h1>{voiceState === "processing" ? "Looking closely…" : voiceState === "listening" ? "I’m listening." : voiceState === "responding" ? "Let’s work through it." : "How can I help?"}</h1></div><VoiceMeter active={voiceState !== "idle"} /><button className="collapse-button" onClick={() => void setExpanded(false)} aria-label="Collapse Ren">⌃</button></header>
 
-    {!permission?.ready ? <section className="onboarding-card"><span className="step-kicker">ONE-TIME SETUP</span><h2>Give Ren permission once.</h2><p>Allow microphone and screen recording now. After that, Ren starts quietly with your computer and only captures the screen when you ask a question.</p><div className="permission-row"><span>Microphone</span><b>{permission?.microphone ?? "checking"}</b></div><div className="permission-row"><span>Screen recording</span><b>{permission?.screen ?? "checking"}</b></div><button className="allow-button" onClick={() => void requestOneTimePermissions()}>Allow and continue</button>{permission && !permission.ready && <button className="settings-link" onClick={() => void window.ren?.openPermissionSettings()}>Open system permission settings</button>}</section> : <>
+    {!permission?.ready ? <section className="onboarding-card"><span className="step-kicker">ONE-TIME SETUP</span><h2>Give Ren permission once.</h2><p>Allow microphone, screen recording, and pointer access now. After that, Ren starts quietly with your computer and only captures the screen when you ask a question.</p><div className="permission-row"><span>Microphone</span><b>{permission?.microphone ?? "checking"}</b></div><div className="permission-row"><span>Screen recording</span><b>{permission?.screen ?? "checking"}</b></div><div className="permission-row"><span>Circle shortcut</span><b>{permission?.interaction ?? "checking"}</b></div><button className="allow-button" onClick={() => void requestOneTimePermissions()}>Allow and continue</button>{permission && !permission.ready && <button className="settings-link" onClick={() => void window.ren?.openPermissionSettings()}>Open system permission settings</button>}</section> : <>
       <div className="ambient-status"><span className="privacy-lock" aria-hidden="true">●</span><span>Looks only when you ask</span><em>·</em><span className="display-name">{source?.name ?? "connecting to display"}</span><span className="wake-chip">Say “Hey Ren”</span></div>
       <section className="ambient-conversation" aria-live="polite">{messages.length === 0 && <div className="empty-conversation"><div className="cursor-cue"><Spark /><span /></div><p>Point at anything on your screen</p><strong>“Hey Ren, explain this.”</strong><small>I’ll look, talk it through, and draw when it helps.</small></div>}{messages.map((message) => <article key={message.id} className={message.role}><span>{message.role === "assistant" ? "REN" : "YOU"}</span><p>{message.content}</p></article>)}</section>
       {error && <div className="ambient-error" role="alert">{error}</div>}
       <form className="ambient-composer" onSubmit={submit}><button type="button" className={`listen-button state-${voiceState}`} onClick={() => { if (nativeSpeechRef.current) { if (dictationActiveRef.current) void finishNativeDictation(); else void startNativeDictation(); return; } if (!recognitionRef.current) { setError("Local speech recognition is unavailable. Type your question here."); questionRef.current?.focus(); return; } keepAwake(); try { recognitionRef.current.start(); setVoiceState("listening"); } catch { setError("Speech recognition could not start. Type your question here."); questionRef.current?.focus(); } }} aria-label={dictationActiveRef.current ? "Finish speaking" : "Start listening"}><MicGlyph /></button><textarea ref={questionRef} aria-label="Ask Ren" value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askQuestion(question); } }} placeholder="Ask about what you’re pointing at…" rows={1} /><button type="submit" className="ask-button" disabled={!question.trim() || voiceState === "processing"} aria-label="Send question">↑</button></form>
-      <footer><span><i aria-hidden="true" /> Cursor-aware</span><button onClick={() => void window.ren?.clearAnnotations()}>Clear drawings</button></footer>
+      <footer><span><i aria-hidden="true" /> Hold Ctrl+Shift and circle to focus</span>{permission?.interaction !== "granted" && <button onClick={() => void enableCircle()}>Enable circle</button>}<button onClick={() => void window.ren?.clearAnnotations()}>Clear drawings</button></footer>
     </>}
   </main>;
 }

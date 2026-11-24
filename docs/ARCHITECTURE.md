@@ -36,6 +36,10 @@ is exposed explicitly through the preload bridge.
 
 The cursor's normalized position is added as a pointing hint. It is never
 treated as permission to click, type, or control the underlying application.
+For circle-to-focus, a local native hook reads only Ctrl/Shift state and cursor
+movement. It retains points during the gesture, rejects open strokes, and
+passes a bounded focus rectangle and close crop into one on-demand question.
+No key contents or mouse actions are stored or transmitted.
 
 ## Automatic capability seam
 
