@@ -9,8 +9,8 @@ const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 let mainWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
 
-const collapsedSize = { width: 168, height: 58 };
-const expandedSize = { width: 440, height: 620 };
+const collapsedSize = { width: 236, height: 58 };
+const expandedSize = { width: 420, height: 560 };
 
 function onboardingMarkerPath() { return join(app.getPath("userData"), "onboarding-complete"); }
 function hasCompletedOnboarding() { return existsSync(onboardingMarkerPath()); }
@@ -28,7 +28,7 @@ function positionMainWindow(expanded: boolean) {
   if (!mainWindow) return;
   const workArea = screen.getPrimaryDisplay().workArea;
   const size = expanded ? expandedSize : collapsedSize;
-  mainWindow.setBounds({ x: Math.round(workArea.x + (workArea.width - size.width) / 2), y: workArea.y + 14, ...size }, true);
+  mainWindow.setBounds({ x: Math.round(workArea.x + (workArea.width - size.width) / 2), y: workArea.y, ...size }, true);
 }
 
 function createOverlayWindow() {
