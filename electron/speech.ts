@@ -37,11 +37,14 @@ function reset(error: Error) {
 
 function ensureChild(): Promise<Child> {
   if (ready) return ready;
+  let process: Child;
+  try { process = utilityProcess.fork(workerPath()); }
+  catch { return Promise.reject(new Error("Local speech worker could not start.")); }
   ready = new Promise<Child>((resolve, reject) => {
-    const process = utilityProcess.fork(workerPath());
     child = process;
     process.once("spawn", () => resolve(process));
     process.on("message", (reply: Reply) => {
+      if (!reply || typeof reply !== "object") return;
       if (typeof reply.id !== "number") return;
       const task = pending.get(reply.id);
       if (!task) return;

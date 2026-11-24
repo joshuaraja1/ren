@@ -129,7 +129,7 @@ export function App() {
               }
               queuedFeedsRef.current += 1;
               feedChainRef.current = feedChainRef.current.then(async () => {
-                if (!dictationActiveRef.current || !await window.ren!.speechFeed(samples)) throw new Error("Local speech feed stopped");
+                if (!await window.ren!.speechFeed(samples)) throw new Error("Local speech feed stopped");
               }).catch(() => {
                 setError("Local dictation stopped. Type your question instead.");
                 stopNativeDictation();
@@ -229,7 +229,9 @@ export function App() {
     try {
       if (!await window.ren.speechStart(sampleRateRef.current)) throw new Error("Local dictation could not start");
       for (const samples of pendingAudioRef.current.splice(0)) {
-        feedChainRef.current = feedChainRef.current.then(() => window.ren!.speechFeed(samples));
+        feedChainRef.current = feedChainRef.current.then(async () => {
+          if (!await window.ren!.speechFeed(samples)) throw new Error("Local speech pre-roll stopped");
+        });
       }
       dictationReadyRef.current = true;
     } catch {
