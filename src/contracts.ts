@@ -20,7 +20,10 @@ export type AskRequest = {
   question: string;
   frames: string[];
   history: ConversationTurn[];
+  pointer?: Point;
 };
+
+export type ScreenContext = { frames: string[]; pointer: Point };
 
 export type AmbientStatus = {
   ready: boolean;
@@ -44,7 +47,7 @@ export type RenBridge = {
   openPermissionSettings(): Promise<void>;
   setExpanded(expanded: boolean): Promise<void>;
   setCaptureHidden(hidden: boolean): Promise<void>;
-  captureContext(): Promise<string[]>;
+  captureContext(): Promise<ScreenContext>;
   ask(request: AskRequest): Promise<AskResponse>;
   showAnnotations(annotations: Annotation[]): Promise<void>;
   clearAnnotations(): Promise<void>;

@@ -19,4 +19,14 @@ describe("Ren ambient shell", () => {
 
     expect(await screen.findByText(/packaged desktop app will use your current screen/i)).toBeVisible();
   });
+
+  it("keeps the microphone fallback honest when local recognition is unavailable", async () => {
+    render(<App />);
+    const input = await screen.findByRole("textbox", { name: /ask ren/i });
+    fireEvent.click(screen.getByRole("button", { name: /start listening/i }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/local speech recognition is unavailable/i);
+    expect(input).toHaveFocus();
+    expect(screen.getByRole("heading", { name: /how can i help/i })).toBeVisible();
+  });
 });
