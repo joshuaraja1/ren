@@ -29,8 +29,9 @@ the preload bridge.
 2. An on-device wake gate expands the top-edge pebble after “Hey Ren.” A separate
    local model transcribes the following English question. Neither ambient nor
    dictated audio is sent to the answer provider.
-3. On a question, main hides Ren's windows and captures a short JPEG burst from
-   the display containing the learner's cursor.
+3. On a question, main hides Ren's windows and captures a lossless image from the
+   display containing the learner's cursor. It adds a circled crop and up to
+   two compressed short-interval frames only when screen motion is detected.
 4. Main validates the payload and delegates to the configured provider.
 5. The provider returns prose plus normalized overlay commands.
 6. Main validates and forwards commands to the transparent overlay window.

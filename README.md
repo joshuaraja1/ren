@@ -49,7 +49,9 @@ See [the release guide](docs/RELEASE.md) for the production signing gates.
 
 ## Current boundary
 
-Ren 0.1 captures a three-frame visual burst only when a question is submitted.
+Ren 0.1 captures a full-display image only when a question is submitted. It
+adds a circled-region crop when available and extra frames when the screen is
+visibly changing. It does not understand video before the captured moment.
 It does not continuously record the screen, click, type, or control other
 applications. Wake recognition runs on-device and sends no ambient audio to the
 answer provider. After the wake phrase, Ren listens for a question and submits
