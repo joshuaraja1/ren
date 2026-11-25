@@ -9,6 +9,29 @@ permissions:
   contents: read
 
 jobs:
+  image-service:
+    name: Image service container
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build hosted image service
+        run: docker build -f Dockerfile.image-service -t ren-image-service:staging .
+      - name: Smoke test hosted image service
+        run: |
+          docker run -d --name ren-image-service-staging -p 127.0.0.1:18080:8080 \
+            -e REN_IMAGE_STAGING_ONLY=1 \
+            -e REN_PROVIDER_SPEND_CAP_CONFIRMED=1 \
+            -e OPENAI_API_KEY=staging-placeholder \
+            -e REN_IMAGE_ACCESS_DIGESTS=0000000000000000000000000000000000000000000000000000000000000000 \
+            ren-image-service:staging
+          curl --retry 15 --retry-all-errors --retry-delay 1 --fail http://127.0.0.1:18080/healthz
+      - name: Show hosted image service logs on failure
+        if: failure()
+        run: docker logs ren-image-service-staging || true
+      - name: Stop hosted image service
+        if: always()
+        run: docker rm -f ren-image-service-staging || true
   package:
     name: Package ${{ matrix.name }}
     strategy:

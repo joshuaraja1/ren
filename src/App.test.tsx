@@ -38,6 +38,8 @@ describe("Ren ambient shell", () => {
     expect(screen.getByText(/sends your question and a screen snapshot to/i)).toBeVisible();
     expect(screen.getByRole("textbox", { name: /provider url/i })).toHaveValue("https://api.openai.com/v1");
     expect(screen.getByLabelText(/api key/i)).toHaveAttribute("type", "password");
+    expect(screen.getByRole("heading", { name: /ren image service/i })).toBeVisible();
+    expect(screen.getByLabelText(/ren access token/i)).toHaveAttribute("type", "password");
   });
 
   it("asks about the circled region without requiring a typed prompt", async () => {
