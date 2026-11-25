@@ -61,6 +61,10 @@ engine cannot start, the pebble stays clickable. System-audio
 transcript and richer temporal video understanding remain on the roadmap.
 Voice-created agents that act in other apps after showing an approved plan are
 specified in [the requirements](docs/VOICE_AGENTS.md) and are not yet available.
+Connected parts diagrams and realistic generated lesson images, composed
+directly over the user's current screen, are specified in
+[the visual teaching plan](docs/VISUAL_TEACHING.md). Current drawings remain
+simple overlays.
 
 ## License
 

@@ -11,6 +11,7 @@ Each milestone is designed to land as an independently reviewable pull request.
 - [ ] M6 — automatic temporal context, system-audio transcript, and visual OCR
 - [ ] M7 — circle-to-focus and invisible CAD/3D-print context enrichment
 - [ ] M8 — voice-created agents with visible plans and approved actions in other apps ([requirements](VOICE_AGENTS.md))
+- [ ] M9 — connected visual lessons drawn directly on the user's screen, with a fast diagram and optional realistic imagery ([requirements](VISUAL_TEACHING.md))
 
 Circle-to-focus has an initial implementation; the milestone stays open until
 physical multi-monitor gesture QA and CAD/3D-print context enrichment land.
