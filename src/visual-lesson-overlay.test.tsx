@@ -31,3 +31,29 @@ it("keeps headings and callouts inside top and right screen edges", () => {
   expect(container.querySelectorAll(".visual-lesson-part.is-flipped")).toHaveLength(2);
   expect((container.querySelector(".visual-lesson-part") as HTMLElement).style.transform).toMatch(/^translate\(-\d+px, \d+px\)$/);
 });
+
+it("composes a clearly marked image preview into the same overlay", () => {
+  const lesson = {
+    version: 1 as const, title: "Wing", placement: { x: .2, y: .2, width: .5, height: .5 },
+    parts: [{ id: "a", label: "Air", explanation: "Flows past.", x: .2, y: .2 }, { id: "b", label: "Wing", explanation: "Deflects air.", x: .8, y: .8 }],
+    connections: [{ from: "a", to: "b", label: "passes" }],
+  };
+  const { container } = render(<VisualLessonOverlay lesson={lesson} illustration={{ image: "data:image/png;base64,dGVzdA==", preview: true, width: 1024, height: 1024 }} />);
+  expect(container.querySelector(".visual-lesson-illustration img")).toHaveAttribute("src", "data:image/png;base64,dGVzdA==");
+  expect(container.querySelector(".visual-lesson")).toHaveClass("has-illustration", "is-preview");
+  expect(container).toHaveTextContent("GENERATING · UNVERIFIED");
+});
+
+it("registers connected callouts to verified image parts", () => {
+  const lesson = {
+    version: 1 as const, title: "Wing", placement: { x: .2, y: .2, width: .5, height: .5 },
+    parts: [{ id: "a", label: "Air", explanation: "Flows past.", x: .2, y: .2 }, { id: "b", label: "Wing", explanation: "Deflects air.", x: .8, y: .8 }],
+    connections: [{ from: "a", to: "b", label: "passes" }],
+  };
+  const { container } = render(<VisualLessonOverlay lesson={lesson} illustration={{ image: "data:image/png;base64,dGVzdA==", preview: false, width: 1024, height: 1024, registration: { a: { x: .7, y: .2 }, b: { x: .3, y: .8 } } }} />);
+  expect(container.querySelector(".visual-lesson")).not.toHaveClass("is-preview");
+  expect(container).toHaveTextContent("ILLUSTRATIVE · PARTS LOCATED");
+  const first = container.querySelector(".visual-lesson-part") as HTMLElement;
+  expect(first.style.left).not.toBe("20%");
+  expect(container.querySelector(".visual-lesson-lines line")).toHaveAttribute("marker-end", "url(#lesson-arrowhead)");
+});

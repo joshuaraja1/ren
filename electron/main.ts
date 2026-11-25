@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { app, BrowserWindow, desktopCapturer, ipcMain, screen, session, shell, systemPreferences } from "electron";
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, nativeImage, screen, session, shell, systemPreferences } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, writeFileSync } from "node:fs";
@@ -14,6 +14,8 @@ import { parseAskRequest } from "./request-validation.js";
 import { hasMeaningfulMotion } from "./frame-motion.js";
 import { isSameStableScreen } from "./screen-continuity.js";
 import { canPlaceSpatialVisual } from "./visual-safety.js";
+import { generateIllustration, imagePrompt } from "./image-render.js";
+import { locateImageParts, positionsOnOpaquePixels } from "./image-registration.js";
 import { validateVisualLesson } from "./visual-lesson.js";
 import { CaptureSession } from "./capture-session.js";
 import type { VisualLesson } from "./visual-lesson.js";
@@ -29,6 +31,9 @@ let lastVisualLesson: { lesson: VisualLesson; displayId: number; createdAt: numb
 let screenCaptureBusy = false;
 let pendingAnswerToken: string | null = null;
 let activeCaptureToken: string | null = null;
+let imageRenderAbort: AbortController | null = null;
+let imageRequestBusy = false;
+let imageRequestedFor: VisualLesson | null = null;
 
 const collapsedSize = { width: 236, height: 58 };
 const expandedSize = { width: 420, height: 560 };
@@ -156,12 +161,15 @@ app.whenReady().then(() => {
     overlayWindow.showInactive();
   }
   function invalidateSpatialContext() {
+    imageRenderAbort?.abort();
+    imageRenderAbort = null;
     selectedFocus = null;
     captureSession.invalidate();
     lastCaptureData = null;
     lastVisualLesson = null;
     overlayWindow?.webContents.send("ren:annotations", []);
     overlayWindow?.webContents.send("ren:visual-lesson", null);
+    overlayWindow?.webContents.send("ren:illustration", null);
     overlayWindow?.hide();
   }
   screen.on("display-removed", () => {
@@ -187,6 +195,7 @@ app.whenReady().then(() => {
         // answer that was grounded before that interaction, including video.
         const token = pendingAnswerToken ?? activeCaptureToken;
         if (token && captureSession.isCurrent(token)) captureSession.invalidate();
+        imageRenderAbort?.abort();
       },
     });
     return circleInputActive;
@@ -262,11 +271,14 @@ app.whenReady().then(() => {
     const focus = selectedFocus && selectedFocus.displayId === display.id && Date.now() - selectedFocus.createdAt < 30_000 ? selectedFocus.region : null;
     selectedFocus = null;
     lastCaptureData = null;
+    imageRenderAbort?.abort();
+    imageRenderAbort = null;
     const contextToken = captureSession.issue(display.id);
     activeCaptureToken = contextToken;
     mainWindow?.setOpacity(0);
     overlayWindow?.webContents.send("ren:annotations", []);
     overlayWindow?.webContents.send("ren:visual-lesson", null);
+    overlayWindow?.webContents.send("ren:illustration", null);
     overlayWindow?.hide();
     await new Promise((resolve) => setTimeout(resolve, 90));
     try {
@@ -355,21 +367,77 @@ app.whenReady().then(() => {
     overlayWindow?.setBounds(display.bounds);
     overlayWindow?.webContents.send("ren:annotations", annotations);
     overlayWindow?.webContents.send("ren:visual-lesson", lesson);
+    overlayWindow?.webContents.send("ren:illustration", null);
     if (annotations.length || lesson) overlayWindow?.showInactive();
     else overlayWindow?.hide();
-    if (lesson) lastVisualLesson = { lesson, displayId, createdAt: Date.now() };
+    lastVisualLesson = lesson ? { lesson, displayId, createdAt: Date.now() } : null;
     return { ...response, annotations, visualLesson: lesson ?? undefined };
     } finally {
       if (pendingAnswerToken === value.contextToken) pendingAnswerToken = null;
     }
   });
+  ipcMain.handle("ren:generate-illustration", async (event) => {
+    requireMainRenderer(event);
+    if (imageRequestBusy || imageRenderAbort) throw new Error("An illustration is already rendering.");
+    const visual = lastVisualLesson;
+    if (!visual || !circleInputActive) throw new Error("A current visual lesson and pointer permission are required.");
+    if (imageRequestedFor === visual.lesson) throw new Error("This lesson already requested an image. Ask a new question to create another.");
+    imageRequestBusy = true;
+    try {
+      const credentials = await visionCredentials();
+      if (!credentials || new URL(credentials.baseUrl).origin !== "https://api.openai.com") throw new Error("Illustrations currently require an OpenAI provider.");
+      const detail = `Ren will send this screen-derived lesson text to OpenAI:\n\n${imagePrompt(visual.lesson)}\n\nThe generated image is sent to your configured vision model to check part locations. No screen screenshot is sent to the image generator. Both requests may incur provider charges.`;
+      const decision = await dialog.showMessageBox(mainWindow!, { type: "question", title: "Create a Ren illustration", message: "Generate an illustration for this lesson?", detail, buttons: ["Cancel", "Generate image"], defaultId: 0, cancelId: 0, noLink: true });
+      if (decision.response !== 1) return false;
+      if (lastVisualLesson !== visual || !circleInputActive) throw new Error("The lesson changed before image generation began.");
+      imageRequestedFor = visual.lesson;
+      const controller = new AbortController();
+      imageRenderAbort = controller;
+      const timeout = setTimeout(() => controller.abort(), 150_000);
+      const current = () => lastVisualLesson === visual && screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id === visual.displayId && !controller.signal.aborted;
+      const decoded = (dataUrl: string) => {
+        const image = nativeImage.createFromDataURL(dataUrl);
+        const size = image.getSize();
+        return !image.isEmpty() && size.width > 0 && size.height > 0 && size.width <= 2048 && size.height <= 2048 ? { image, size } : null;
+      };
+      try {
+      const image = await generateIllustration(visual.lesson, credentials.apiKey, (preview) => {
+        if (!current()) { controller.abort(); return; }
+        const checked = decoded(preview);
+        if (!checked) return;
+        overlayWindow?.webContents.send("ren:illustration", { image: preview, preview: true, width: checked.size.width, height: checked.size.height });
+      }, controller.signal);
+      if (!current()) throw new Error("The screen changed while the illustration was rendering.");
+      const checked = decoded(image);
+      if (!checked) throw new Error("Image provider returned an unreadable image.");
+      const registration = await locateImageParts(visual.lesson, image, credentials.apiKey, credentials.model, controller.signal, fetch, credentials.baseUrl);
+      if (!current()) throw new Error("The screen changed while the illustration was being checked.");
+      if (!registration || !positionsOnOpaquePixels(checked.image.toBitmap(), checked.size.width, checked.size.height, registration)) {
+        throw new Error("The illustration could not be matched to every lesson part. Keeping the schematic.");
+      }
+      overlayWindow?.webContents.send("ren:illustration", { image, preview: false, width: checked.size.width, height: checked.size.height, registration });
+      return true;
+      } catch (error) {
+        overlayWindow?.webContents.send("ren:illustration", null);
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+        if (imageRenderAbort === controller) imageRenderAbort = null;
+      }
+    } finally {
+      imageRequestBusy = false;
+    }
+  });
   ipcMain.handle("ren:clear-annotations", (event) => {
     requireMainRenderer(event);
+    imageRenderAbort?.abort();
+    imageRenderAbort = null;
     captureSession.invalidate();
     lastCaptureData = null;
     lastVisualLesson = null;
     overlayWindow?.webContents.send("ren:annotations", []);
     overlayWindow?.webContents.send("ren:visual-lesson", null);
+    overlayWindow?.webContents.send("ren:illustration", null);
     overlayWindow?.hide();
   });
   app.on("activate", () => {

@@ -1,8 +1,8 @@
 # Connected visual lessons
 
-Status: validated schema and first on-screen schematic implementation. Tracked in
-[issue #35](https://github.com/joshuaraja1/ren/issues/35). Ren does not yet
-generate realistic teaching images.
+Status: validated schema and first on-screen schematic implementation. An
+optional realistic image preview is in progress. Tracked in
+[issue #35](https://github.com/joshuaraja1/ren/issues/35).
 
 ## Experience
 
@@ -39,6 +39,26 @@ unsupported providers leave the on-screen diagram usable. Image generation
 must be cancellable, bounded in bytes and time, and show partial previews when
 supported. The app discloses the image provider and any charge before the
 first generation.
+
+The first image adapter uses the OpenAI Image API with a fast, medium-quality
+render and partial previews after the learner presses a control and approves
+a native dialog showing the exact screen-derived text sent and possible
+provider charges. One image request is allowed per lesson. It sends only a
+reduced, validated manifest with title, part names, and connections. The image
+is composed into the same transparent overlay and marked as an illustration.
+The schematic callouts are hidden during partial previews. After generation,
+Ren sends the generated image to the configured vision model to locate every
+manifest part independently. It accepts a complete, confident, distinct set of
+coordinates on opaque pixels; then the callouts and connections are registered
+to the contained image. Missing or ambiguous parts return to the schematic.
+This is a conservative placement check, not proof of engineering accuracy.
+Voice-only image requests, other image providers, and physical QA remain open.
+
+On macOS, Ren also detects an already installed Ollama vision model and offers
+a one-time local connection without an API key for screen questions. It does
+not offer local realistic image generation: Ollama 0.33.3 advertises the
+`x/flux2-klein:4b` image model but rejects a live generation request. A local
+image runtime and real-scene accuracy review remain open.
 
 The image backend receives the validated manifest only by default. Sending a
 screen frame, crop, selected text, or app content to an image provider requires
@@ -77,7 +97,7 @@ not a manufacturing drawing, dimensional specification, or proof of operation.
 3. **Realistic on-screen image:** optional cutout image adapter, progressive
    previews, overlay composition, cancellation, resource bounds, provider
    disclosure, fallback, and security tests.
-4. **Verification:** image-to-manifest review, cross-domain evaluation set,
+4. **Verification:** image-to-manifest placement implemented; cross-domain evaluation set,
    latency and accuracy measurements, physical packaged QA, and human review.
 
 Benchmarks must record time to first useful diagram, first realistic preview,

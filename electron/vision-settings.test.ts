@@ -76,4 +76,28 @@ describe("vision provider settings", () => {
     expect(() => validateVisionEndpoint("http://example.com/v1")).toThrow(/HTTPS/);
     expect(validateVisionEndpoint("http://localhost:1234/v1")).toBe("http://localhost:1234/v1");
   });
+
+  it("uses an installed local vision model without a key or saved settings", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "ren-vision-"));
+    process.env.REN_TEST_SETTINGS_DIR = directory;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ models: [
+      { name: "text-only", size: 1_000_000_000, capabilities: ["completion"] },
+      { name: "remote:cloud", size: 1_000_000_000, capabilities: ["vision"] },
+      { name: "qwen3.5:2b", size: 2_700_000_000, capabilities: ["vision", "completion"] },
+    ] }))) as typeof fetch;
+    try {
+      expect(await visionStatus()).toEqual({ mode: "available", model: "qwen3.5:2b", host: "127.0.0.1:11434", baseUrl: "http://127.0.0.1:11434/v1" });
+      expect(await visionCredentials()).toBeNull();
+      expect(await saveVisionSettings({ apiKey: "ollama", model: "qwen3.5:2b", baseUrl: "http://127.0.0.1:11434/v1" })).toEqual({ mode: "local", model: "qwen3.5:2b", host: "127.0.0.1:11434", baseUrl: "http://127.0.0.1:11434/v1" });
+      expect(await visionCredentials()).toEqual({ apiKey: "ollama", model: "qwen3.5:2b", baseUrl: "http://127.0.0.1:11434/v1" });
+      expect(JSON.parse(await readFile(join(directory, "vision-provider.json"), "utf8"))).toEqual({ version: 3, model: "qwen3.5:2b", baseUrl: "http://127.0.0.1:11434/v1" });
+      await expect(saveVisionSettings({ apiKey: "", model: "cloud-vision", baseUrl: "https://example.com/v1" })).rejects.toThrow("Enter an API key");
+      expect((await visionCredentials())?.baseUrl).toBe("http://127.0.0.1:11434/v1");
+    } finally {
+      globalThis.fetch = originalFetch;
+      delete process.env.REN_TEST_SETTINGS_DIR;
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { Annotation, Point } from "./contracts";
+import type { Annotation, Illustration, Point } from "./contracts";
 import type { VisualLesson } from "../electron/visual-lesson";
 import { VisualLessonOverlay } from "./visual-lesson-overlay";
 import "./overlay.css";
@@ -10,8 +10,10 @@ const pos = (point: Point) => ({ left: `${point.x * 100}%`, top: `${point.y * 10
 function Overlay() {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [visualLesson, setVisualLesson] = useState<VisualLesson | null>(null);
+  const [illustration, setIllustration] = useState<Illustration | null>(null);
   useEffect(() => window.ren?.onAnnotations(setAnnotations), []);
   useEffect(() => window.ren?.onVisualLesson(setVisualLesson), []);
+  useEffect(() => window.ren?.onIllustration(setIllustration), []);
   return (
     <div className="overlay-canvas">
       <svg className="overlay-svg" viewBox="0 0 1000 1000" preserveAspectRatio="none">
@@ -33,7 +35,7 @@ function Overlay() {
         const label = "label" in item ? item.label : undefined;
         return label ? <div key={`${item.id}-label`} className="text-mark" style={style}>{label}</div> : null;
       })}
-      {visualLesson && <VisualLessonOverlay lesson={visualLesson} />}
+      {visualLesson && <VisualLessonOverlay lesson={visualLesson} illustration={illustration} />}
     </div>
   );
 }
