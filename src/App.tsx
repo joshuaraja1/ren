@@ -96,7 +96,7 @@ export function App() {
     void (async () => {
       const status = window.ren ? await window.ren.permissionStatus() : readyStatus;
       setPermission(status);
-      if (!status.ready || !window.ren) await setExpanded(true);
+      if (!status.ready || status.microphone !== "granted" || !window.ren) await setExpanded(true);
       if (status.ready) await startAutomaticCapture();
     })();
   }, []);

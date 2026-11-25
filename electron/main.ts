@@ -134,7 +134,8 @@ function createMainWindow() {
   mainWindow.setAlwaysOnTop(true, "floating");
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   mainWindow.once("ready-to-show", () => {
-    const needsOnboarding = !permissionStatus().ready;
+    const access = permissionStatus();
+    const needsOnboarding = !access.ready || (process.platform === "darwin" && access.microphone !== "granted");
     positionMainWindow(needsOnboarding);
     mainWindow?.showInactive();
   });

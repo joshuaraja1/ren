@@ -75,7 +75,6 @@ describe("Ren ambient shell", () => {
     } as unknown as RenBridge;
     try {
       render(<App />);
-      fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
       fireEvent.click(await screen.findByRole("button", { name: /enable microphone to talk to ren/i }));
       await waitFor(() => expect(openPermissionSettings).toHaveBeenCalledWith("microphone"));
       expect(requestPermissions).toHaveBeenCalledTimes(1);
