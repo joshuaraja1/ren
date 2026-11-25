@@ -25,7 +25,10 @@ jobs:
             -e OPENAI_API_KEY=staging-placeholder \
             -e REN_IMAGE_ACCESS_DIGESTS=0000000000000000000000000000000000000000000000000000000000000000 \
             ren-image-service:staging
-          curl --retry 15 --retry-connrefused --retry-delay 1 --fail http://127.0.0.1:18080/healthz
+          curl --retry 15 --retry-all-errors --retry-delay 1 --fail http://127.0.0.1:18080/healthz
+      - name: Show hosted image service logs on failure
+        if: failure()
+        run: docker logs ren-image-service-staging || true
       - name: Stop hosted image service
         if: always()
         run: docker rm -f ren-image-service-staging || true
