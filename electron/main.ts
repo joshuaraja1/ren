@@ -22,7 +22,7 @@ let overlayWindow: BrowserWindow | null = null;
 let selectedFocus: { displayId: number; region: FocusRegion; createdAt: number } | null = null;
 let circleInputActive = false;
 const captureSession = new CaptureSession();
-let lastCaptureData: { token: string; frames: string[]; pointer: { x: number; y: number }; focus?: { x: number; y: number; width: number; height: number } } | null = null;
+let lastCaptureData: { token: string; frames: string[]; pointer: { x: number; y: number }; focus?: { x: number; y: number; width: number; height: number }; fingerprint: Uint8Array; thumbnailSize: { width: number; height: number } } | null = null;
 let lastVisualLesson: { lesson: VisualLesson; displayId: number; createdAt: number } | null = null;
 
 const collapsedSize = { width: 236, height: 58 };
@@ -84,6 +84,14 @@ function cursorDisplayContext() {
     pointer: normalizeCursor(cursor, display.bounds),
   };
 }
+
+async function captureDisplay(displayId: number, thumbnailSize: { width: number; height: number }) {
+  const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize });
+  const source = sources.find((candidate) => candidate.display_id === String(displayId));
+  return source && !source.thumbnail.isEmpty() ? source.thumbnail : null;
+}
+
+const motionSample = (image: Electron.NativeImage) => image.resize({ width: 64, height: 36 }).toBitmap();
 
 function requireMainRenderer(event: Electron.IpcMainInvokeEvent) {
   if (event.sender !== mainWindow?.webContents) throw new Error("Not allowed");
@@ -238,23 +246,21 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("ren:capture-context", async (event) => {
     requireMainRenderer(event);
-    const overlayWasVisible = overlayWindow?.isVisible() ?? false;
+    const { display, pointer } = cursorDisplayContext();
+    const focus = selectedFocus && selectedFocus.displayId === display.id && Date.now() - selectedFocus.createdAt < 30_000 ? selectedFocus.region : null;
+    selectedFocus = null;
+    lastCaptureData = null;
+    const contextToken = captureSession.issue(display.id);
     mainWindow?.setOpacity(0);
+    overlayWindow?.webContents.send("ren:annotations", []);
+    overlayWindow?.webContents.send("ren:visual-lesson", null);
     overlayWindow?.hide();
     await new Promise((resolve) => setTimeout(resolve, 90));
     try {
-      const { display, pointer } = cursorDisplayContext();
-      const focus = selectedFocus && selectedFocus.displayId === display.id && Date.now() - selectedFocus.createdAt < 30_000 ? selectedFocus.region : null;
-      selectedFocus = null;
       const aspectRatio = display.size.width / display.size.height;
       const thumbnailSize = aspectRatio >= 1 ? { width: 1600, height: Math.round(1600 / aspectRatio) } : { width: Math.round(1200 * aspectRatio), height: 1200 };
-      const capture = async () => {
-        const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize });
-        const source = sources.find((candidate) => candidate.display_id === String(display.id));
-        return source && !source.thumbnail.isEmpty() ? source.thumbnail : null;
-      };
+      const capture = () => captureDisplay(display.id, thumbnailSize);
       const encodeMotion = (image: Electron.NativeImage) => `data:image/jpeg;base64,${image.toJPEG(82).toString("base64")}`;
-      const motionSample = (image: Electron.NativeImage) => image.resize({ width: 64, height: 36 }).toBitmap();
       const first = await capture();
       if (!first) throw new Error("The display under your cursor could not be captured");
       const frames = [first.toDataURL()];
@@ -277,16 +283,18 @@ app.whenReady().then(() => {
           if (third && hasMeaningfulMotion(motionSample(second), motionSample(third))) frames.push(encodeMotion(third));
         }
       }
-      const contextToken = captureSession.issue(display.id);
-      lastCaptureData = { token: contextToken, frames, pointer, focus: focus?.bounds };
+      if (!captureSession.isCurrent(contextToken)) throw new Error("The screen changed during capture. Ask again.");
+      lastCaptureData = { token: contextToken, frames, pointer, focus: focus?.bounds, fingerprint: motionSample(first), thumbnailSize };
       setTimeout(() => {
         if (lastCaptureData?.token === contextToken) { lastCaptureData = null; captureSession.invalidate(); }
       }, 90_000).unref();
       overlayWindow?.setBounds(display.bounds);
       return { frames: [], pointer, focus: focus?.bounds, contextToken };
+    } catch (error) {
+      if (captureSession.isCurrent(contextToken)) captureSession.invalidate();
+      throw error;
     } finally {
       mainWindow?.setOpacity(1);
-      if (overlayWasVisible) overlayWindow?.showInactive();
     }
   });
 
@@ -309,6 +317,20 @@ app.whenReady().then(() => {
       throw new Error("The screen changed while Ren was answering. Ask again.");
     }
     const lesson = validateVisualLesson(response.visualLesson);
+    if (response.annotations.length || lesson) {
+      mainWindow?.setOpacity(0);
+      overlayWindow?.hide();
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        const fresh = await captureDisplay(displayId, capture.thumbnailSize);
+        if (!fresh || hasMeaningfulMotion(capture.fingerprint, motionSample(fresh))) {
+          throw new Error("The screen changed while Ren was answering. Ask again.");
+        }
+      } finally { mainWindow?.setOpacity(1); }
+      if (!captureSession.isCurrent(value.contextToken) || screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id !== displayId) {
+        throw new Error("The screen changed while Ren was answering. Ask again.");
+      }
+    }
     overlayWindow?.setBounds(display.bounds);
     overlayWindow?.webContents.send("ren:annotations", response.annotations);
     overlayWindow?.webContents.send("ren:visual-lesson", lesson);
@@ -319,6 +341,9 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("ren:clear-annotations", (event) => {
     requireMainRenderer(event);
+    captureSession.invalidate();
+    lastCaptureData = null;
+    lastVisualLesson = null;
     overlayWindow?.webContents.send("ren:annotations", []);
     overlayWindow?.webContents.send("ren:visual-lesson", null);
     overlayWindow?.hide();

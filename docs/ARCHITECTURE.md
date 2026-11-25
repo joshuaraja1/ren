@@ -40,8 +40,10 @@ the preload bridge.
    requested visual explanation, a bounded connected-parts lesson.
 6. Main validates and forwards commands and lesson geometry to the transparent
    click-through overlay window on the captured display.
-7. Main rejects a late visual if its captured display or context changed. The
-   renderer shows the answer and has no IPC method for forging draw commands.
+7. Main rejects a late visual if its captured display or context changed. It
+   briefly recaptures a small screen fingerprint before showing spatial output,
+   then sends the answer to the renderer. The renderer has no IPC method for
+   forging draw commands.
 
 The cursor's normalized position is added as a pointing hint. It is never
 treated as permission to click, type, or control the underlying application.

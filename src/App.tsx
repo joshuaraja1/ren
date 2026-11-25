@@ -369,7 +369,6 @@ export function App() {
     setQuestion(""); setError(""); setVoiceState("processing"); keepAwake();
     setMessages((current) => [...current, { id: crypto.randomUUID(), role: "user", content: clean }]);
     try {
-      await window.ren?.clearAnnotations?.();
       const history = messagesRef.current.slice(-8).map(({ role, content }) => ({ role, content }));
       const response = window.ren ? await (async () => { const context = await captureBurst(); return window.ren!.ask({ question: clean, ...context, history }); })() : { answer: "I can see the interaction working in preview mode. The packaged desktop app will use your current screen and cursor as context.", annotations: [], provider: "demo" as const };
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: response.answer, provider: response.provider, followUps: response.followUps }]);
