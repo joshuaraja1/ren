@@ -23,7 +23,7 @@ import { filterOpaquePositions, locateImageParts } from "./image-registration.js
 import { validateVisualLesson } from "./visual-lesson.js";
 import { wantsVisualCreation } from "./visual-intent.js";
 import { centerRequestedLesson } from "./visual-presentation.js";
-import { answerForInteractiveScene, interactiveSceneFor } from "./interactive-scene.js";
+import { answerForInteractiveScene, interactiveSceneFor, tagRequestedInteractiveScene } from "./interactive-scene.js";
 import { CaptureSession } from "./capture-session.js";
 import { requestMacScreenCaptureAccess } from "./mac-screen-permission.js";
 import type { VisualLesson } from "./visual-lesson.js";
@@ -425,7 +425,10 @@ app.whenReady().then(() => {
       && screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id === displayId
       && canPlaceSpatialVisual(capture.dynamicContent, circleInputActive));
     let lesson = display && (spatialAllowed || explicitVisual) ? validateVisualLesson(response.visualLesson) : null;
-    if (lesson && explicitVisual && display) lesson = centerRequestedLesson(lesson, display.bounds.width, display.bounds.height);
+    if (lesson && explicitVisual && display) {
+      lesson = centerRequestedLesson(lesson, display.bounds.width, display.bounds.height);
+      lesson = tagRequestedInteractiveScene(lesson, value.question);
+    }
     let annotations = spatialAllowed && !explicitVisual ? response.annotations : [];
     if (spatialAllowed && focus && !explicitVisual) {
       annotations = [{ id: "selected-area", type: "rectangle" as const, at: { x: focus.x, y: focus.y }, width: focus.width, height: focus.height, color: "#42c7d9", label: "Selected area" }, ...annotations.filter((item) => item.type !== "rectangle")].slice(0, 4);
