@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 import { App } from "./App";
-import type { RenBridge } from "./contracts";
+import type { AskRequest, RenBridge } from "./contracts";
 
 describe("Ren ambient shell", () => {
   it("presents a zero-configuration wake and point flow", async () => {
@@ -69,7 +69,12 @@ describe("Ren ambient shell", () => {
 
   it("asks a suggested follow-up with a fresh screen context", async () => {
     const captureContext = vi.fn(async () => ({ frames: ["data:image/png;base64,dGVzdA=="], pointer: { x: 0.5, y: 0.5 } }));
-    const ask = vi.fn(async () => ({ answer: "Look at the highlighted step.", annotations: [], followUps: ["Why does that step work?"], provider: "vision" as const }));
+    const visualLesson = { version: 1 as const, title: "The step", placement: { x: 0.2, y: 0.2, width: 0.5, height: 0.5 }, parts: [
+      { id: "input", label: "Input", explanation: "Starting value.", x: 0.2, y: 0.5 },
+      { id: "result", label: "Result", explanation: "Computed value.", x: 0.8, y: 0.5 },
+    ], connections: [{ from: "input", to: "result", label: "becomes" }] };
+    const showVisualLesson = vi.fn(async () => {});
+    const ask = vi.fn(async (_request: AskRequest) => ({ answer: "Look at the highlighted step.", annotations: [], visualLesson, followUps: ["Why does that step work?"], provider: "vision" as const }));
     window.ren = {
       permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
       primarySource: async () => ({ id: "screen", name: "Main display", thumbnail: "" }),
@@ -78,6 +83,7 @@ describe("Ren ambient shell", () => {
       setExpanded: async () => {},
       speechStop: async () => {},
       captureContext,
+      showVisualLesson,
       ask,
     } as unknown as RenBridge;
     try {
@@ -89,7 +95,9 @@ describe("Ren ambient shell", () => {
       fireEvent.click(await screen.findByRole("button", { name: /why does that step work/i }));
       await waitFor(() => expect(ask).toHaveBeenCalledTimes(2));
       expect(captureContext).toHaveBeenCalledTimes(2);
+      expect(showVisualLesson).toHaveBeenCalledWith(visualLesson);
       expect(ask).toHaveBeenLastCalledWith(expect.objectContaining({ question: "Why does that step work?" }));
+      expect(ask.mock.calls[1]![0].history.some((turn) => turn.content.includes("Prior on-screen visual: The step"))).toBe(true);
     } finally { window.ren = undefined; }
   });
 });

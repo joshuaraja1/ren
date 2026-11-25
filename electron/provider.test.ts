@@ -43,6 +43,26 @@ describe("provider privacy boundary", () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
+  it("accepts only a validated on-screen visual lesson from the provider", async () => {
+    const lesson = {
+      version: 1, title: "Lift", placement: { x: 0.2, y: 0.2, width: 0.5, height: 0.5 },
+      parts: [
+        { id: "wing", label: "Wing", explanation: "Moves air down.", x: 0.2, y: 0.5 },
+        { id: "air", label: "Air", explanation: "Flows around the wing.", x: 0.8, y: 0.3 },
+      ],
+      connections: [{ from: "air", to: "wing", label: "flows around" }],
+    };
+    const fetchCall = vi.fn(async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "Air moves around the wing.", visualLesson: lesson }) } }] }) }));
+    vi.stubGlobal("fetch", fetchCall);
+    try {
+      const request = { question: "Show how lift works", frames: [], history: [] };
+      const credentials = { apiKey: "test", model: "vision", baseUrl: "https://example.com/v1" };
+      expect((await askTeacher(request, credentials)).visualLesson).toEqual({ ...lesson, assumption: undefined });
+      lesson.connections[0].to = "missing";
+      expect((await askTeacher(request, credentials)).visualLesson).toBeUndefined();
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("returns an actionable error when the provider times out", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new DOMException("aborted", "TimeoutError"); }));
     try {

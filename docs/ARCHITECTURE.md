@@ -33,8 +33,10 @@ the preload bridge.
    display containing the learner's cursor. It adds a circled crop and up to
    two compressed short-interval frames only when screen motion is detected.
 4. Main validates the payload and delegates to the configured provider.
-5. The provider returns prose plus normalized overlay commands.
-6. Main validates and forwards commands to the transparent overlay window.
+5. The provider returns prose plus normalized overlay commands and, for a
+   requested visual explanation, a bounded connected-parts lesson.
+6. Main validates and forwards commands and lesson geometry to the transparent
+   click-through overlay window on the captured display.
 7. The renderer discards the frame and shows the answer.
 
 The cursor's normalized position is added as a pointing hint. It is never

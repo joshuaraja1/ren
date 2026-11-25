@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import type { AmbientStatus, AskResponse, ConversationTurn, ScreenContext, ScreenSource, VisionStatus } from "./contracts";
 
 type VoiceState = "idle" | "listening" | "processing" | "responding";
-type Message = ConversationTurn & { id: string; provider?: AskResponse["provider"]; followUps?: string[] };
+type Message = ConversationTurn & { id: string; provider?: AskResponse["provider"]; followUps?: string[]; visualLesson?: AskResponse["visualLesson"] };
 type RecognitionResult = { 0: { transcript: string }; isFinal: boolean };
 type SpeechRecognitionLike = {
   continuous: boolean; interimResults: boolean; lang: string;
@@ -369,10 +369,17 @@ export function App() {
     setQuestion(""); setError(""); setVoiceState("processing"); keepAwake();
     setMessages((current) => [...current, { id: crypto.randomUUID(), role: "user", content: clean }]);
     try {
-      const history = messagesRef.current.slice(-8).map(({ role, content }) => ({ role, content }));
+      await window.ren?.clearAnnotations?.();
+      const history = messagesRef.current.slice(-8).map(({ role, content, visualLesson }) => ({
+        role,
+        content: visualLesson
+          ? `${content}\n[Prior on-screen visual: ${visualLesson.title}; ${visualLesson.parts.map((part) => `${part.id} at (${part.x},${part.y}): ${part.label}`).join("; ")}; placement ${JSON.stringify(visualLesson.placement)}]`.slice(0, 5000)
+          : content,
+      }));
       const response = window.ren ? await (async () => { const context = await captureBurst(); return window.ren!.ask({ question: clean, ...context, history }); })() : { answer: "I can see the interaction working in preview mode. The packaged desktop app will use your current screen and cursor as context.", annotations: [], provider: "demo" as const };
-      setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: response.answer, provider: response.provider, followUps: response.followUps }]);
+      setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: response.answer, provider: response.provider, followUps: response.followUps, visualLesson: response.visualLesson }]);
       if (response.annotations.length) await window.ren?.showAnnotations(response.annotations);
+      if (response.visualLesson) await window.ren?.showVisualLesson(response.visualLesson);
       setVoiceState("responding"); suppressSpeechUntilRef.current = Date.now() + Math.min(12_000, response.answer.length * 45);
       const utterance = new SpeechSynthesisUtterance(response.answer); utterance.onend = () => { if (nativeSpeechRef.current && expandedRef.current) void startNativeDictation(); else { setVoiceState("listening"); keepAwake(); } }; speechSynthesis.cancel(); speechSynthesis.speak(utterance);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Ren couldn’t answer."); setVoiceState("idle"); }

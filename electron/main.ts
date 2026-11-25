@@ -12,6 +12,7 @@ import type { FocusRegion } from "./circle-geometry.js";
 import { clearVisionSettings, saveVisionSettings, visionCredentials, visionStatus } from "./vision-settings.js";
 import { parseAskRequest } from "./request-validation.js";
 import { hasMeaningfulMotion } from "./frame-motion.js";
+import { validateVisualLesson } from "./visual-lesson.js";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 let mainWindow: BrowserWindow | null = null;
@@ -129,11 +130,14 @@ app.whenReady().then(() => {
     const display = screen.getAllDisplays().find((item) => item.id === displayId);
     if (!display || !overlayWindow) return;
     overlayWindow.setBounds(display.bounds);
+    overlayWindow.webContents.send("ren:visual-lesson", null);
     overlayWindow.webContents.send("ren:annotations", [{ id: "circle-focus", type: "path", points, color: "#327d87" }]);
     overlayWindow.showInactive();
   }
   function invalidateSpatialContext() {
     selectedFocus = null;
+    overlayWindow?.webContents.send("ren:annotations", []);
+    overlayWindow?.webContents.send("ren:visual-lesson", null);
     overlayWindow?.hide();
   }
   screen.on("display-removed", () => {
@@ -152,7 +156,7 @@ app.whenReady().then(() => {
         mainWindow?.showInactive();
         mainWindow?.webContents.send("ren:focus-selection");
       },
-      onCancel: () => { selectedFocus = null; overlayWindow?.hide(); },
+      onCancel: invalidateSpatialContext,
       onScroll: invalidateSpatialContext,
     });
     return circleInputActive;
@@ -287,9 +291,17 @@ app.whenReady().then(() => {
     overlayWindow?.webContents.send("ren:annotations", safe);
     overlayWindow?.showInactive();
   });
+  ipcMain.handle("ren:show-visual-lesson", (event, candidate: unknown) => {
+    requireMainRenderer(event);
+    const lesson = validateVisualLesson(candidate);
+    if (!lesson) throw new Error("Invalid visual lesson");
+    overlayWindow?.webContents.send("ren:visual-lesson", lesson);
+    overlayWindow?.showInactive();
+  });
   ipcMain.handle("ren:clear-annotations", (event) => {
     requireMainRenderer(event);
     overlayWindow?.webContents.send("ren:annotations", []);
+    overlayWindow?.webContents.send("ren:visual-lesson", null);
     overlayWindow?.hide();
   });
   app.on("activate", () => {

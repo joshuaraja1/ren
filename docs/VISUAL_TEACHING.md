@@ -1,6 +1,6 @@
 # Connected visual lessons
 
-Status: requirement and first schema implementation. Tracked in
+Status: validated schema and first on-screen schematic implementation. Tracked in
 [issue #35](https://github.com/joshuaraja1/ren/issues/35). Ren does not yet
 generate realistic teaching images.
 
@@ -62,7 +62,8 @@ not a manufacturing drawing, dimensional specification, or proof of operation.
 1. **Contract:** requirements, validated manifest, and tests.
 2. **Fast on-screen diagram:** transparent overlay composition, placement,
    connected callouts, pointer/voice reference, clear control, and multi-display
-   and reduced-motion tests.
+   and reduced-motion tests. The first connected drawing is implemented;
+   physical multi-display QA and pointer-based part selection remain open.
 3. **Realistic on-screen image:** optional cutout image adapter, progressive
    previews, overlay composition, cancellation, resource bounds, provider
    disclosure, fallback, and security tests.

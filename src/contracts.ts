@@ -1,3 +1,5 @@
+import type { VisualLesson } from "../electron/visual-lesson";
+
 export type Point = { x: number; y: number };
 
 export type Annotation =
@@ -36,6 +38,7 @@ export type AmbientStatus = {
 export type AskResponse = {
   answer: string;
   annotations: Annotation[];
+  visualLesson?: VisualLesson;
   followUps?: string[];
   provider: "demo" | "vision";
 };
@@ -69,8 +72,10 @@ export type RenBridge = {
   speechStop(): Promise<void>;
   ask(request: AskRequest): Promise<AskResponse>;
   showAnnotations(annotations: Annotation[]): Promise<void>;
+  showVisualLesson(lesson: VisualLesson): Promise<void>;
   clearAnnotations(): Promise<void>;
   onAnnotations(listener: (annotations: Annotation[]) => void): () => void;
+  onVisualLesson(listener: (lesson: VisualLesson | null) => void): () => void;
   onFocusSelection(listener: () => void): () => void;
 };
 
