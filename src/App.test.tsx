@@ -77,7 +77,7 @@ describe("Ren ambient shell", () => {
       render(<App />);
       fireEvent.click(await screen.findByRole("button", { name: /enable microphone to talk to ren/i }));
       await waitFor(() => expect(openPermissionSettings).toHaveBeenCalledWith("microphone"));
-      expect(requestPermissions).toHaveBeenCalledTimes(1);
+      expect(requestPermissions).not.toHaveBeenCalled();
       expect(screen.queryByRole("heading", { name: /give ren permission once/i })).not.toBeInTheDocument();
       expect(screen.getByRole("textbox", { name: /ask ren/i })).toBeVisible();
     } finally { window.ren = undefined; }

@@ -323,7 +323,19 @@ export function App() {
     if (!window.ren) return;
     setError("");
     try {
-      const status = await window.ren.requestPermissions();
+      // Request the device from the focused renderer. On macOS this presents
+      // the TCC prompt for the signed app and also exercises the media path
+      // that the wake listener will use after permission is granted.
+      if (navigator.mediaDevices?.getUserMedia) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          stream.getTracks().forEach((track) => track.stop());
+        } catch {
+          // A previous denial is handled by the native status below.
+        }
+      }
+      let status = await window.ren.permissionStatus();
+      if (status.microphone === "not-determined") status = await window.ren.requestPermissions();
       setPermission(status);
       if (status.microphone !== "granted") {
         await window.ren.openPermissionSettings("microphone");
