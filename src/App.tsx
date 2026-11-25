@@ -386,7 +386,8 @@ export function App() {
   async function illustrate() {
     if (!window.ren || imageRendering) return;
     setImageRendering(true); setError("");
-    try { await window.ren.generateIllustration(); }
+    setImageAvailable(false);
+    try { if (!await window.ren.generateIllustration()) setImageAvailable(true); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Could not render an illustration."); }
     finally { setImageRendering(false); }
   }

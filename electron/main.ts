@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, screen, session, shell, systemPreferences } from "electron";
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, nativeImage, screen, session, shell, systemPreferences } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, writeFileSync } from "node:fs";
@@ -395,12 +395,19 @@ app.whenReady().then(() => {
       imageRenderAbort = controller;
       const timeout = setTimeout(() => controller.abort(), 90_000);
       const current = () => lastVisualLesson === visual && screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id === visual.displayId && !controller.signal.aborted;
+      const decodes = (dataUrl: string) => {
+        const image = nativeImage.createFromDataURL(dataUrl);
+        const size = image.getSize();
+        return !image.isEmpty() && size.width > 0 && size.height > 0 && size.width <= 2048 && size.height <= 2048;
+      };
       try {
       const image = await generateIllustration(visual.lesson, credentials.apiKey, (preview) => {
         if (!current()) { controller.abort(); return; }
+        if (!decodes(preview)) return;
         overlayWindow?.webContents.send("ren:illustration", { image: preview, preview: true });
       }, controller.signal);
       if (!current()) throw new Error("The screen changed while the illustration was rendering.");
+      if (!decodes(image)) throw new Error("Image provider returned an unreadable image.");
       overlayWindow?.webContents.send("ren:illustration", { image, preview: false });
       return true;
       } catch (error) {

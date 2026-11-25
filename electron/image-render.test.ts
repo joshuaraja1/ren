@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { generateIllustration, imagePrompt } from "./image-render.js";
 import type { VisualLesson } from "./visual-lesson.js";
+import { readFileSync } from "node:fs";
 
 const lesson: VisualLesson = { version: 1, title: "Wing lift", placement: { x: .1, y: .1, width: .7, height: .7 }, parts: [
   { id: "wing", label: "Wing", explanation: "Deflects air", x: .2, y: .5 },
   { id: "air", label: "Air", explanation: "Flows past", x: .8, y: .5 },
 ], connections: [{ from: "air", to: "wing", label: "passes" }] };
-const pngBytes = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.alloc(32)]);
-pngBytes.write("IHDR", 12, "ascii"); pngBytes.writeUInt32BE(1024, 16); pngBytes.writeUInt32BE(1024, 20);
+const pngBytes = readFileSync("build/icon.png");
 const png = pngBytes.toString("base64");
 const event = (type: string) => `data: ${JSON.stringify({ type, b64_json: png, output_format: "png" })}\n\n`;
 
@@ -45,5 +45,10 @@ describe("illustration adapter", () => {
     const stream = `data: ${JSON.stringify({ type: "image_generation.completed", b64_json: huge.toString("base64"), output_format: "png" })}\n\n`;
     const fetcher = vi.fn(async () => new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(stream)); controller.close(); } }), { status: 200 })) as unknown as typeof fetch;
     await expect(generateIllustration(lesson, "key", () => {}, new AbortController().signal, fetcher)).rejects.toThrow("dimensions");
+  });
+  it("rejects a truncated PNG even with a valid signature and dimensions", async () => {
+    const stream = `data: ${JSON.stringify({ type: "image_generation.completed", b64_json: pngBytes.subarray(0, 40).toString("base64"), output_format: "png" })}\n\n`;
+    const fetcher = vi.fn(async () => new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(stream)); controller.close(); } }), { status: 200 })) as unknown as typeof fetch;
+    await expect(generateIllustration(lesson, "key", () => {}, new AbortController().signal, fetcher)).rejects.toThrow("truncated");
   });
 });

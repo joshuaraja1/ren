@@ -17,6 +17,18 @@ function decodeImage(value: unknown, format: unknown) {
   const width = bytes.readUInt32BE(16);
   const height = bytes.readUInt32BE(20);
   if (!png || bytes.toString("ascii", 12, 16) !== "IHDR" || !width || !height || width > 2048 || height > 2048 || width * height > 4_000_000) throw new Error("Image provider returned invalid dimensions.");
+  let offset = 8;
+  let hasPixels = false;
+  let complete = false;
+  while (offset + 12 <= bytes.length) {
+    const length = bytes.readUInt32BE(offset);
+    const type = bytes.toString("ascii", offset + 4, offset + 8);
+    if (length > bytes.length - offset - 12) break;
+    if (type === "IDAT" && length) hasPixels = true;
+    offset += 12 + length;
+    if (type === "IEND" && length === 0) { complete = offset === bytes.length; break; }
+  }
+  if (!hasPixels || !complete) throw new Error("Image provider returned a truncated image.");
   return `data:image/${format};base64,${value}`;
 }
 
