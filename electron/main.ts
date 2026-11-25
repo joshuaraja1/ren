@@ -70,6 +70,7 @@ function createOverlayWindow() {
   const bounds = screen.getPrimaryDisplay().bounds;
   overlayWindow = new BrowserWindow({
     ...bounds,
+    ...(process.platform === "darwin" ? { type: "panel" as const } : {}),
     transparent: true,
     frame: false,
     hasShadow: false,
@@ -116,6 +117,7 @@ function requireMainRenderer(event: Electron.IpcMainInvokeEvent) {
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     ...expandedSize,
+    ...(process.platform === "darwin" ? { type: "panel" as const } : {}),
     frame: false,
     transparent: true,
     resizable: false,
@@ -133,7 +135,9 @@ function createMainWindow() {
     },
   });
 
-  mainWindow.setAlwaysOnTop(true, "floating");
+  // A floating window falls behind native full-screen Spaces on macOS.
+  // Keep the assistant at the same level as its drawing overlay.
+  mainWindow.setAlwaysOnTop(true, "screen-saver");
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   mainWindow.once("ready-to-show", () => {
     const access = permissionStatus();
@@ -289,7 +293,7 @@ app.whenReady().then(() => {
         }
         return permissionStatus();
       } finally {
-        if (wasOnTop) mainWindow?.setAlwaysOnTop(true, "floating");
+        if (wasOnTop) mainWindow?.setAlwaysOnTop(true, "screen-saver");
       }
     })().finally(() => { permissionRequest = null; });
     return permissionRequest;
