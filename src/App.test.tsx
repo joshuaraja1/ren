@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { vi } from "vitest";
 import { App } from "./App";
 import type { RenBridge } from "./contracts";
+import type { AgentJobSnapshot } from "../electron/agent-jobs";
 
 describe("Ren ambient shell", () => {
   it("presents a zero-configuration wake and point flow", async () => {
@@ -190,7 +191,7 @@ describe("Ren ambient shell", () => {
   });
 
   it("starts a voice-style agent job and presents its result", async () => {
-    let update: ((job: { id: string; task: string; status: "running" | "completed"; stage: string; completedSteps: number; totalSteps: number; scope: "current screen"; answer?: string }) => void) | undefined;
+    let update: ((job: AgentJobSnapshot) => void) | undefined;
     const startAgentJob = vi.fn(async () => ({ id: "job-1", task: "investigate this system", status: "running" as const, stage: "Planning", completedSteps: 0, totalSteps: 3, scope: "current screen" as const }));
     const ask = vi.fn();
     window.ren = {
@@ -212,8 +213,9 @@ describe("Ren ambient shell", () => {
       await waitFor(() => expect(startAgentJob).toHaveBeenCalledWith({ task: "investigate this system", contextToken: "capture-1" }));
       expect(ask).not.toHaveBeenCalled();
       expect(screen.getByRole("status")).toHaveTextContent(/planning/i);
-      act(() => update?.({ id: "job-1", task: "investigate this system", status: "completed", stage: "Done", completedSteps: 3, totalSteps: 3, scope: "current screen", answer: "The fan and nozzle balance lift." }));
+      act(() => update?.({ id: "job-1", task: "investigate this system", status: "completed", stage: "Done", completedSteps: 3, totalSteps: 3, scope: "current screen", answer: "The fan and nozzle balance lift.", sources: [{ title: "Technical source", url: "https://example.com/jet" }] }));
       expect(await screen.findByText("The fan and nozzle balance lift.")).toBeVisible();
+      expect(screen.getByRole("link", { name: "Technical source" })).toHaveAttribute("href", "https://example.com/jet");
     } finally { window.ren = undefined; }
   });
 

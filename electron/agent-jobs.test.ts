@@ -15,12 +15,56 @@ describe("voice agent job intent", () => {
     expect(detectAgentJobIntent("Compare these two designs")).toBe("Compare these two designs");
     expect(detectAgentJobIntent("Build me a plan for understanding this diagram")).toBe("Build me a plan for understanding this diagram");
     expect(detectAgentJobIntent("Spawn an agent to study this circuit")).toBe("study this circuit");
+    expect(detectAgentJobIntent("Find 10 TikTok creators for my business")).toBe("Find 10 TikTok creators for my business");
     expect(detectAgentJobIntent("How does this engine hover?")).toBeNull();
     expect(detectAgentJobIntent("Draw a diagram of this engine")).toBeNull();
   });
 });
 
 describe("AgentJobManager", () => {
+  it("uses cited web research for a voice-requested creator search", async () => {
+    const web = new Response(JSON.stringify({ output: [
+      { type: "web_search_call", action: { type: "search", query: "TikTok creators" } },
+      { type: "message", content: [{ type: "output_text", text: "Creator A posts on TikTok.", annotations: [{ type: "url_citation", title: "Creator A", url: "https://example.com/creator-a" }] }] },
+    ] }), { status: 200 });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(reply({ objectives: [
+        { question: "What kind of business is visible?", tool: "screen_inspection" },
+        { question: "Find relevant TikTok creators", tool: "web_search" },
+      ] }))
+      .mockResolvedValueOnce(reply({ finding: "The screen shows a fitness brand." }))
+      .mockResolvedValueOnce(web)
+      .mockResolvedValueOnce(reply({ answer: "Creator A may fit this fitness brand." }));
+    vi.stubGlobal("fetch", fetchMock);
+    const manager = new AgentJobManager();
+    const started = manager.start({ task: "Find 10 TikTok creators for my business", frames }, credentials);
+    for (let i = 0; i < 20 && manager.get(started.id)?.status === "running"; i++) await tick();
+    const completed = manager.get(started.id);
+    expect(completed?.status).toBe("completed");
+    expect(completed?.scope).toBe("current screen + web");
+    expect(completed?.stage).toBe("Partial result");
+    expect(completed?.answer).toContain("only 1 cited source");
+    expect(completed?.sources).toEqual([{ title: "Creator A", url: "https://example.com/creator-a" }]);
+    expect(fetchMock.mock.calls[2][0]).toBe("https://api.openai.com/v1/responses");
+    const webInput = JSON.parse(fetchMock.mock.calls[2][1].body).input;
+    expect(webInput).toContain("Find 10 TikTok creators for my business");
+    expect(webInput).not.toContain("The screen shows a fitness brand");
+    expect(webInput).not.toContain("Find relevant TikTok creators");
+  });
+
+  it("does not send a current-screen job to web search even if the planner asks", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(reply({ objectives: [
+      { question: "Inspect the current screen", tool: "screen_inspection" },
+      { question: "Search for private text from the screenshot", tool: "web_search" },
+    ] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const manager = new AgentJobManager();
+    const started = manager.start({ task: "Analyze my current screen", frames }, credentials);
+    for (let i = 0; i < 20 && manager.get(started.id)?.status === "running"; i++) await tick();
+    expect(manager.get(started.id)?.status).toBe("failed");
+    expect(started.scope).toBe("current screen");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
   it("runs model-selected investigation objectives, synthesizes them, and emits progress", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(reply({ objectives: [
