@@ -30,7 +30,12 @@ describe("hosted image adapter", () => {
   });
 
   it("rejects an unverified final event", async () => {
-    const fetcher = vi.fn(async () => new Response(event("complete", { image, registration: { wing: { x: .3, y: .4 } } }), { status: 200 })) as unknown as typeof fetch;
+    const fetcher = vi.fn(async () => new Response(event("complete", { image, registration: { unknown: { x: .3, y: .4 } } }), { status: 200 })) as unknown as typeof fetch;
     await expect(generateHostedIllustration(lesson, credentials, () => {}, new AbortController().signal, fetcher)).rejects.toThrow("part locations");
+  });
+  it("keeps a verified label when another image part is missing", async () => {
+    const partial = { wing: registration.wing };
+    const fetcher = vi.fn(async () => new Response(event("complete", { image, registration: partial }), { status: 200 })) as unknown as typeof fetch;
+    await expect(generateHostedIllustration(lesson, credentials, () => {}, new AbortController().signal, fetcher)).resolves.toEqual({ image, registration: partial });
   });
 });

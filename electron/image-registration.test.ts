@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { locateImageParts, positionsOnOpaquePixels, validateImageRegistration } from "./image-registration.js";
+import { filterOpaquePositions, locateImageParts, positionsOnOpaquePixels, validateImageRegistration, validatePartialImageRegistration } from "./image-registration.js";
 import type { VisualLesson } from "./visual-lesson.js";
 
 const lesson: VisualLesson = { version: 1, title: "Aircraft", placement: { x: .1, y: .1, width: .7, height: .7 }, parts: [
@@ -18,6 +18,11 @@ describe("generated image registration", () => {
     expect(validateImageRegistration({ ...valid, parts: [{ ...valid.parts[0], confidence: .5 }, valid.parts[1]] }, lesson)).toBeNull();
     expect(validateImageRegistration({ ...valid, parts: [valid.parts[0], { ...valid.parts[1], id: "wing" }] }, lesson)).toBeNull();
     expect(validateImageRegistration({ ...valid, parts: [valid.parts[0], { ...valid.parts[1], x: .29, y: .41 }] }, lesson)).toBeNull();
+  });
+  it("keeps confidently located parts when other generated details are absent", () => {
+    const partial = { coherent: true, parts: [valid.parts[0], { ...valid.parts[1], present: false, confidence: .2 }] };
+    expect(validatePartialImageRegistration(partial, lesson)).toEqual({ wing: { x: .28, y: .4 } });
+    expect(validatePartialImageRegistration({ ...partial, coherent: false }, lesson)).toBeNull();
   });
   it("accepts coding part IDs that overlap Object.prototype names", () => {
     const coding = { ...lesson, parts: [{ ...lesson.parts[0], id: "constructor" }, { ...lesson.parts[1], id: "toString" }] };
@@ -57,6 +62,8 @@ describe("generated image registration", () => {
     expect(positionsOnOpaquePixels(bitmap, 20, 20, registration)).toBe(false);
     for (let y = 0; y < 20; y += 1) for (let x = 0; x < 20; x += 1) bitmap[(y * 20 + x) * 4 + 3] = 255;
     expect(positionsOnOpaquePixels(bitmap, 20, 20, registration)).toBe(true);
+    for (let y = 0; y < 10; y += 1) for (let x = 0; x < 10; x += 1) bitmap[(y * 20 + x) * 4 + 3] = 0;
+    expect(filterOpaquePositions(bitmap, 20, 20, registration)).toEqual({ engine: registration.engine });
   });
   it("stops reading an oversized image-check response", async () => {
     const cancel = vi.fn();

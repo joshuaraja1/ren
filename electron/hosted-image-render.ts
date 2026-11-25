@@ -1,5 +1,5 @@
 import { decodeImage, imageManifest } from "./image-render.js";
-import { validateRegisteredPositions, type ImageRegistration } from "./image-registration.js";
+import { validatePartialRegisteredPositions, type ImageRegistration } from "./image-registration.js";
 import type { VisualLesson } from "./visual-lesson.js";
 import type { HostedImageCredentials } from "./hosted-image-settings.js";
 
@@ -42,7 +42,7 @@ export async function generateHostedIllustration(
         const image = decodeImage(payload.image.slice("data:image/png;base64,".length), "png");
         if (event === "preview") onPreview(image);
         else {
-          const registration = validateRegisteredPositions(payload.registration, lesson);
+          const registration = validatePartialRegisteredPositions(payload.registration, lesson);
           if (!registration) throw new Error("Ren could not verify the image part locations.");
           completed = { image, registration };
         }

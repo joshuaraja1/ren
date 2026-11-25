@@ -35,6 +35,7 @@ export function VisualLessonOverlay({ lesson, illustration }: { lesson: VisualLe
   };
   const description = `${lesson.title}. ${lesson.parts.map((part) => `${part.label}: ${part.explanation}`).join(" ")}`;
   const headingInside = lesson.placement.y * window.innerHeight < 110;
+  if (illustration && box) return <IllustratedLesson lesson={lesson} illustration={illustration} box={box} />;
   return <section className={`visual-lesson${illustration ? " has-illustration" : ""}${illustration && !illustration.registration ? " is-preview" : ""}`} style={placement} role="img" aria-label={description}>
     {illustration && box && <div className="visual-lesson-illustration"><img src={illustration.image} alt="" style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%` }} /><span>{illustration.preview ? "GENERATING · UNVERIFIED" : illustration.registration ? "ILLUSTRATIVE · PARTS LOCATED" : "ILLUSTRATIVE"}</span></div>}
     <div className={`visual-lesson-heading${headingInside ? " is-inside" : ""}`} aria-hidden="true"><span>REN EXPLAINS</span><strong>{lesson.title}</strong>{lesson.assumption && <small>{lesson.assumption}</small>}</div>
@@ -57,5 +58,36 @@ export function VisualLessonOverlay({ lesson, illustration }: { lesson: VisualLe
       const position = positions[part.id];
       return <div key={part.id} ref={(element) => { if (element) cards.current.set(part.id, element); else cards.current.delete(part.id); }} className={`visual-lesson-part${position?.right ? " is-flipped" : ""}`} aria-hidden="true" style={{ left: `${part.x * 100}%`, top: `${part.y * 100}%`, transform: `translate(${position?.x ?? 12}px, ${position?.y ?? -30}px)`, visibility: position ? "visible" : "hidden", animationDelay: `${index * 55}ms` }}><i /><strong>{part.label}</strong><small>{part.explanation}</small></div>;
     })}
+  </section>;
+}
+
+function IllustratedLesson({ lesson, illustration, box }: { lesson: VisualLesson; illustration: Illustration; box: ReturnType<typeof imageBox> }) {
+  const placement = {
+    left: `${lesson.placement.x * 100}%`, top: `${lesson.placement.y * 100}%`,
+    width: `${lesson.placement.width * 100}%`, height: `${lesson.placement.height * 100}%`,
+  };
+  const description = `${lesson.title}. ${lesson.parts.map((part) => `${part.label}: ${part.explanation}`).join(" ")}`;
+  const headingInside = lesson.placement.y * window.innerHeight < 110;
+  const left = lesson.parts.filter((_, index) => index % 2 === 0);
+  const right = lesson.parts.filter((_, index) => index % 2 === 1);
+  const located = illustration.preview ? {} : illustration.registration ?? {};
+  const mapped = lesson.parts.map((part, index) => {
+    const side = index % 2 === 0 ? "left" : "right";
+    const sideIndex = Math.floor(index / 2);
+    const sideCount = side === "left" ? left.length : right.length;
+    const slot = .18 + .72 * (sideIndex + .5) / sideCount;
+    const anchor = Object.hasOwn(located, part.id) ? located[part.id] : undefined;
+    return { part, side, slot, anchor: anchor ? { x: box.x + box.width * anchor.x, y: box.y + box.height * anchor.y } : null };
+  });
+  const verified = mapped.filter((item) => item.anchor);
+  return <section className={`visual-lesson has-illustration illustrated-lesson${illustration.preview ? " is-preview" : ""}`} style={placement} role="img" aria-label={description}>
+    <div className="visual-lesson-illustration"><img src={illustration.image} alt="" style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%` }} /><span>{illustration.preview ? "GENERATING · UNVERIFIED" : verified.length ? "ILLUSTRATIVE · PARTS LOCATED" : "ILLUSTRATIVE · PARTS GUIDE"}</span></div>
+    <div className={`visual-lesson-heading${headingInside ? " is-inside" : ""}`} aria-hidden="true"><span>REN EXPLAINS</span><strong>{lesson.title}</strong>{lesson.assumption && <small>{lesson.assumption}</small>}</div>
+    <>
+      <svg className="visual-lesson-lines illustrated-lesson-lines" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+        {verified.map(({ part, side, slot, anchor }) => <g key={part.id}><line x1={side === "left" ? 270 : 730} y1={slot * 1000} x2={anchor!.x * 1000} y2={anchor!.y * 1000} /><circle cx={anchor!.x * 1000} cy={anchor!.y * 1000} r="6" /></g>)}
+      </svg>
+      {mapped.map(({ part, side, slot, anchor }, index) => <div key={part.id} className={`visual-lesson-part illustrated-lesson-part ${side}${anchor ? " is-located" : " is-unlocated"}`} aria-hidden="true" style={{ left: side === "left" ? "0%" : "73%", top: `${slot * 100}%`, animationDelay: `${index * 55}ms` }}><strong>{part.label}</strong><small>{part.explanation}</small>{!anchor && <em>Part guide · location unverified</em>}</div>)}
+    </>
   </section>;
 }

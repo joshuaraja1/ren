@@ -19,7 +19,7 @@ import { isSameStableScreen } from "./screen-continuity.js";
 import { canPlaceSpatialVisual } from "./visual-safety.js";
 import { generateIllustration, imageManifest, imagePrompt } from "./image-render.js";
 import { generateHostedIllustration } from "./hosted-image-render.js";
-import { locateImageParts, positionsOnOpaquePixels } from "./image-registration.js";
+import { filterOpaquePositions, locateImageParts } from "./image-registration.js";
 import { validateVisualLesson } from "./visual-lesson.js";
 import { wantsVisualCreation } from "./visual-intent.js";
 import { CaptureSession } from "./capture-session.js";
@@ -515,8 +515,8 @@ app.whenReady().then(() => {
       const checked = decoded(result.image);
       if (!checked) throw new Error("Image provider returned an unreadable image.");
       if (!current()) throw new Error("The screen changed while the illustration was being checked.");
-      const registration = result.registration && positionsOnOpaquePixels(checked.image.toBitmap(), checked.size.width, checked.size.height, result.registration)
-        ? result.registration : undefined;
+      const visible = result.registration && filterOpaquePositions(checked.image.toBitmap(), checked.size.width, checked.size.height, result.registration);
+      const registration = visible && Object.keys(visible).length ? visible : undefined;
       overlayWindow?.webContents.send("ren:illustration", { image: result.image, preview: false, width: checked.size.width, height: checked.size.height, registration });
       overlayWindow?.showInactive();
       return true;

@@ -42,6 +42,7 @@ it("composes a clearly marked image preview into the same overlay", () => {
   expect(container.querySelector(".visual-lesson-illustration img")).toHaveAttribute("src", "data:image/png;base64,dGVzdA==");
   expect(container.querySelector(".visual-lesson")).toHaveClass("has-illustration", "is-preview");
   expect(container).toHaveTextContent("GENERATING · UNVERIFIED");
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(2);
 });
 
 it("registers connected callouts to verified image parts", () => {
@@ -55,5 +56,27 @@ it("registers connected callouts to verified image parts", () => {
   expect(container).toHaveTextContent("ILLUSTRATIVE · PARTS LOCATED");
   const first = container.querySelector(".visual-lesson-part") as HTMLElement;
   expect(first.style.left).not.toBe("20%");
-  expect(container.querySelector(".visual-lesson-lines line")).toHaveAttribute("marker-end", "url(#lesson-arrowhead)");
+  expect(container.querySelectorAll(".illustrated-lesson-lines line")).toHaveLength(2);
+  expect(container.querySelectorAll(".illustrated-lesson-lines circle")).toHaveLength(2);
+  expect(container).toHaveTextContent("Flows past.");
+  expect(container).toHaveTextContent("Deflects air.");
+});
+
+it("keeps the image and part explanations together when only one anchor is verified", () => {
+  const lesson = {
+    version: 1 as const, title: "Phone", placement: { x: .2, y: .2, width: .5, height: .5 },
+    parts: [{ id: "display", label: "Display", explanation: "Shows messages.", x: .2, y: .2 }, { id: "keys", label: "Keys", explanation: "Dial numbers.", x: .8, y: .8 }],
+    connections: [{ from: "display", to: "keys", label: "above" }],
+  };
+  const illustration = { image: "data:image/png;base64,dGVzdA==", preview: false, width: 1024, height: 1024, registration: { display: { x: .45, y: .3 } } };
+  const { container, rerender } = render(<VisualLessonOverlay lesson={lesson} illustration={illustration} />);
+  expect(container.querySelector(".visual-lesson-illustration img")).toBeInTheDocument();
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(2);
+  expect(container.querySelectorAll(".illustrated-lesson-lines line")).toHaveLength(1);
+  expect(container).toHaveTextContent("Shows messages.");
+  expect(container).toHaveTextContent("Dial numbers.");
+  rerender(<VisualLessonOverlay lesson={lesson} illustration={{ ...illustration, registration: undefined }} />);
+  expect(container.querySelector(".visual-lesson-illustration img")).toBeInTheDocument();
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(2);
+  expect(container).toHaveTextContent("PARTS GUIDE");
 });
