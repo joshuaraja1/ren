@@ -7,7 +7,7 @@ visual guidance directly over your work.
 The first desktop prototype lives in a small top-edge overlay. After one-time OS
 permission onboarding, point with the cursor and say “Hey Ren,” or click the Ren
 pebble. The bundled wake model recognizes “Hey Ren” on-device. Ren then
-transcribes an English question locally, or accepts a typed question. Ren
+streams the spoken question to Deepgram for transcription, or accepts a typed question. Ren
 captures the cursor's display only when a question is asked, infers the subject
 automatically, and can place validated teaching visuals in a click-through
 overlay. A deterministic
@@ -29,22 +29,9 @@ npm install
 npm run dev
 ```
 
-If a local Ollama server is already running with an installed model that reports
-vision support, Ren offers a one-time **Use local model** button. Once you choose
-it, Ren answers screen questions through that local process without an API key.
-Check that you trust the process at `127.0.0.1:11434` before connecting. Ren
-excludes Ollama cloud model entries from this route. Ren does not install Ollama
-or model weights. For a cloud model, open **Connect AI** in Ren
-and enter an HTTPS provider URL, a vision-capable model name, and its API key
-once. Ren stores the key encrypted with the operating system's secure storage,
-and sends screenshots to that provider only when you ask. The provider may
-charge for requests. On Linux, saving a key requires a system keyring.
+Open **Connect AI** in Ren and enter a Deepgram API key for voice and an OpenAI API key for screen answers. Ren encrypts both keys with operating-system secure storage and does not display them again. The small “Hey Ren” wake detector stays on-device. After wake, spoken audio goes to Deepgram for transcription. Ren sends the reply text to Deepgram for speech. When you ask a screen question, Ren sends an on-demand screen image and your question to OpenAI (`gpt-5.4-mini` by default). Both services may charge for usage. On Linux, saving keys requires a system keyring. Ren does not run Ollama or a local speech model.
 
-For development, `.env.example` still supports `OPENAI_API_KEY`, `REN_MODEL`,
-and an optional `REN_API_BASE`. Ren uses the OpenAI-compatible chat completions
-contract. Environment files are ignored by git. Without a configured provider
-or detected local vision model, Ren shows an explicit demo notice and cannot
-inspect screen contents.
+For development, `.env.example` supports `DEEPGRAM_API_KEY`, `OPENAI_API_KEY`, and optional `REN_MODEL`. Environment files are ignored by git. Without configured keys, Ren shows a setup notice and cannot use cloud voice or inspect screen contents.
 
 For realistic on-screen illustrations, Ren can connect once to a
 [project-hosted image service](docs/HOSTED_IMAGES.md). The desktop sends only
@@ -65,10 +52,7 @@ Ren 0.1 captures a full-display image only when a question is submitted. It
 adds a circled-region crop when available and extra frames when the screen is
 visibly changing. It does not understand video before the captured moment.
 It does not continuously record the screen, click, type, or control other
-applications. Wake recognition runs on-device and sends no ambient audio to the
-answer provider. After the wake phrase, Ren listens for a question and submits
-it after a pause; the mic button can finish it sooner. Local dictation currently
-supports English, and typing remains available if it mishears. If the wake
+applications. Wake recognition runs on-device and sends no ambient audio to Deepgram. After the wake phrase, Ren streams the spoken question to Deepgram and submits it after a pause; the mic button can finish it sooner. Deepgram Flux currently supports English in Ren, and typing remains available if it mishears. If the wake
 engine cannot start, the pebble stays clickable. System-audio
 transcript and richer temporal video understanding remain on the roadmap.
 Voice-created agents that act in other apps after showing an approved plan are
@@ -78,8 +62,7 @@ directly over the user's current screen, are specified in
 [the visual teaching plan](docs/VISUAL_TEACHING.md). Current drawings remain
 on-screen schematic overlays. The draft branch can also generate a realistic
 image with the OpenAI Image API, directly or through the Ren-hosted service.
-An Ollama vision model can answer screen questions locally, but it does not
-generate the realistic image. Ren only
+Ren only
 places image callouts when every part passes the location check; otherwise it
 keeps the schematic.
 When a screen changes during an answer, Ren withholds spatial drawings and

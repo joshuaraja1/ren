@@ -1,109 +1,87 @@
-import { app, utilityProcess } from "electron";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import WebSocket from "ws";
+import { deepgramKey } from "./deepgram-settings.js";
 import { RealtimeAudioBudget } from "./audio-budget.js";
 
-type Child = ReturnType<typeof utilityProcess.fork>;
-type Pending = { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
-type Reply = { id?: unknown; result?: unknown; error?: unknown };
+type ActiveSpeech = {
+  socket: WebSocket;
+  budget: RealtimeAudioBudget;
+  transcript: string;
+  finish?: { resolve(value: string): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
+};
+let active: ActiveSpeech | null = null;
+const rates = new Set([8000, 16000, 24000, 44100, 48000]);
 
-let child: Child | null = null;
-let ready: Promise<Child> | null = null;
-let nextId = 0;
-const pending = new Map<number, Pending>();
-let active = false;
-let starting = false;
-let feedBusy = false;
-let budget: RealtimeAudioBudget | null = null;
-let lastStart = 0;
-let session = 0;
+export async function speechAvailable() { return !!await deepgramKey(); }
 
-function modelPath() { return app.isPackaged ? join(process.resourcesPath, "ren-asr") : join(app.getAppPath(), "models/ren-asr"); }
-
-export function speechAvailable() {
-  return ["encoder.onnx", "decoder.onnx", "joiner.onnx", "tokens.txt"].every((file) => existsSync(join(modelPath(), file)));
-}
-
-function workerPath() {
-  const compiled = fileURLToPath(new URL("./speech-worker.js", import.meta.url));
-  return app.isPackaged ? compiled.replace("app.asar/", "app.asar.unpacked/").replace("app.asar\\", "app.asar.unpacked\\") : compiled;
-}
-
-function reset(error: Error) {
-  for (const task of pending.values()) { clearTimeout(task.timer); task.reject(error); }
-  pending.clear(); child = null; ready = null; active = false; starting = false; feedBusy = false; budget = null;
-}
-
-function ensureChild(): Promise<Child> {
-  if (ready) return ready;
-  let process: Child;
-  try { process = utilityProcess.fork(workerPath()); }
-  catch { return Promise.reject(new Error("Local speech worker could not start.")); }
-  ready = new Promise<Child>((resolve, reject) => {
-    child = process;
-    process.once("spawn", () => resolve(process));
-    process.on("message", (reply: Reply) => {
-      if (!reply || typeof reply !== "object") return;
-      if (typeof reply.id !== "number") return;
-      const task = pending.get(reply.id);
-      if (!task) return;
-      pending.delete(reply.id); clearTimeout(task.timer);
-      if (typeof reply.error === "string") task.reject(new Error(reply.error));
-      else task.resolve(reply.result);
-    });
-    process.once("error", () => {
-      reject(new Error("Local speech worker could not start."));
-      process.kill();
-      if (child === process) reset(new Error("Local speech worker failed."));
-    });
-    process.once("exit", () => {
-      reject(new Error("Local speech worker exited."));
-      if (child === process) reset(new Error("Local speech worker exited."));
-    });
-  });
-  return ready;
-}
-
-async function send(message: Record<string, unknown>) {
-  const process = await ensureChild();
-  const id = ++nextId;
-  return new Promise<unknown>((resolve, reject) => {
-    const timer = setTimeout(() => { process.kill(); reset(new Error("Local speech worker timed out.")); }, 30_000);
-    pending.set(id, { resolve, reject, timer });
-    try { process.postMessage({ ...message, id }); }
-    catch { clearTimeout(timer); pending.delete(id); reject(new Error("Local speech worker could not receive audio.")); }
-  });
+function closeSpeech(current: ActiveSpeech, error?: Error) {
+  if (active === current) active = null;
+  if (current.socket.readyState === WebSocket.CONNECTING) current.socket.terminate();
+  else if (current.socket.readyState === WebSocket.OPEN) current.socket.close();
+  if (current.finish) {
+    clearTimeout(current.finish.timer);
+    if (error) current.finish.reject(error);
+    else current.finish.resolve(current.transcript.trim());
+    current.finish = undefined;
+  }
 }
 
 export async function startSpeech(sampleRate: number) {
-  if (!speechAvailable() || active || starting || !Number.isFinite(sampleRate) || sampleRate < 8000 || sampleRate > 192000 || Date.now() - lastStart < 1000) return false;
-  lastStart = Date.now();
-  starting = true;
-  const currentSession = ++session;
+  if (active || !rates.has(sampleRate)) return false;
+  const key = await deepgramKey();
+  if (!key) return false;
+  const url = new URL("wss://api.deepgram.com/v2/listen");
+  url.searchParams.set("model", "flux-general-en");
+  url.searchParams.set("encoding", "linear16");
+  url.searchParams.set("sample_rate", String(sampleRate));
+  url.searchParams.set("eot_threshold", "1.0");
+  url.searchParams.set("eot_timeout_ms", "60000");
+  const socket = new WebSocket(url, { headers: { Authorization: `Token ${key}` }, handshakeTimeout: 10_000 });
+  const current: ActiveSpeech = { socket, budget: new RealtimeAudioBudget(sampleRate), transcript: "" };
+  active = current;
+  socket.on("message", (data) => {
+    if (active !== current) return;
+    try {
+      const message = JSON.parse(String(data)) as { type?: string; event?: string; transcript?: string };
+      if (message.type === "TurnInfo" && typeof message.transcript === "string") {
+        current.transcript = message.transcript;
+        if (message.event === "EndOfTurn" && current.finish) closeSpeech(current);
+      }
+    } catch { /* Ignore malformed provider events. */ }
+  });
+  socket.on("error", () => { if (active === current) closeSpeech(current, new Error("Deepgram connection failed. Check your key and network.")); });
+  socket.on("close", () => { if (active === current) closeSpeech(current, new Error("Deepgram disconnected during dictation.")); });
   try {
-    const started = await send({ type: "start", modelPath: modelPath(), sampleRate }) === true;
-    if (currentSession !== session) return false;
-    active = started;
-    budget = started ? new RealtimeAudioBudget(sampleRate) : null;
-    return started;
-  } finally { if (currentSession === session) starting = false; }
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("Deepgram connection timed out.")), 10_000);
+      socket.once("open", () => { clearTimeout(timer); resolve(); });
+      socket.once("error", () => { clearTimeout(timer); reject(new Error("Deepgram connection failed. Check your key and network.")); });
+      socket.once("close", () => { clearTimeout(timer); reject(new Error("Deepgram connection closed. Check your key and network.")); });
+    });
+    return active === current;
+  } catch (error) { closeSpeech(current); throw error; }
 }
 
 export async function feedSpeech(samples: unknown) {
-  if (!active || feedBusy || !Array.isArray(samples) || samples.length === 0 || samples.length > 8192 || !samples.every((value) => typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= 1) || !budget?.accept(samples.length)) return false;
-  feedBusy = true;
-  try { return await send({ type: "feed", samples }) === true; }
-  finally { feedBusy = false; }
+  const current = active;
+  if (!current || current.socket.readyState !== WebSocket.OPEN || !Array.isArray(samples) || samples.length === 0 || samples.length > 8192 || !samples.every((value) => typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= 1) || !current.budget.accept(samples.length)) return false;
+  if (current.socket.bufferedAmount > 1_000_000) return false;
+  const pcm = Buffer.allocUnsafe(samples.length * 2);
+  samples.forEach((sample, index) => pcm.writeInt16LE(Math.round(sample < 0 ? sample * 32768 : sample * 32767), index * 2));
+  current.socket.send(pcm);
+  return true;
 }
 
 export async function finishSpeech() {
-  if (!active || feedBusy) return "";
-  active = false; budget = null;
-  return String(await send({ type: "finish" }) || "");
+  const current = active;
+  if (!current || current.socket.readyState !== WebSocket.OPEN) return "";
+  return new Promise<string>((resolve, reject) => {
+    const timer = setTimeout(() => closeSpeech(current), 8_000);
+    current.finish = { resolve, reject, timer };
+    try { current.socket.send(JSON.stringify({ type: "ForceEndTurn" })); }
+    catch { closeSpeech(current, new Error("Deepgram could not finish dictation.")); }
+  });
 }
 
 export async function stopSpeech() {
-  session++; active = false; starting = false; budget = null;
-  if (child) await send({ type: "stop" });
+  if (active) closeSpeech(active, new Error("Dictation cancelled."));
 }

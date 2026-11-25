@@ -6,6 +6,8 @@ import { existsSync, writeFileSync } from "node:fs";
 import { askTeacher } from "./provider.js";
 import { feedWake, startWake, stopWake, wakeAvailable } from "./wake.js";
 import { feedSpeech, finishSpeech, speechAvailable, startSpeech, stopSpeech } from "./speech.js";
+import { clearDeepgramKey, deepgramStatus, saveDeepgramKey } from "./deepgram-settings.js";
+import { speakWithDeepgram } from "./deepgram-tts.js";
 import { normalizeCursor } from "./display-geometry.js";
 import { startCircleInput, stopCircleInput } from "./circle-input.js";
 import type { FocusRegion } from "./circle-geometry.js";
@@ -249,6 +251,10 @@ app.whenReady().then(() => {
   ipcMain.handle("ren:speech-feed", (event, samples: unknown) => event.sender === mainWindow?.webContents && feedSpeech(samples));
   ipcMain.handle("ren:speech-finish", (event) => event.sender === mainWindow?.webContents ? finishSpeech() : "");
   ipcMain.handle("ren:speech-stop", (event) => event.sender === mainWindow?.webContents ? stopSpeech() : undefined);
+  ipcMain.handle("ren:deepgram-status", (event) => { requireMainRenderer(event); return deepgramStatus(); });
+  ipcMain.handle("ren:deepgram-save", (event, value: unknown) => { requireMainRenderer(event); return saveDeepgramKey(value); });
+  ipcMain.handle("ren:deepgram-clear", (event) => { requireMainRenderer(event); return clearDeepgramKey(); });
+  ipcMain.handle("ren:speak", (event, value: unknown) => { requireMainRenderer(event); return speakWithDeepgram(value); });
   ipcMain.handle("ren:request-permissions", (event) => {
     requireMainRenderer(event);
     if (permissionRequest) return permissionRequest;

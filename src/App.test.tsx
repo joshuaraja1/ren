@@ -27,7 +27,7 @@ describe("Ren ambient shell", () => {
     const input = await screen.findByRole("textbox", { name: /ask ren/i });
     fireEvent.click(screen.getByRole("button", { name: /start listening/i }));
 
-    expect(screen.getByRole("alert")).toHaveTextContent(/local speech recognition is unavailable/i);
+    expect(screen.getByRole("alert")).toHaveTextContent(/connect deepgram in ai settings/i);
     expect(input).toHaveFocus();
     expect(screen.getByRole("heading", { name: /how can i help/i })).toBeVisible();
   });
@@ -35,9 +35,11 @@ describe("Ren ambient shell", () => {
   it("shows where screen images will go before accepting a provider key", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /connect ai/i }));
-    expect(screen.getByText(/sends your question and a screen snapshot to/i)).toBeVisible();
-    expect(screen.getByRole("textbox", { name: /provider url/i })).toHaveValue("https://api.openai.com/v1");
-    expect(screen.getByLabelText(/api key/i)).toHaveAttribute("type", "password");
+    expect(screen.getByText(/sends your question and an on-demand screen snapshot to openai/i)).toBeVisible();
+    expect(screen.getByText(/streams your spoken question to Deepgram/i)).toBeVisible();
+    expect(screen.getByRole("textbox", { name: /vision model/i })).toHaveValue("gpt-5.4-mini");
+    expect(screen.getByLabelText(/openai api key/i)).toHaveAttribute("type", "password");
+    expect(screen.getByLabelText(/deepgram api key/i)).toHaveAttribute("type", "password");
     expect(screen.getByRole("heading", { name: /ren image service/i })).toBeVisible();
     expect(screen.getByLabelText(/ren access token/i)).toHaveAttribute("type", "password");
   });

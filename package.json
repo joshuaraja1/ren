@@ -36,7 +36,8 @@
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "sherpa-onnx-node": "^2.0.3",
-    "uiohook-napi": "^1.5.5"
+    "uiohook-napi": "^1.5.5",
+    "ws": "^8.23.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
@@ -44,6 +45,7 @@
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "@types/ws": "^8.18.2",
     "@vitejs/plugin-react": "^6.3.0",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
@@ -60,8 +62,6 @@
     "productName": "Ren",
     "asar": true,
     "asarUnpack": [
-      "dist-electron/speech-worker.js",
-      "dist-electron/speech-engine.js",
       "node_modules/koffi/**/*",
       "node_modules/@koromix/koffi-*/**/*",
       "node_modules/sherpa-onnx-*/**/*",
@@ -71,10 +71,6 @@
       {
         "from": "models/ren-kws",
         "to": "ren-kws"
-      },
-      {
-        "from": "models/ren-asr",
-        "to": "ren-asr"
       }
     ],
     "directories": {
@@ -90,7 +86,8 @@
       "node_modules/sherpa-onnx-*/**/*",
       "node_modules/uiohook-napi/**/*",
       "node_modules/node-gyp-build/**/*",
-      "package.json"
+      "package.json",
+      "node_modules/ws/**/*"
     ],
     "artifactName": "Ren-${version}-${os}-${arch}.${ext}",
     "mac": {
@@ -99,7 +96,7 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.inherit.plist",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "Ren listens locally for Hey Ren and captures your question only when invited.",
+        "NSMicrophoneUsageDescription": "Ren detects Hey Ren on device, then sends spoken questions to Deepgram for transcription.",
         "NSScreenCaptureUsageDescription": "Ren captures the screen only when you ask a question so it can explain what you are viewing."
       },
       "target": [

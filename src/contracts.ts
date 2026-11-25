@@ -50,6 +50,7 @@ export type VisionStatus = { mode: "connected" | "environment" | "local" | "avai
 export type VisionSettingsInput = { apiKey: string; model: string; baseUrl: string };
 export type HostedImageStatus = { mode: "connected" | "environment" | "demo"; baseUrl: string; host: string };
 export type HostedImageSettingsInput = { baseUrl: string; accessToken: string };
+export type DeepgramStatus = { mode: "connected" | "environment" | "demo" };
 
 export type RenBridge = {
   platform: string;
@@ -77,6 +78,10 @@ export type RenBridge = {
   speechFeed(samples: number[]): Promise<boolean>;
   speechFinish(): Promise<string>;
   speechStop(): Promise<void>;
+  deepgramStatus(): Promise<DeepgramStatus>;
+  saveDeepgramKey(key: string): Promise<DeepgramStatus>;
+  clearDeepgramKey(): Promise<DeepgramStatus>;
+  speak(text: string): Promise<string>;
   ask(request: AskRequest): Promise<AskResponse>;
   clearAnnotations(): Promise<void>;
   generateIllustration(): Promise<boolean>;

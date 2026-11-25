@@ -120,7 +120,6 @@ export async function askTeacher(request: AskRequest, credentials: VisionCredent
   if (!credentials) return demoAnswer(request.question);
 
   const { apiKey, model, baseUrl: base } = credentials;
-  const localOllama = base === "http://127.0.0.1:11434/v1";
   const visualContent = request.frames.slice(0, 3).map((url) => ({ type: "image_url", image_url: { url, detail: "high" } }));
   const history = request.history.slice(-8).map((turn) => ({ role: turn.role, content: turn.content }));
   const priorVisual = request.priorVisualLesson
@@ -128,12 +127,11 @@ export async function askTeacher(request: AskRequest, credentials: VisionCredent
   const response = await fetch(`${base}/chat/completions`, {
     method: "POST",
     redirect: "error",
-    signal: AbortSignal.timeout(localOllama ? 90_000 : 45_000),
+    signal: AbortSignal.timeout(30_000),
     headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
       model,
-      ...(localOllama ? { think: false } : {}),
-      temperature: 0.25,
+      max_completion_tokens: 1800,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: TEACHER_PROMPT },
@@ -148,7 +146,7 @@ export async function askTeacher(request: AskRequest, credentials: VisionCredent
     }
     throw error;
   });
-  if (!response.ok) throw new Error(`Vision provider returned ${response.status}`);
+  if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? "OpenAI rejected the saved key or project access. Check AI settings." : response.status === 429 ? "OpenAI rate limit or quota reached. Check the Ren project billing." : `OpenAI returned ${response.status}.`);
   const payload = await response.json() as { choices?: { message?: { content?: string } }[] };
   const content = payload.choices?.[0]?.message?.content;
   if (typeof content !== "string" || !content || content.length > 100_000) throw new Error("Vision provider returned an invalid answer");

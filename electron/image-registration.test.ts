@@ -33,14 +33,14 @@ describe("generated image registration", () => {
     }) as unknown as typeof fetch;
     await expect(locateImageParts(lesson, "data:image/png;base64,example", "key", "vision-model", new AbortController().signal, fetcher)).resolves.toEqual({ wing: { x: .28, y: .4 }, engine: { x: .71, y: .64 } });
   });
-  it("checks local images through the local vision model", async () => {
+  it("checks generated image locations through OpenAI", async () => {
     const fetcher = vi.fn(async (url, init) => {
-      expect(url).toBe("http://127.0.0.1:11434/v1/chat/completions");
+      expect(url).toBe("https://api.openai.com/v1/chat/completions");
       const body = JSON.parse(String(init?.body));
-      expect(body.think).toBe(false);
+      expect(body.think).toBeUndefined();
       return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(valid) } }] }), { status: 200 });
     }) as unknown as typeof fetch;
-    await expect(locateImageParts(lesson, "data:image/png;base64,example", "ollama", "qwen3.5:2b", new AbortController().signal, fetcher, "http://127.0.0.1:11434/v1")).resolves.toEqual({ wing: { x: .28, y: .4 }, engine: { x: .71, y: .64 } });
+    await expect(locateImageParts(lesson, "data:image/png;base64,example", "test-key", "gpt-5.4-mini", new AbortController().signal, fetcher, "https://api.openai.com/v1")).resolves.toEqual({ wing: { x: .28, y: .4 }, engine: { x: .71, y: .64 } });
   });
   it("rejects part anchors in transparent padding", () => {
     const bitmap = new Uint8Array(20 * 20 * 4);
