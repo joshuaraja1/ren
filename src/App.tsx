@@ -463,7 +463,7 @@ export function App() {
     finally { setImageRendering(false); }
   }
 
-  if (!expanded) return <button className={`ren-pebble state-${voiceState}`} onClick={() => void setExpanded(true)} aria-label={`Open Ren. ${voiceLabels[voiceState].title}`}><span className="pebble-mark"><Spark /></span><span className="pebble-copy"><strong>{voiceLabels[voiceState].title}</strong><small>{voiceLabels[voiceState].detail}</small></span><VoiceMeter active={voiceState !== "idle"} /><span className="privacy-dot" aria-hidden="true" /></button>;
+  if (!expanded) return <button className={`ren-pebble state-${voiceState}`} onClick={() => void setExpanded(true)} aria-label={`Open Ren. ${permission?.microphone === "granted" ? voiceLabels[voiceState].title : "Microphone setup needed"}`}><span className="pebble-mark"><Spark /></span><span className="pebble-copy"><strong>{permission?.microphone === "granted" ? voiceLabels[voiceState].title : "Microphone off"}</strong><small>{permission?.microphone === "granted" ? voiceLabels[voiceState].detail : "Open Ren to enable voice"}</small></span><VoiceMeter active={voiceState !== "idle"} /><span className="privacy-dot" aria-hidden="true" /></button>;
 
   return <main className="ambient-panel">
     <header className={`ambient-header state-${voiceState}`}><div className="companion-orb"><Spark /></div><div className="header-copy"><p><span className="state-dot" /> REN</p><h1>{voiceState === "processing" ? "Looking closely…" : voiceState === "listening" ? "I’m listening." : voiceState === "responding" ? "Let’s work through it." : "How can I help?"}</h1></div><VoiceMeter active={voiceState !== "idle"} /><button className="collapse-button" onClick={() => void setExpanded(false)} aria-label="Collapse Ren">⌃</button></header>

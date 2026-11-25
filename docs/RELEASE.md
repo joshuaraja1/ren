@@ -19,6 +19,11 @@ release/mac-arm64/Ren.app` reports `Identifier=ai.ren.teacher` and the expected
 Developer ID authority before testing permission onboarding. See
 [Apple's code signing identity guidance](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements)
 and [Electron safeStorage](https://www.electronjs.org/docs/latest/api/safe-storage).
+The signed app and renderer helper must carry
+`com.apple.security.device.audio-input`; check both with
+`codesign -d --entitlements - <app-or-helper>` when microphone prompts do not
+appear. The `NSMicrophoneUsageDescription` string alone is insufficient under
+the macOS Hardened Runtime.
 If macOS shows Accessibility or Microphone enabled while Ren still reports it
 missing after switching from an unsigned build, remove the old Ren entry in
 System Settings → Privacy & Security, launch the signed build, and grant its

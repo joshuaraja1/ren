@@ -254,11 +254,11 @@ app.whenReady().then(() => {
       const wasOnTop = mainWindow?.isAlwaysOnTop() ?? false;
       if (wasOnTop) mainWindow?.setAlwaysOnTop(false);
       try {
-        // Enumerating sources alone does not register the app in macOS privacy
-        // settings. Explicitly request access from Ren's signed main process.
-        if (process.platform === "darwin" && !await requestMacScreenCaptureAccess()) return permissionStatus();
-        await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 320, height: 180 } });
         if (process.platform === "darwin") await systemPreferences.askForMediaAccess("microphone");
+        // Screen and microphone are independent permissions. A refused screen
+        // request must never prevent the microphone prompt from appearing.
+        if (process.platform === "darwin") await requestMacScreenCaptureAccess();
+        await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 320, height: 180 } });
         if (process.platform === "darwin") systemPreferences.isTrustedAccessibilityClient(true);
         const access = permissionStatus();
         const canComplete = process.platform !== "darwin" || access.screen === "granted";

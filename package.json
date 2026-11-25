@@ -96,6 +96,8 @@
     "mac": {
       "category": "public.app-category.education",
       "icon": "build/icon.icns",
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Ren listens locally for Hey Ren and captures your question only when invited.",
         "NSScreenCaptureUsageDescription": "Ren captures the screen only when you ask a question so it can explain what you are viewing."
