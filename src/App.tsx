@@ -520,25 +520,26 @@ export function App() {
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: response.answer, provider: response.provider, followUps: response.followUps }]);
       setVoiceState("responding"); suppressSpeechUntilRef.current = Date.now() + Math.min(12_000, response.answer.length * 45);
       void speak(response.answer, () => { if (nativeSpeechRef.current && expandedRef.current) void startNativeDictation(); else { setVoiceState("idle"); keepAwake(); } });
+      if (response.autoIllustrate) void illustrate(true);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Ren couldn’t answer."); setVoiceState("idle"); }
     finally { askingRef.current = false; }
   }
 
   function submit(event: FormEvent) { event.preventDefault(); void askQuestion(question); }
 
-  async function illustrate() {
+  async function illustrate(automatic = false) {
     if (!window.ren || imageRendering) return;
     setImageRendering(true); setError("");
     setImageAvailable(false);
-    try { if (!await window.ren.generateIllustration()) setImageAvailable(true); }
+    try { if (!await window.ren.generateIllustration(automatic)) setImageAvailable(true); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Could not render an illustration."); }
     finally { setImageRendering(false); }
   }
 
-  if (!expanded) return <button className={`ren-pebble state-${voiceState}`} onClick={() => void setExpanded(true)} aria-label={`Open Ren. ${error ? "Needs attention" : permission?.microphone === "granted" ? voiceLabels[voiceState].title : "Microphone setup needed"}`}><span className="pebble-mark"><Spark /></span><span className="pebble-copy"><strong>{error ? "Try again" : permission?.microphone === "granted" ? voiceLabels[voiceState].title : "Microphone off"}</strong><small>{error ? /didn't catch/i.test(error) ? "I didn't catch that" : "Open Ren for details" : permission?.microphone === "granted" ? voiceLabels[voiceState].detail : "Open Ren to enable voice"}</small></span><VoiceMeter active={voiceState !== "idle"} /><span className="privacy-dot" aria-hidden="true" /></button>;
+  if (!expanded) return <button className={`ren-pebble state-${voiceState}`} onClick={() => void setExpanded(true)} aria-label={`Open Ren. ${error ? "Needs attention" : imageRendering ? "Rendering your illustration" : permission?.microphone === "granted" ? voiceLabels[voiceState].title : "Microphone setup needed"}`}><span className="pebble-mark"><Spark /></span><span className="pebble-copy"><strong>{error ? "Try again" : imageRendering ? "Rendering visual…" : permission?.microphone === "granted" ? voiceLabels[voiceState].title : "Microphone off"}</strong><small>{error ? /didn't catch/i.test(error) ? "I didn't catch that" : "Open Ren for details" : imageRendering ? "Drawing on your screen" : permission?.microphone === "granted" ? voiceLabels[voiceState].detail : "Open Ren to enable voice"}</small></span><VoiceMeter active={voiceState !== "idle" || imageRendering} /><span className="privacy-dot" aria-hidden="true" /></button>;
 
   return <main className="ambient-panel">
-    <header className={`ambient-header state-${voiceState}`}><div className="companion-orb"><Spark /></div><div className="header-copy"><p><span className="state-dot" /> REN</p><h1>{voiceState === "processing" ? "Looking closely…" : voiceState === "listening" ? "I’m listening." : voiceState === "responding" ? "Let’s work through it." : "How can I help?"}</h1></div><VoiceMeter active={voiceState !== "idle"} /><button className="collapse-button" onClick={() => void setExpanded(false)} aria-label="Collapse Ren">⌃</button></header>
+    <header className={`ambient-header state-${voiceState}`}><div className="companion-orb"><Spark /></div><div className="header-copy"><p><span className="state-dot" /> REN</p><h1>{voiceState === "processing" ? "Looking closely…" : imageRendering ? "Drawing on your screen…" : voiceState === "listening" ? "I’m listening." : voiceState === "responding" ? "Let’s work through it." : "How can I help?"}</h1></div><VoiceMeter active={voiceState !== "idle" || imageRendering} /><button className="collapse-button" onClick={() => void setExpanded(false)} aria-label="Collapse Ren">⌃</button></header>
 
     {!permission?.ready ? <section className="onboarding-card"><span className="step-kicker">ONE-TIME SETUP</span><h2>Give Ren permission once.</h2><p>Allow microphone, screen recording, and pointer access now. After that, Ren starts quietly with your computer and only captures the screen when you ask a question.</p><div className="permission-row"><span>Microphone</span><b>{permission?.microphone ?? "checking"}</b></div><div className="permission-row"><span>Screen recording</span><b>{permission?.screen ?? "checking"}</b></div><div className="permission-row"><span>Circle shortcut</span><b>{permission?.interaction ?? "checking"}</b></div><button className="allow-button" onClick={() => void requestOneTimePermissions()}>Allow and continue</button>{permission && !permission.ready && <button className="settings-link" onClick={() => void openPermissionSettings()}>Request access and open system settings</button>}</section> : <>
       <div className="ambient-status"><span className="privacy-lock" aria-hidden="true">●</span><span>{vision.mode === "demo" ? "Connect OpenAI for screen answers" : `On-demand · OpenAI ${vision.model}`}</span><em>·</em><span className="display-name">{source?.name ?? "connecting to display"}</span><button className="provider-chip" onClick={openVisionSettings}>{vision.mode === "demo" || deepgram.mode === "demo" ? "Connect AI" : "AI settings"}</button></div>

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { askTeacher, validateAnnotations, validateFollowUps } from "./provider.js";
+import { askTeacher, validateAnnotations, validateFollowUps, validateReferenceRegion } from "./provider.js";
 
 describe("annotation validation", () => {
   it("clamps coordinates and rejects unknown commands", () => {
@@ -9,6 +9,14 @@ describe("annotation validation", () => {
     ]);
 
     expect(result).toEqual([{ id: "arrow", type: "arrow", from: { x: 0, y: 1 }, to: { x: .5, y: .5 }, label: undefined, color: undefined }]);
+  });
+});
+
+describe("reference crop validation", () => {
+  it("accepts a tight visible object and rejects full screen or out-of-bounds crops", () => {
+    expect(validateReferenceRegion({ x: .45, y: .3, width: .2, height: .25 })).toEqual({ x: .45, y: .3, width: .2, height: .25 });
+    expect(validateReferenceRegion({ x: 0, y: 0, width: 1, height: 1 })).toBeUndefined();
+    expect(validateReferenceRegion({ x: .9, y: .5, width: .2, height: .2 })).toBeUndefined();
   });
 });
 

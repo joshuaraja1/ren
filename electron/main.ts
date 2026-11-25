@@ -21,6 +21,7 @@ import { generateIllustration, imageManifest, imagePrompt } from "./image-render
 import { generateHostedIllustration } from "./hosted-image-render.js";
 import { locateImageParts, positionsOnOpaquePixels } from "./image-registration.js";
 import { validateVisualLesson } from "./visual-lesson.js";
+import { wantsVisualCreation } from "./visual-intent.js";
 import { CaptureSession } from "./capture-session.js";
 import { requestMacScreenCaptureAccess } from "./mac-screen-permission.js";
 import type { VisualLesson } from "./visual-lesson.js";
@@ -32,7 +33,7 @@ let selectedFocus: { displayId: number; region: FocusRegion; createdAt: number }
 let circleInputActive = false;
 const captureSession = new CaptureSession();
 let lastCaptureData: { token: string; frames: string[]; pointer: { x: number; y: number }; focus?: { x: number; y: number; width: number; height: number }; firstSample: Uint8Array; secondSample: Uint8Array; dynamicContent: boolean; thumbnailSize: { width: number; height: number } } | null = null;
-let lastVisualLesson: { lesson: VisualLesson; displayId: number; createdAt: number } | null = null;
+let lastVisualLesson: { lesson: VisualLesson; displayId: number; createdAt: number; referenceImage?: string } | null = null;
 let screenCaptureBusy = false;
 let pendingAnswerToken: string | null = null;
 let activeCaptureToken: string | null = null;
@@ -201,13 +202,19 @@ app.whenReady().then(() => {
         mainWindow?.webContents.send("ren:focus-selection");
       },
       onCancel: invalidateSpatialContext,
-      onScroll: invalidateSpatialContext,
+      onScroll: () => {
+        // Scrolling is normal while reading a finished explanation. Keep its
+        // illustration visible; only invalidate an in-flight screen capture.
+        const token = pendingAnswerToken ?? activeCaptureToken;
+        if (token && captureSession.isCurrent(token)) captureSession.invalidate();
+      },
       onInteraction: () => {
         // Switching tabs or apps normally requires a click or key. Cancel any
         // answer that was grounded before that interaction, including video.
         const token = pendingAnswerToken ?? activeCaptureToken;
         if (token && captureSession.isCurrent(token)) captureSession.invalidate();
-        imageRenderAbort?.abort();
+        // A user may keep browsing while an explicitly requested illustration renders.
+        // Display removal, a new question, and Clear drawings still cancel it.
       },
     });
     return circleInputActive;
@@ -431,13 +438,34 @@ app.whenReady().then(() => {
     overlayWindow?.webContents.send("ren:illustration", null);
     if (annotations.length || lesson) overlayWindow?.showInactive();
     else overlayWindow?.hide();
-    lastVisualLesson = lesson ? { lesson, displayId, createdAt: Date.now() } : null;
-    return { ...response, annotations, visualLesson: lesson ?? undefined };
+    let referenceImage: string | undefined;
+    if (lesson && wantsVisualCreation(value.question)) {
+      const bounds = response.referenceRegion ?? focus;
+      if (bounds) {
+        const first = nativeImage.createFromDataURL(capture.frames[0]);
+        const size = first.getSize();
+        const rect = {
+          x: Math.floor(bounds.x * size.width), y: Math.floor(bounds.y * size.height),
+          width: Math.max(1, Math.floor(bounds.width * size.width)),
+          height: Math.max(1, Math.floor(bounds.height * size.height)),
+        };
+        const cropped = first.crop(rect);
+        if (!cropped.isEmpty()) {
+          const cropSize = cropped.getSize();
+          const image = Math.max(cropSize.width, cropSize.height) > 1024
+            ? cropped.resize({ width: Math.round(cropSize.width * 1024 / Math.max(cropSize.width, cropSize.height)) }) : cropped;
+          const dataUrl = image.toDataURL();
+          if (dataUrl.length < 10_000_000) referenceImage = dataUrl;
+        }
+      }
+    }
+    lastVisualLesson = lesson ? { lesson, displayId, createdAt: Date.now(), referenceImage } : null;
+    return { ...response, annotations, visualLesson: lesson ?? undefined, autoIllustrate: Boolean(lesson && wantsVisualCreation(value.question)) };
     } finally {
       if (pendingAnswerToken === value.contextToken) pendingAnswerToken = null;
     }
   });
-  ipcMain.handle("ren:generate-illustration", async (event) => {
+  ipcMain.handle("ren:generate-illustration", async (event, automatic: unknown) => {
     requireMainRenderer(event);
     if (imageRequestBusy || imageRenderAbort) throw new Error("An illustration is already rendering.");
     const visual = lastVisualLesson;
@@ -450,9 +478,11 @@ app.whenReady().then(() => {
       if (!hosted && (!credentials || new URL(credentials.baseUrl).origin !== "https://api.openai.com")) throw new Error("Connect the Ren image service to create an illustration.");
       const detail = hosted
         ? `Ren will send this validated lesson manifest to ${new URL(hosted.baseUrl).host}:\n\n${JSON.stringify(imageManifest(visual.lesson), null, 2)}\n\nThe Ren service uses hosted image and vision models to generate and check the image. No screen screenshot is sent. This request uses your Ren illustration allowance.`
-        : `Ren will send this screen-derived lesson text to OpenAI:\n\n${imagePrompt(visual.lesson)}\n\nThe generated image is sent to your configured vision model to check part locations. No screen screenshot is sent to the image generator. Both requests may incur provider charges.`;
-      const decision = await dialog.showMessageBox(mainWindow!, { type: "question", title: "Create a Ren illustration", message: "Generate an illustration for this lesson?", detail, buttons: ["Cancel", "Generate image"], defaultId: 0, cancelId: 0, noLink: true });
-      if (decision.response !== 1) return false;
+        : `Ren will send this screen-derived lesson text${visual.referenceImage ? " and a tight crop of the requested object" : ""} to OpenAI:\n\n${imagePrompt(visual.lesson, Boolean(visual.referenceImage))}\n\nThe generated image is sent to your configured vision model to check part locations. Both requests may incur provider charges.`;
+      if (automatic !== true) {
+        const decision = await dialog.showMessageBox(mainWindow!, { type: "question", title: "Create a Ren illustration", message: "Generate an illustration for this lesson?", detail, buttons: ["Cancel", "Generate image"], defaultId: 0, cancelId: 0, noLink: true });
+        if (decision.response !== 1) return false;
+      }
       if (lastVisualLesson !== visual || !circleInputActive) throw new Error("The lesson changed before image generation began.");
       imageRequestedFor = visual.lesson;
       const controller = new AbortController();
@@ -470,24 +500,25 @@ app.whenReady().then(() => {
         const checked = decoded(preview);
         if (!checked) return;
         overlayWindow?.webContents.send("ren:illustration", { image: preview, preview: true, width: checked.size.width, height: checked.size.height });
+        overlayWindow?.showInactive();
       };
       const result = hosted
         ? await generateHostedIllustration(visual.lesson, hosted, preview, controller.signal)
         : await (async () => {
           const provider = credentials!;
-          const image = await generateIllustration(visual.lesson, provider.apiKey, preview, controller.signal);
+          const image = await generateIllustration(visual.lesson, provider.apiKey, preview, controller.signal, fetch, visual.referenceImage);
           if (!current()) throw new Error("The screen changed while the illustration was rendering.");
-          const registration = await locateImageParts(visual.lesson, image, provider.apiKey, provider.model, controller.signal, fetch, provider.baseUrl);
+          const registration = await locateImageParts(visual.lesson, image, provider.apiKey, provider.model, controller.signal, fetch, provider.baseUrl).catch(() => null);
           return { image, registration };
         })();
       if (!current()) throw new Error("The screen changed while the illustration was rendering.");
       const checked = decoded(result.image);
       if (!checked) throw new Error("Image provider returned an unreadable image.");
       if (!current()) throw new Error("The screen changed while the illustration was being checked.");
-      if (!result.registration || !positionsOnOpaquePixels(checked.image.toBitmap(), checked.size.width, checked.size.height, result.registration)) {
-        throw new Error("The illustration could not be matched to every lesson part. Keeping the schematic.");
-      }
-      overlayWindow?.webContents.send("ren:illustration", { image: result.image, preview: false, width: checked.size.width, height: checked.size.height, registration: result.registration });
+      const registration = result.registration && positionsOnOpaquePixels(checked.image.toBitmap(), checked.size.width, checked.size.height, result.registration)
+        ? result.registration : undefined;
+      overlayWindow?.webContents.send("ren:illustration", { image: result.image, preview: false, width: checked.size.width, height: checked.size.height, registration });
+      overlayWindow?.showInactive();
       return true;
       } catch (error) {
         overlayWindow?.webContents.send("ren:illustration", null);

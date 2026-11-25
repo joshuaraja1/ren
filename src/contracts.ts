@@ -43,6 +43,7 @@ export type AskResponse = {
   followUps?: string[];
   provider: "demo" | "vision";
   visualLesson?: VisualLesson;
+  autoIllustrate?: boolean;
 };
 export type Illustration = { image: string; preview: boolean; width: number; height: number; registration?: ImageRegistration };
 
@@ -85,7 +86,7 @@ export type RenBridge = {
   onSpeechData(listener: (data: { id: string; chunk?: string; done?: boolean; error?: string }) => void): () => void;
   ask(request: AskRequest): Promise<AskResponse>;
   clearAnnotations(): Promise<void>;
-  generateIllustration(): Promise<boolean>;
+  generateIllustration(automatic?: boolean): Promise<boolean>;
   onIllustration(listener: (image: Illustration | null) => void): () => void;
   onAnnotations(listener: (annotations: Annotation[]) => void): () => void;
   onVisualLesson(listener: (lesson: VisualLesson | null) => void): () => void;

@@ -36,7 +36,7 @@ export function VisualLessonOverlay({ lesson, illustration }: { lesson: VisualLe
   const description = `${lesson.title}. ${lesson.parts.map((part) => `${part.label}: ${part.explanation}`).join(" ")}`;
   const headingInside = lesson.placement.y * window.innerHeight < 110;
   return <section className={`visual-lesson${illustration ? " has-illustration" : ""}${illustration && !illustration.registration ? " is-preview" : ""}`} style={placement} role="img" aria-label={description}>
-    {illustration && box && <div className="visual-lesson-illustration"><img src={illustration.image} alt="" style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%` }} /><span>{illustration.preview ? "GENERATING · UNVERIFIED" : "ILLUSTRATIVE · PARTS LOCATED"}</span></div>}
+    {illustration && box && <div className="visual-lesson-illustration"><img src={illustration.image} alt="" style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%` }} /><span>{illustration.preview ? "GENERATING · UNVERIFIED" : illustration.registration ? "ILLUSTRATIVE · PARTS LOCATED" : "ILLUSTRATIVE"}</span></div>}
     <div className={`visual-lesson-heading${headingInside ? " is-inside" : ""}`} aria-hidden="true"><span>REN EXPLAINS</span><strong>{lesson.title}</strong>{lesson.assumption && <small>{lesson.assumption}</small>}</div>
     <svg className="visual-lesson-lines" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
       <defs><marker id="lesson-arrowhead" markerWidth="11" markerHeight="11" refX="9" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" /></marker></defs>

@@ -37,7 +37,7 @@ contextBridge.exposeInMainWorld("ren", {
   },
   ask: (request: unknown) => ipcRenderer.invoke("ren:ask", request),
   clearAnnotations: () => ipcRenderer.invoke("ren:clear-annotations"),
-  generateIllustration: () => ipcRenderer.invoke("ren:generate-illustration"),
+  generateIllustration: (automatic?: boolean) => ipcRenderer.invoke("ren:generate-illustration", automatic === true),
   onIllustration: (listener: (image: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, image: unknown) => listener(image);
     ipcRenderer.on("ren:illustration", handler);

@@ -30,6 +30,18 @@ describe("illustration adapter", () => {
     expect(preview).toHaveBeenCalledTimes(1);
     expect(image).toMatch(/^data:image\/png;base64,/);
   });
+  it("edits a bounded object crop and accepts edit events without an explicit output format", async () => {
+    const crop = `data:image/png;base64,${png}`;
+    const fetcher = vi.fn(async (url, init) => {
+      expect(url).toBe("https://api.openai.com/v1/images/edits");
+      const body = JSON.parse(String(init?.body));
+      expect(body.images).toEqual([{ image_url: crop }]);
+      expect(body.prompt).toContain("visual reference");
+      const stream = `data: ${JSON.stringify({ type: "image_edit.completed", b64_json: png })}\n\n`;
+      return new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(stream)); controller.close(); } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await expect(generateIllustration(lesson, "key", () => {}, new AbortController().signal, fetcher, crop)).resolves.toBe(crop);
+  });
   it("rejects a stream with no final image", async () => {
     const fetcher = vi.fn(async () => new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(event("image_generation.partial_image"))); controller.close(); } }), { status: 200 })) as unknown as typeof fetch;
     await expect(generateIllustration(lesson, "key", () => {}, new AbortController().signal, fetcher)).rejects.toThrow("completed image");

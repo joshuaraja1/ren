@@ -42,6 +42,15 @@ describe("generated image registration", () => {
     }) as unknown as typeof fetch;
     await expect(locateImageParts(lesson, "data:image/png;base64,example", "test-key", "gpt-5.4-mini", new AbortController().signal, fetcher, "https://api.openai.com/v1")).resolves.toEqual({ wing: { x: .28, y: .4 }, engine: { x: .71, y: .64 } });
   });
+  it("uses GPT-6 Sol's supported reasoning setting for image checks", async () => {
+    const fetcher = vi.fn(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body).toMatchObject({ model: "gpt-6-sol", reasoning_effort: "medium" });
+      expect(body.temperature).toBeUndefined();
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(valid) } }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await expect(locateImageParts(lesson, "data:image/png;base64,example", "key", "gpt-6-sol", new AbortController().signal, fetcher)).resolves.not.toBeNull();
+  });
   it("rejects part anchors in transparent padding", () => {
     const bitmap = new Uint8Array(20 * 20 * 4);
     const registration = { wing: { x: .25, y: .25 }, engine: { x: .75, y: .75 } };
