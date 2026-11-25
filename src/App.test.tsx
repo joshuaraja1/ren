@@ -32,6 +32,28 @@ describe("Ren ambient shell", () => {
     expect(screen.getByRole("heading", { name: /how can i help/i })).toBeVisible();
   });
 
+  it("opens and focuses the question box from the voice shortcut when dictation is unavailable", async () => {
+    let activate: (() => void) | undefined;
+    window.ren = {
+      platform: "darwin",
+      permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
+      primarySource: async () => ({ id: "screen", name: "Main display", thumbnail: "" }),
+      wakeAvailable: async () => false,
+      voiceShortcutAvailable: async () => true,
+      onFocusSelection: () => () => {},
+      onActivateVoice: (listener: () => void) => { activate = listener; return () => { activate = undefined; }; },
+      setExpanded: async () => {},
+      speechStop: async () => {},
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      await screen.findByRole("button", { name: /open ren/i });
+      act(() => activate?.());
+      expect(await screen.findByRole("textbox", { name: /ask ren/i })).toHaveFocus();
+      expect(screen.getByText(/⌘⇧Space/)).toBeVisible();
+    } finally { window.ren = undefined; }
+  });
+
   it("shows where screen images will go before accepting a provider key", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /connect ai/i }));
@@ -187,13 +209,14 @@ describe("Ren ambient shell", () => {
     const ask = vi.fn(async ({ question }: { question: string }) => ({
       answer: question.includes("Why") ? "The fan pushes air down." : "The engine drives the fan.",
       annotations: [], provider: "vision" as const,
-      ...(question.includes("Why") ? {} : { visualLesson: { version: 1 as const, title: "Hover", layout: "centered" as const, placement: { x: .2, y: .2, width: .6, height: .6 }, parts: [
+      ...(question.includes("Why") ? { reusedVisual: true } : { visualLesson: { version: 1 as const, title: "Hover", layout: "centered" as const, placement: { x: .2, y: .2, width: .6, height: .6 }, parts: [
         { id: "engine", label: "Engine", explanation: "Powers the fan", x: .2, y: .4 },
         { id: "fan", label: "Lift fan", explanation: "Pushes air down", x: .7, y: .4 },
       ], connections: [{ from: "engine", to: "fan", label: "drives" }] } }),
     }));
     window.ren = {
       platform: "darwin", permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
+      visionStatus: async () => ({ mode: "connected", model: "gpt-6-sol", host: "api.openai.com", baseUrl: "https://api.openai.com/v1" }),
       primarySource: async () => ({ id: "screen", name: "Main display", thumbnail: "" }),
       wakeAvailable: async () => true, wakeStart: async () => true, wakeStop: async () => {}, wakeFeed: async () => false,
       speechAvailable: async () => true, speechStart, speechFeed: async () => true,
@@ -210,11 +233,13 @@ describe("Ren ambient shell", () => {
       fireEvent.change(input, { target: { value: "Draw a diagram of the hover system" } });
       fireEvent.click(screen.getByRole("button", { name: /send question/i }));
       await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(1));
-      expect(captureContext).toHaveBeenNthCalledWith(1, false);
+      expect(captureContext).toHaveBeenNthCalledWith(1, false, "Draw a diagram of the hover system");
+      expect(screen.getByRole("button", { name: /illustrate on screen/i })).toBeVisible();
       fireEvent.click(screen.getByRole("button", { name: /finish speaking/i }));
       await waitFor(() => expect(ask).toHaveBeenCalledTimes(2));
-      expect(captureContext).toHaveBeenNthCalledWith(2, true);
+      expect(captureContext).toHaveBeenNthCalledWith(2, true, "Why does the fan help?");
       expect(ask).toHaveBeenLastCalledWith(expect.objectContaining({ question: "Why does the fan help?", history: expect.arrayContaining([expect.objectContaining({ role: "assistant", content: "The engine drives the fan." })]) }));
+      expect(screen.getByRole("button", { name: /illustrate on screen/i })).toBeVisible();
       await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(2));
       fireEvent.click(screen.getByRole("button", { name: /finish speaking/i }));
       act(() => hotkey?.());

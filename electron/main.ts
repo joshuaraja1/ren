@@ -21,7 +21,7 @@ import { generateIllustration, imageManifest, imagePrompt } from "./image-render
 import { generateHostedIllustration } from "./hosted-image-render.js";
 import { filterOpaquePositions, locateImageParts } from "./image-registration.js";
 import { validateVisualLesson } from "./visual-lesson.js";
-import { wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
+import { likelyVisualFollowUp, wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
 import { centerRequestedLesson } from "./visual-presentation.js";
 import { answerForInteractiveScene, interactiveSceneFor, tagRequestedInteractiveScene } from "./interactive-scene.js";
 import { CaptureSession } from "./capture-session.js";
@@ -34,7 +34,7 @@ let overlayWindow: BrowserWindow | null = null;
 let selectedFocus: { displayId: number; region: FocusRegion; createdAt: number } | null = null;
 let circleInputActive = false;
 const captureSession = new CaptureSession();
-let lastCaptureData: { token: string; frames: string[]; pointer: { x: number; y: number }; focus?: { x: number; y: number; width: number; height: number }; firstSample: Uint8Array; secondSample: Uint8Array; dynamicContent: boolean; thumbnailSize: { width: number; height: number } } | null = null;
+let lastCaptureData: { token: string; generation: number; frames: string[]; pointer: { x: number; y: number }; focus?: { x: number; y: number; width: number; height: number }; firstSample: Uint8Array; secondSample: Uint8Array; dynamicContent: boolean; thumbnailSize: { width: number; height: number } } | null = null;
 let lastVisualLesson: { lesson: VisualLesson; displayId: number; createdAt: number; referenceImage?: string } | null = null;
 let screenCaptureBusy = false;
 let pendingAnswerToken: string | null = null;
@@ -42,6 +42,9 @@ let activeCaptureToken: string | null = null;
 let imageRenderAbort: AbortController | null = null;
 let imageRequestBusy = false;
 let imageRequestedFor: VisualLesson | null = null;
+let pendingVisualDecision = false;
+let voiceShortcutActive = false;
+let visualGeneration = 0;
 let permissionRequest: Promise<ReturnType<typeof permissionStatus>> | null = null;
 
 const collapsedSize = { width: 236, height: 58 };
@@ -164,12 +167,13 @@ app.whenReady().then(() => {
   if (permissionStatus().ready && app.isPackaged) app.setLoginItemSettings({ openAtLogin: true });
   createMainWindow();
   createOverlayWindow();
-  globalShortcut.register("CommandOrControl+Shift+Space", () => {
+  voiceShortcutActive = globalShortcut.register("CommandOrControl+Shift+Space", () => {
     positionMainWindow(true);
-    mainWindow?.showInactive();
+    mainWindow?.show();
     mainWindow?.webContents.send("ren:activate-voice");
   });
   app.once("will-quit", () => globalShortcut.unregisterAll());
+  ipcMain.handle("ren:voice-shortcut-available", (event) => event.sender === mainWindow?.webContents && voiceShortcutActive);
   let lastOrbitPointer = "";
   const orbitCursorTimer = setInterval(() => {
     const visual = lastVisualLesson;
@@ -186,6 +190,7 @@ app.whenReady().then(() => {
   function showFocusPath(displayId: number, points: FocusRegion["points"]) {
     const display = screen.getAllDisplays().find((item) => item.id === displayId);
     if (!display || !overlayWindow) return;
+    visualGeneration += 1;
     captureSession.invalidate();
     lastCaptureData = null;
     lastVisualLesson = null;
@@ -195,6 +200,8 @@ app.whenReady().then(() => {
     overlayWindow.showInactive();
   }
   function invalidateSpatialContext() {
+    visualGeneration += 1;
+    pendingVisualDecision = false;
     imageRenderAbort?.abort();
     imageRenderAbort = null;
     selectedFocus = null;
@@ -344,12 +351,16 @@ app.whenReady().then(() => {
     if (!source) throw new Error("No display source is available");
     return { id: source.id, name: source.name, thumbnail: source.thumbnail.toDataURL() };
   });
-  ipcMain.handle("ren:capture-context", async (event, keepVisual: unknown) => {
+  ipcMain.handle("ren:capture-context", async (event, keepVisual: unknown, question: unknown) => {
     requireMainRenderer(event);
     if (screenCaptureBusy) throw new Error("Ren is already capturing the screen. Try again.");
     screenCaptureBusy = true;
+    const generation = ++visualGeneration;
     const { display, pointer } = cursorDisplayContext();
     const preservedVisual = keepVisual === true && lastVisualLesson?.displayId === display.id ? lastVisualLesson : null;
+    const showDuringAnswer = preservedVisual && typeof question === "string" && question.length <= 5000
+      && likelyVisualFollowUp(question, preservedVisual.lesson.title, preservedVisual.lesson.parts.map((part) => part.label));
+    pendingVisualDecision = Boolean(preservedVisual);
     const focus = selectedFocus && selectedFocus.displayId === display.id && Date.now() - selectedFocus.createdAt < 30_000 ? selectedFocus.region : null;
     selectedFocus = null;
     lastCaptureData = null;
@@ -392,18 +403,20 @@ app.whenReady().then(() => {
         }
       }
       if (!captureSession.isCurrent(contextToken)) throw new Error("The screen changed during capture. Ask again.");
-      lastCaptureData = { token: contextToken, frames, pointer, focus: focus?.bounds, firstSample: motionSample(first), secondSample: motionSample(second ?? first), dynamicContent: !!second && hasMeaningfulMotion(motionSample(first), motionSample(second)), thumbnailSize };
+      lastCaptureData = { token: contextToken, generation, frames, pointer, focus: focus?.bounds, firstSample: motionSample(first), secondSample: motionSample(second ?? first), dynamicContent: !!second && hasMeaningfulMotion(motionSample(first), motionSample(second)), thumbnailSize };
       setTimeout(() => {
-        if (lastCaptureData?.token === contextToken) { lastCaptureData = null; captureSession.invalidate(); }
+        if (lastCaptureData?.token === contextToken) { lastCaptureData = null; captureSession.invalidate(); pendingVisualDecision = false; }
       }, 90_000).unref();
       overlayWindow?.setBounds(display.bounds);
       return { frames: [], pointer, focus: focus?.bounds, contextToken };
     } catch (error) {
+      pendingVisualDecision = false;
       if (captureSession.isCurrent(contextToken)) captureSession.invalidate();
+      if (preservedVisual && lastVisualLesson === preservedVisual && generation === visualGeneration) overlayWindow?.showInactive();
       throw error;
     } finally {
       mainWindow?.setOpacity(1);
-      if (preservedVisual && lastVisualLesson === preservedVisual) overlayWindow?.showInactive();
+      if (lastCaptureData?.token === contextToken && showDuringAnswer && lastVisualLesson === preservedVisual && generation === visualGeneration) overlayWindow?.showInactive();
       if (activeCaptureToken === contextToken) activeCaptureToken = null;
       screenCaptureBusy = false;
     }
@@ -426,6 +439,7 @@ app.whenReady().then(() => {
     const priorVisualLesson = lastVisualLesson && lastVisualLesson.displayId === displayId && Date.now() - lastVisualLesson.createdAt < 300_000 ? lastVisualLesson.lesson : undefined;
     const explicitVisual = wantsVisualCreation(value.question);
     const response = await askTeacher({ question: pointedQuestion, frames: capture.frames, history: value.history, priorVisualLesson }, await visionCredentials());
+    if (capture.generation !== visualGeneration) return { ...response, annotations: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false };
     const display = screen.getAllDisplays().find((item) => item.id === displayId);
     // The answer describes the captured image and remains useful if the user
     // moves the pointer or changes apps while OpenAI is responding. Only the
@@ -433,7 +447,8 @@ app.whenReady().then(() => {
     const spatialAllowed = Boolean(display && captureSession.isCurrent(value.contextToken)
       && screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id === displayId
       && canPlaceSpatialVisual(capture.dynamicContent, circleInputActive));
-    const reuseVisual = Boolean(priorVisualLesson && !explicitVisual && lastVisualLesson?.lesson === priorVisualLesson);
+    const reuseVisual = Boolean(priorVisualLesson && !explicitVisual && response.retainVisual && !response.visualLesson && lastVisualLesson?.lesson === priorVisualLesson);
+    if (!reuseVisual) { imageRenderAbort?.abort(); imageRenderAbort = null; }
     let lesson = reuseVisual ? priorVisualLesson! : display && (spatialAllowed || explicitVisual) ? validateVisualLesson(response.visualLesson) : null;
     if (lesson && explicitVisual && display) {
       lesson = centerRequestedLesson(lesson, display.bounds.width, display.bounds.height);
@@ -461,6 +476,7 @@ app.whenReady().then(() => {
         finally { mainWindow?.setOpacity(1); screenCaptureBusy = false; }
       }
     }
+    if (capture.generation !== visualGeneration) return { ...response, annotations: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false };
     if (display) overlayWindow?.setBounds(display.bounds);
     if (!reuseVisual) {
       overlayWindow?.webContents.send("ren:annotations", annotations);
@@ -492,8 +508,12 @@ app.whenReady().then(() => {
     }
     if (reuseVisual && lastVisualLesson) lastVisualLesson.createdAt = Date.now();
     else lastVisualLesson = lesson ? { lesson, displayId, createdAt: Date.now(), referenceImage } : null;
-    return { ...response, answer: lesson ? answerForInteractiveScene(response.answer, lesson) : response.answer, annotations, visualLesson: reuseVisual ? undefined : lesson ?? undefined, autoIllustrate: Boolean(lesson && explicitVisual && !interactiveSceneFor(lesson)) };
+    return { ...response, answer: lesson ? answerForInteractiveScene(response.answer, lesson) : response.answer, annotations, visualLesson: reuseVisual ? undefined : lesson ?? undefined, reusedVisual: reuseVisual, autoIllustrate: Boolean(lesson && explicitVisual && !interactiveSceneFor(lesson)) };
+    } catch (error) {
+      if (pendingVisualDecision && lastVisualLesson && capture.generation === visualGeneration) overlayWindow?.showInactive();
+      throw error;
     } finally {
+      pendingVisualDecision = false;
       if (pendingAnswerToken === value.contextToken) pendingAnswerToken = null;
     }
   });
@@ -532,7 +552,7 @@ app.whenReady().then(() => {
         const checked = decoded(preview);
         if (!checked) return;
         overlayWindow?.webContents.send("ren:illustration", { image: preview, preview: true, width: checked.size.width, height: checked.size.height });
-        if (!screenCaptureBusy) overlayWindow?.showInactive();
+        if (!screenCaptureBusy && !pendingVisualDecision) overlayWindow?.showInactive();
       };
       const result = hosted
         ? await generateHostedIllustration(visual.lesson, hosted, preview, controller.signal)
@@ -552,10 +572,10 @@ app.whenReady().then(() => {
       const visible = result.registration && filterOpaquePositions(checked.image.toBitmap(), checked.size.width, checked.size.height, result.registration);
       const registration = visible && Object.keys(visible).length ? visible : undefined;
       overlayWindow?.webContents.send("ren:illustration", { image: result.image, preview: false, width: checked.size.width, height: checked.size.height, registration });
-      overlayWindow?.showInactive();
+      if (!screenCaptureBusy && !pendingVisualDecision) overlayWindow?.showInactive();
       return true;
       } catch (error) {
-        overlayWindow?.webContents.send("ren:illustration", null);
+        if (lastVisualLesson === visual) overlayWindow?.webContents.send("ren:illustration", null);
         if (imageRequestedFor === visual.lesson) imageRequestedFor = null;
         throw error;
       } finally {
@@ -568,6 +588,8 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("ren:clear-annotations", (event) => {
     requireMainRenderer(event);
+    visualGeneration += 1;
+    pendingVisualDecision = false;
     imageRenderAbort?.abort();
     imageRenderAbort = null;
     captureSession.invalidate();

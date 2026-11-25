@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
+import { likelyVisualFollowUp, wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
 
 it("renders only when the learner explicitly asks for a visual", () => {
   expect(wantsVisualCreation("Can you recreate that jet for me and explain it? ")).toBe(true);
@@ -15,4 +15,11 @@ it("uses visible pixels only for appearance recreation, not a new explanatory di
   expect(wantsReferenceRecreation("Draw a diagram explaining this jet in your own way")).toBe(false);
   expect(wantsReferenceRecreation("Show me how this diagram works")).toBe(false);
   expect(wantsReferenceRecreation("Recreate this visible phone exactly")).toBe(true);
+});
+
+it("keeps a referenced diagram visible while a follow-up is prepared", () => {
+  expect(likelyVisualFollowUp("Why does the fan help?", "Hover thrust", ["Lift fan", "Engine"])).toBe(true);
+  expect(likelyVisualFollowUp("How does it stay level?", "Hover thrust", ["Lift fan"])).toBe(true);
+  expect(likelyVisualFollowUp("What is this page?", "Hover thrust", ["Lift fan"])).toBe(false);
+  expect(likelyVisualFollowUp("New topic: explain this document", "Hover thrust", ["Lift fan"])).toBe(false);
 });

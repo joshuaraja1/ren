@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld("ren", {
   requestPermissions: () => ipcRenderer.invoke("ren:request-permissions"),
   openPermissionSettings: (kind?: "screen" | "microphone") => ipcRenderer.invoke("ren:open-permission-settings", kind),
   setExpanded: (expanded: boolean) => ipcRenderer.invoke("ren:set-expanded", expanded),
-  captureContext: (preserveVisual?: boolean) => ipcRenderer.invoke("ren:capture-context", preserveVisual === true),
+  captureContext: (preserveVisual?: boolean, question?: string) => ipcRenderer.invoke("ren:capture-context", preserveVisual === true, question),
   wakeAvailable: () => ipcRenderer.invoke("ren:wake-available"),
   wakeStart: (sampleRate: number) => ipcRenderer.invoke("ren:wake-start", sampleRate),
   wakeFeed: (samples: number[]) => ipcRenderer.invoke("ren:wake-feed", samples),
@@ -68,4 +68,5 @@ contextBridge.exposeInMainWorld("ren", {
     ipcRenderer.on("ren:activate-voice", handler);
     return () => ipcRenderer.removeListener("ren:activate-voice", handler);
   },
+  voiceShortcutAvailable: () => ipcRenderer.invoke("ren:voice-shortcut-available"),
 });

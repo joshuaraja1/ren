@@ -44,6 +44,8 @@ export type AskResponse = {
   provider: "demo" | "vision";
   visualLesson?: VisualLesson;
   autoIllustrate?: boolean;
+  reusedVisual?: boolean;
+  retainVisual?: boolean;
 };
 export type Illustration = { image: string; preview: boolean; width: number; height: number; registration?: ImageRegistration };
 
@@ -69,7 +71,7 @@ export type RenBridge = {
   requestPermissions(): Promise<AmbientStatus>;
   openPermissionSettings(kind?: "screen" | "microphone"): Promise<void>;
   setExpanded(expanded: boolean): Promise<void>;
-  captureContext(preserveVisual?: boolean): Promise<ScreenContext>;
+  captureContext(preserveVisual?: boolean, question?: string): Promise<ScreenContext>;
   wakeAvailable(): Promise<boolean>;
   wakeStart(sampleRate: number): Promise<boolean>;
   wakeFeed(samples: number[]): Promise<boolean>;
@@ -93,4 +95,5 @@ export type RenBridge = {
   onOrbitPointer(listener: (point: Point) => void): () => void;
   onFocusSelection(listener: () => void): () => void;
   onActivateVoice(listener: () => void): () => void;
+  voiceShortcutAvailable(): Promise<boolean>;
 };

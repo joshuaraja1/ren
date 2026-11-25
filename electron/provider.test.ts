@@ -140,6 +140,20 @@ describe("provider privacy boundary", () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
+  it("keeps an existing visual only when the provider explicitly marks the same-topic follow-up", async () => {
+    const responses = [
+      { answer: "The fan and nozzle balance lift.", retainVisual: true },
+      { answer: "This is a different subject.", retainVisual: "true" },
+    ];
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(responses.shift()) } }] }) })));
+    try {
+      const request = { question: "Why does it hover?", frames: [], history: [] };
+      const credentials = { apiKey: "test", model: "vision", baseUrl: "https://example.com/v1" };
+      expect((await askTeacher(request, credentials)).retainVisual).toBe(true);
+      expect((await askTeacher(request, credentials)).retainVisual).toBe(false);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("returns an actionable error when the provider times out", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new DOMException("aborted", "TimeoutError"); }));
     try {
