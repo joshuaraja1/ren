@@ -40,5 +40,6 @@ it("composes a clearly marked image preview into the same overlay", () => {
   };
   const { container } = render(<VisualLessonOverlay lesson={lesson} illustration={{ image: "data:image/png;base64,dGVzdA==", preview: true }} />);
   expect(container.querySelector(".visual-lesson-illustration img")).toHaveAttribute("src", "data:image/png;base64,dGVzdA==");
+  expect(container.querySelector(".visual-lesson")).toHaveClass("has-illustration");
   expect(container).toHaveTextContent("AI ILLUSTRATION · VERIFY DETAILS");
 });

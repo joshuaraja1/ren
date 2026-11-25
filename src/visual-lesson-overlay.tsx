@@ -29,7 +29,7 @@ export function VisualLessonOverlay({ lesson, illustration }: { lesson: VisualLe
   };
   const description = `${lesson.title}. ${lesson.parts.map((part) => `${part.label}: ${part.explanation}`).join(" ")}`;
   const headingInside = lesson.placement.y * window.innerHeight < 110;
-  return <section className="visual-lesson" style={placement} role="img" aria-label={description}>
+  return <section className={`visual-lesson${illustration ? " has-illustration" : ""}`} style={placement} role="img" aria-label={description}>
     {illustration && <div className="visual-lesson-illustration"><img src={illustration.image} alt="" /><span>{illustration.preview ? "GENERATING · " : ""}AI ILLUSTRATION · VERIFY DETAILS</span></div>}
     <div className={`visual-lesson-heading${headingInside ? " is-inside" : ""}`} aria-hidden="true"><span>REN EXPLAINS</span><strong>{lesson.title}</strong>{lesson.assumption && <small>{lesson.assumption}</small>}</div>
     <svg className="visual-lesson-lines" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">

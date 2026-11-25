@@ -41,9 +41,13 @@ supported. The app discloses the image provider and any charge before the
 first generation.
 
 The first image adapter uses the OpenAI Image API with a fast, medium-quality
-render and partial previews after the learner presses a control that discloses
-possible provider charges. It sends the validated manifest only. The image is
-composed into the same transparent overlay and marked as an illustration.
+render and partial previews after the learner presses a control and approves
+a native dialog showing the exact screen-derived text sent and possible
+provider charges. One image request is allowed per lesson. It sends only a
+reduced, validated manifest with title, part names, and connections. The image
+is composed into the same transparent overlay and marked as an illustration.
+The schematic callouts are hidden while the unverified image is visible, so
+they cannot appear to identify the wrong pixels.
 It is a preview until an independent image-to-manifest check is implemented.
 Voice-only image requests, other image providers, and physical QA remain open.
 

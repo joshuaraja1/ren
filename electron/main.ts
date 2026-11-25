@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { app, BrowserWindow, desktopCapturer, ipcMain, screen, session, shell, systemPreferences } from "electron";
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, screen, session, shell, systemPreferences } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, writeFileSync } from "node:fs";
@@ -14,7 +14,7 @@ import { parseAskRequest } from "./request-validation.js";
 import { hasMeaningfulMotion } from "./frame-motion.js";
 import { isSameStableScreen } from "./screen-continuity.js";
 import { canPlaceSpatialVisual } from "./visual-safety.js";
-import { generateIllustration } from "./image-render.js";
+import { generateIllustration, imagePrompt } from "./image-render.js";
 import { validateVisualLesson } from "./visual-lesson.js";
 import { CaptureSession } from "./capture-session.js";
 import type { VisualLesson } from "./visual-lesson.js";
@@ -31,6 +31,8 @@ let screenCaptureBusy = false;
 let pendingAnswerToken: string | null = null;
 let activeCaptureToken: string | null = null;
 let imageRenderAbort: AbortController | null = null;
+let imageRequestBusy = false;
+let imageRequestedFor: VisualLesson | null = null;
 
 const collapsedSize = { width: 236, height: 58 };
 const expandedSize = { width: 420, height: 560 };
@@ -375,16 +377,25 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("ren:generate-illustration", async (event) => {
     requireMainRenderer(event);
-    if (imageRenderAbort) throw new Error("An illustration is already rendering.");
+    if (imageRequestBusy || imageRenderAbort) throw new Error("An illustration is already rendering.");
     const visual = lastVisualLesson;
     if (!visual || !circleInputActive) throw new Error("A current visual lesson and pointer permission are required.");
-    const credentials = await visionCredentials();
-    if (!credentials || new URL(credentials.baseUrl).origin !== "https://api.openai.com") throw new Error("Illustrations currently require an OpenAI provider.");
-    const controller = new AbortController();
-    imageRenderAbort = controller;
-    const timeout = setTimeout(() => controller.abort(), 90_000);
-    const current = () => lastVisualLesson === visual && screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id === visual.displayId && !controller.signal.aborted;
+    if (imageRequestedFor === visual.lesson) throw new Error("This lesson already requested an image. Ask a new question to create another.");
+    imageRequestBusy = true;
     try {
+      const detail = `Ren will send this screen-derived lesson text to OpenAI:\n\n${imagePrompt(visual.lesson)}\n\nNo screenshot is sent to the image generator. OpenAI may charge for this request.`;
+      const decision = await dialog.showMessageBox(mainWindow!, { type: "question", title: "Create a Ren illustration", message: "Generate an illustration for this lesson?", detail, buttons: ["Cancel", "Generate image"], defaultId: 0, cancelId: 0, noLink: true });
+      if (decision.response !== 1) return false;
+      if (lastVisualLesson !== visual || !circleInputActive) throw new Error("The lesson changed before image generation began.");
+      const credentials = await visionCredentials();
+      if (!credentials || new URL(credentials.baseUrl).origin !== "https://api.openai.com") throw new Error("Illustrations currently require an OpenAI provider.");
+      if (lastVisualLesson !== visual) throw new Error("The lesson changed before image generation began.");
+      imageRequestedFor = visual.lesson;
+      const controller = new AbortController();
+      imageRenderAbort = controller;
+      const timeout = setTimeout(() => controller.abort(), 90_000);
+      const current = () => lastVisualLesson === visual && screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id === visual.displayId && !controller.signal.aborted;
+      try {
       const image = await generateIllustration(visual.lesson, credentials.apiKey, (preview) => {
         if (!current()) { controller.abort(); return; }
         overlayWindow?.webContents.send("ren:illustration", { image: preview, preview: true });
@@ -392,12 +403,15 @@ app.whenReady().then(() => {
       if (!current()) throw new Error("The screen changed while the illustration was rendering.");
       overlayWindow?.webContents.send("ren:illustration", { image, preview: false });
       return true;
-    } catch (error) {
-      overlayWindow?.webContents.send("ren:illustration", null);
-      throw error;
+      } catch (error) {
+        overlayWindow?.webContents.send("ren:illustration", null);
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+        if (imageRenderAbort === controller) imageRenderAbort = null;
+      }
     } finally {
-      clearTimeout(timeout);
-      if (imageRenderAbort === controller) imageRenderAbort = null;
+      imageRequestBusy = false;
     }
   });
   ipcMain.handle("ren:clear-annotations", (event) => {
