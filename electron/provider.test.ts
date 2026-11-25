@@ -39,7 +39,7 @@ describe("provider privacy boundary", () => {
       const answer = await askTeacher({ question: "Explain this", frames: ["data:image/png;base64,test"], history: [] }, { apiKey: "test-key", model: "vision-model", baseUrl: "https://example.com/v1" });
       expect(answer.provider).toBe("vision");
       expect(answer.followUps).toEqual(["Why does this part matter?"]);
-      expect(fetchCall).toHaveBeenCalledWith("https://example.com/v1/chat/completions", expect.objectContaining({ headers: expect.objectContaining({ authorization: "Bearer test-key" }), signal: expect.any(AbortSignal) }));
+      expect(fetchCall).toHaveBeenCalledWith("https://example.com/v1/chat/completions", expect.objectContaining({ headers: expect.objectContaining({ authorization: "Bearer test-key" }), redirect: "error", signal: expect.any(AbortSignal) }));
     } finally { vi.unstubAllGlobals(); }
   });
 

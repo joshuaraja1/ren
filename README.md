@@ -29,7 +29,12 @@ npm install
 npm run dev
 ```
 
-To get screen-specific answers in the desktop app, open **Connect AI** in Ren
+If a local Ollama server is already running with an installed model that reports
+vision support, Ren offers a one-time **Use local model** button. Once you choose
+it, Ren answers screen questions through that local process without an API key.
+Check that you trust the process at `127.0.0.1:11434` before connecting. Ren
+excludes Ollama cloud model entries from this route. Ren does not install Ollama
+or model weights. For a cloud model, open **Connect AI** in Ren
 and enter an HTTPS provider URL, a vision-capable model name, and its API key
 once. Ren stores the key encrypted with the operating system's secure storage,
 and sends screenshots to that provider only when you ask. The provider may
@@ -37,8 +42,9 @@ charge for requests. On Linux, saving a key requires a system keyring.
 
 For development, `.env.example` still supports `OPENAI_API_KEY`, `REN_MODEL`,
 and an optional `REN_API_BASE`. Ren uses the OpenAI-compatible chat completions
-contract. Environment files are ignored by git. Without a configured provider,
-Ren shows an explicit demo notice and cannot inspect screen contents.
+contract. Environment files are ignored by git. Without a configured provider
+or detected local vision model, Ren shows an explicit demo notice and cannot
+inspect screen contents.
 
 ```bash
 npm run check
@@ -64,7 +70,11 @@ specified in [the requirements](docs/VOICE_AGENTS.md) and are not yet available.
 Connected parts diagrams and realistic generated lesson images, composed
 directly over the user's current screen, are specified in
 [the visual teaching plan](docs/VISUAL_TEACHING.md). Current drawings remain
-on-screen schematic overlays; realistic image generation is pending.
+on-screen schematic overlays. The draft branch can also generate a realistic
+image with the OpenAI Image API. An Ollama vision model can answer screen
+questions locally, but it does not generate the realistic image. Ren only
+places image callouts when every part passes the location check; otherwise it
+keeps the schematic.
 When a screen changes during an answer, Ren withholds spatial drawings and
 asks for a fresh question rather than placing callouts on stale content.
 

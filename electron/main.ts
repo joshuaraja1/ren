@@ -384,13 +384,12 @@ app.whenReady().then(() => {
     if (imageRequestedFor === visual.lesson) throw new Error("This lesson already requested an image. Ask a new question to create another.");
     imageRequestBusy = true;
     try {
+      const credentials = await visionCredentials();
+      if (!credentials || new URL(credentials.baseUrl).origin !== "https://api.openai.com") throw new Error("Illustrations currently require an OpenAI provider.");
       const detail = `Ren will send this screen-derived lesson text to OpenAI:\n\n${imagePrompt(visual.lesson)}\n\nThe generated image is sent to your configured vision model to check part locations. No screen screenshot is sent to the image generator. Both requests may incur provider charges.`;
       const decision = await dialog.showMessageBox(mainWindow!, { type: "question", title: "Create a Ren illustration", message: "Generate an illustration for this lesson?", detail, buttons: ["Cancel", "Generate image"], defaultId: 0, cancelId: 0, noLink: true });
       if (decision.response !== 1) return false;
       if (lastVisualLesson !== visual || !circleInputActive) throw new Error("The lesson changed before image generation began.");
-      const credentials = await visionCredentials();
-      if (!credentials || new URL(credentials.baseUrl).origin !== "https://api.openai.com") throw new Error("Illustrations currently require an OpenAI provider.");
-      if (lastVisualLesson !== visual) throw new Error("The lesson changed before image generation began.");
       imageRequestedFor = visual.lesson;
       const controller = new AbortController();
       imageRenderAbort = controller;
@@ -411,7 +410,7 @@ app.whenReady().then(() => {
       if (!current()) throw new Error("The screen changed while the illustration was rendering.");
       const checked = decoded(image);
       if (!checked) throw new Error("Image provider returned an unreadable image.");
-      const registration = await locateImageParts(visual.lesson, image, credentials.apiKey, credentials.model, controller.signal);
+      const registration = await locateImageParts(visual.lesson, image, credentials.apiKey, credentials.model, controller.signal, fetch, credentials.baseUrl);
       if (!current()) throw new Error("The screen changed while the illustration was being checked.");
       if (!registration || !positionsOnOpaquePixels(checked.image.toBitmap(), checked.size.width, checked.size.height, registration)) {
         throw new Error("The illustration could not be matched to every lesson part. Keeping the schematic.");

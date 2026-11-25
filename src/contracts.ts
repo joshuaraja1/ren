@@ -46,7 +46,7 @@ export type AskResponse = {
 };
 export type Illustration = { image: string; preview: boolean; width: number; height: number; registration?: ImageRegistration };
 
-export type VisionStatus = { mode: "connected" | "environment" | "demo"; model: string; host: string; baseUrl: string };
+export type VisionStatus = { mode: "connected" | "environment" | "local" | "available" | "demo"; model: string; host: string; baseUrl: string };
 export type VisionSettingsInput = { apiKey: string; model: string; baseUrl: string };
 
 export type RenBridge = {

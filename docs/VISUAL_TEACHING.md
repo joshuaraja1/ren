@@ -54,6 +54,12 @@ to the contained image. Missing or ambiguous parts return to the schematic.
 This is a conservative placement check, not proof of engineering accuracy.
 Voice-only image requests, other image providers, and physical QA remain open.
 
+On macOS, Ren also detects an already installed Ollama vision model and offers
+a one-time local connection without an API key for screen questions. It does
+not offer local realistic image generation: Ollama 0.33.3 advertises the
+`x/flux2-klein:4b` image model but rejects a live generation request. A local
+image runtime and real-scene accuracy review remain open.
+
 The image backend receives the validated manifest only by default. Sending a
 screen frame, crop, selected text, or app content to an image provider requires
 a separate, clear data disclosure and user consent for that provider. The

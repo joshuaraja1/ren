@@ -1,12 +1,30 @@
 import { app, safeStorage } from "electron";
 import { readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { boundedLocalResponse } from "./local-response.js";
 
 export type VisionCredentials = { apiKey: string; model: string; baseUrl: string };
-export type VisionStatus = { mode: "connected" | "environment" | "demo"; model: string; host: string; baseUrl: string };
+export type VisionStatus = { mode: "connected" | "environment" | "local" | "available" | "demo"; model: string; host: string; baseUrl: string };
+const OLLAMA_BASE = "http://127.0.0.1:11434/v1";
+function validLocalModel(model: string) { return !/[-:]cloud(?:$|[:\-])/i.test(model); }
+
+async function localVisionModel(): Promise<string | null> {
+  try {
+    const response = await fetch("http://127.0.0.1:11434/api/tags", { signal: AbortSignal.timeout(1_500), redirect: "error" });
+    if (!response.ok) return null;
+    const body = await boundedLocalResponse(response);
+    const models = (JSON.parse(body) as { models?: { name?: unknown; capabilities?: unknown; size?: unknown }[] }).models;
+    if (!Array.isArray(models)) return null;
+    const capable = models.filter((item) => typeof item.name === "string" && validLocalModel(item.name) && typeof item.size === "number" && item.size >= 100_000_000 && Array.isArray(item.capabilities) && item.capabilities.includes("vision"));
+    const preferred = capable.find((item) => (item.name as string).startsWith("qwen3.5:")) ?? capable.find((item) => (item.name as string).startsWith("gemma3:")) ?? capable[0];
+    return preferred && typeof preferred.name === "string" ? validateModel(preferred.name) : null;
+  } catch { return null; }
+}
+
 type StoredVision =
   | { version: 1; model: string; baseUrl: string; encryptedKey: string }
-  | { version: 2; encryptedConfig: string };
+  | { version: 2; encryptedConfig: string }
+  | { version: 3; model: string; baseUrl: string };
 
 function settingsPath() { return join(app.getPath("userData"), "vision-provider.json"); }
 
@@ -29,6 +47,7 @@ async function readStored(): Promise<StoredVision | null> {
   try {
     const value = JSON.parse(await readFile(settingsPath(), "utf8")) as StoredVision;
     if (value.version === 2 && typeof value.encryptedConfig === "string") return value;
+    if (value.version === 3 && typeof value.model === "string" && value.baseUrl === OLLAMA_BASE && validLocalModel(value.model)) return value;
     if (value.version === 1 && typeof value.encryptedKey === "string" && typeof value.model === "string" && typeof value.baseUrl === "string") return value;
     throw new Error("Invalid provider settings");
   } catch (error) {
@@ -58,16 +77,20 @@ async function readCredentials(): Promise<VisionCredentials | null> {
   const stored = await readStored();
   if (!stored) return null;
   try {
+    if (stored.version === 3) return { apiKey: "ollama", model: validateModel(stored.model), baseUrl: OLLAMA_BASE };
     if (stored.version === 1) {
       const apiKey = (await safeStorage.decryptStringAsync(Buffer.from(stored.encryptedKey, "base64"))).result;
       const credentials = { apiKey, model: validateModel(stored.model), baseUrl: validateVisionEndpoint(stored.baseUrl) };
+      if (credentials.baseUrl === OLLAMA_BASE && (credentials.apiKey !== "ollama" || !validLocalModel(credentials.model))) throw new Error("Invalid local provider");
       await encryptCredentials(credentials);
       return credentials;
     }
     const decrypted = (await safeStorage.decryptStringAsync(Buffer.from(stored.encryptedConfig, "base64"))).result;
     const raw = JSON.parse(decrypted) as Partial<VisionCredentials>;
     if (typeof raw.apiKey !== "string" || !raw.apiKey || typeof raw.model !== "string" || typeof raw.baseUrl !== "string") throw new Error("Invalid provider credentials");
-    return { apiKey: raw.apiKey, model: validateModel(raw.model), baseUrl: validateVisionEndpoint(raw.baseUrl) };
+    const credentials = { apiKey: raw.apiKey, model: validateModel(raw.model), baseUrl: validateVisionEndpoint(raw.baseUrl) };
+    if (credentials.baseUrl === OLLAMA_BASE && (credentials.apiKey !== "ollama" || !validLocalModel(credentials.model))) throw new Error("Invalid local provider");
+    return credentials;
   } catch {
     throw new Error("Could not unlock the saved vision provider. Open AI settings to reconnect it.");
   }
@@ -75,11 +98,13 @@ async function readCredentials(): Promise<VisionCredentials | null> {
 
 export async function visionStatus(): Promise<VisionStatus> {
   const stored = await readCredentials();
-  if (stored) return { mode: "connected", model: stored.model, host: new URL(stored.baseUrl).host, baseUrl: stored.baseUrl };
+  if (stored) return { mode: stored.baseUrl === OLLAMA_BASE ? "local" : "connected", model: stored.model, host: new URL(stored.baseUrl).host, baseUrl: stored.baseUrl };
   if (process.env.OPENAI_API_KEY && process.env.REN_MODEL) {
     const baseUrl = validateVisionEndpoint(process.env.REN_API_BASE || "https://api.openai.com/v1");
     return { mode: "environment", model: process.env.REN_MODEL, host: new URL(baseUrl).host, baseUrl };
   }
+  const local = await localVisionModel();
+  if (local) return { mode: "available", model: local, host: "127.0.0.1:11434", baseUrl: OLLAMA_BASE };
   return { mode: "demo", model: "", host: "", baseUrl: "https://api.openai.com/v1" };
 }
 
@@ -90,14 +115,21 @@ export async function saveVisionSettings(value: unknown): Promise<VisionStatus> 
   if (typeof input.model !== "string" || typeof input.baseUrl !== "string") throw new Error("Enter the model and provider URL.");
   const model = validateModel(input.model);
   const baseUrl = validateVisionEndpoint(input.baseUrl);
-  const previous = input.apiKey.trim() ? null : await readCredentials();
+  if (baseUrl === OLLAMA_BASE) {
+    if (input.apiKey !== "ollama" || !validLocalModel(model)) throw new Error("Use the local model connection button for Ollama.");
+    if (await localVisionModel() !== model) throw new Error("The selected local vision model is unavailable.");
+    await writeStored({ version: 3, model, baseUrl: OLLAMA_BASE });
+    return { mode: "local", model, host: "127.0.0.1:11434", baseUrl };
+  }
+  const saved = input.apiKey.trim() ? null : await readCredentials();
+  const previous = saved?.baseUrl === baseUrl ? saved : null;
   if (!input.apiKey.trim() && !previous) throw new Error("Enter an API key.");
   if (!await safeStorage.isAsyncEncryptionAvailable()) throw new Error("Secure key storage is unavailable on this computer.");
   if (process.platform === "linux" && !["gnome_libsecret", "kwallet", "kwallet5", "kwallet6"].includes(safeStorage.getSelectedStorageBackend())) {
     throw new Error("A system keyring is required before Ren can save an API key on Linux.");
   }
   await encryptCredentials({ apiKey: input.apiKey.trim() || previous!.apiKey, model, baseUrl });
-  return { mode: "connected", model, host: new URL(baseUrl).host, baseUrl };
+  return { mode: baseUrl === OLLAMA_BASE ? "local" : "connected", model, host: new URL(baseUrl).host, baseUrl };
 }
 
 export async function clearVisionSettings(): Promise<VisionStatus> {
