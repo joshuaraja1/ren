@@ -185,7 +185,7 @@ describe("Ren ambient shell", () => {
 
   it("keeps diagram context for a spoken follow-up and starts listening after the answer", async () => {
     let speechListener: ((data: { id: string; chunk?: string; done?: boolean }) => void) | undefined;
-    let hotkey: (() => void) | undefined;
+    let processor: { onaudioprocess: ((event: { inputBuffer: { getChannelData(index: number): Float32Array } }) => void) | null } | undefined;
     const originalAudioContext = globalThis.AudioContext;
     const originalMediaDevices = navigator.mediaDevices;
     class FakeAudioContext {
@@ -194,7 +194,7 @@ describe("Ren ambient shell", () => {
       state = "running";
       destination = {};
       createMediaStreamSource() { return { connect() {} }; }
-      createScriptProcessor() { return { connect() {}, disconnect() {}, onaudioprocess: null }; }
+      createScriptProcessor() { processor = { connect() {}, disconnect() {}, onaudioprocess: null } as typeof processor & { connect(): void; disconnect(): void }; return processor; }
       createBuffer() { return { duration: .05, getChannelData: () => new Float32Array(1) }; }
       createBufferSource() {
         return { buffer: null, onended: null as (() => void) | null, connect() {}, disconnect() {}, stop() {}, start(this: { onended: (() => void) | null }) { queueMicrotask(() => this.onended?.()); } };
@@ -205,6 +205,7 @@ describe("Ren ambient shell", () => {
     globalThis.AudioContext = FakeAudioContext as unknown as typeof AudioContext;
     Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } });
     const speechStart = vi.fn(async () => true);
+    const wakeFeed = vi.fn(async () => true);
     const captureContext = vi.fn(async () => ({ frames: [], pointer: { x: .5, y: .5 } }));
     const ask = vi.fn(async ({ question }: { question: string }) => ({
       answer: question.includes("Why") ? "The fan pushes air down." : "The engine drives the fan.",
@@ -218,32 +219,49 @@ describe("Ren ambient shell", () => {
       platform: "darwin", permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
       visionStatus: async () => ({ mode: "connected", model: "gpt-6-sol", host: "api.openai.com", baseUrl: "https://api.openai.com/v1" }),
       primarySource: async () => ({ id: "screen", name: "Main display", thumbnail: "" }),
-      wakeAvailable: async () => true, wakeStart: async () => true, wakeStop: async () => {}, wakeFeed: async () => false,
+      wakeAvailable: async () => true, wakeStart: async () => true, wakeStop: async () => {}, wakeFeed,
       speechAvailable: async () => true, speechStart, speechFeed: async () => true,
-      speechFinish: async () => "Why does the fan help?", speechStop: async () => {},
+      speechFinish: vi.fn().mockResolvedValueOnce("Draw a diagram of the hover system").mockResolvedValueOnce("Why does the fan help?").mockResolvedValueOnce(""), speechStop: async () => {},
       onSpeechData: (listener: typeof speechListener) => { speechListener = listener; return () => { speechListener = undefined; }; },
       speak: async (id: string) => { queueMicrotask(() => { speechListener?.({ id, chunk: "AAA=", done: true }); }); return true; },
-      onFocusSelection: () => () => {}, onActivateVoice: (listener: () => void) => { hotkey = listener; return () => { hotkey = undefined; }; },
+      onFocusSelection: () => () => {}, onActivateVoice: () => () => {},
       setExpanded: async () => {}, captureContext, ask,
     } as unknown as RenBridge;
     try {
       render(<App />);
-      fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
-      const input = await screen.findByRole("textbox", { name: /ask ren/i });
-      fireEvent.change(input, { target: { value: "Draw a diagram of the hover system" } });
-      fireEvent.click(screen.getByRole("button", { name: /send question/i }));
+      await waitFor(() => expect(processor?.onaudioprocess).toBeTypeOf("function"));
+      const voiceFrame = { inputBuffer: { getChannelData: () => new Float32Array(2048).fill(.03) } };
+      act(() => processor?.onaudioprocess?.(voiceFrame));
       await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(1));
+      expect(screen.getByRole("textbox", { name: /ask ren/i })).toBeVisible();
+      fireEvent.click(screen.getByRole("button", { name: /finish speaking/i }));
+      await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
       expect(captureContext).toHaveBeenNthCalledWith(1, false, "Draw a diagram of the hover system");
       expect(screen.getByRole("button", { name: /illustrate on screen/i })).toBeVisible();
+      await waitFor(() => expect(screen.getByRole("heading", { name: /i’m listening/i })).toBeVisible());
+      expect(screen.getByText(/ask a follow-up anytime · no wake phrase/i)).toBeVisible();
+      expect(screen.getByRole("button", { name: /stop listening/i })).toBeVisible();
+      expect(speechStart).toHaveBeenCalledTimes(1);
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      act(() => { for (let index = 0; index < 3; index += 1) processor?.onaudioprocess?.(voiceFrame); });
+      await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(2));
+      expect(wakeFeed).toHaveBeenCalledTimes(1);
       fireEvent.click(screen.getByRole("button", { name: /finish speaking/i }));
       await waitFor(() => expect(ask).toHaveBeenCalledTimes(2));
       expect(captureContext).toHaveBeenNthCalledWith(2, true, "Why does the fan help?");
       expect(ask).toHaveBeenLastCalledWith(expect.objectContaining({ question: "Why does the fan help?", history: expect.arrayContaining([expect.objectContaining({ role: "assistant", content: "The engine drives the fan." })]) }));
       expect(screen.getByRole("button", { name: /illustrate on screen/i })).toBeVisible();
-      await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(2));
-      fireEvent.click(screen.getByRole("button", { name: /finish speaking/i }));
-      act(() => hotkey?.());
+      await waitFor(() => expect(screen.getByRole("heading", { name: /i’m listening/i })).toBeVisible());
+      expect(speechStart).toHaveBeenCalledTimes(2);
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      act(() => { for (let index = 0; index < 3; index += 1) processor?.onaudioprocess?.(voiceFrame); });
       await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(3));
+      fireEvent.click(screen.getByRole("button", { name: /finish speaking/i }));
+      await waitFor(() => expect(screen.getByRole("button", { name: /stop listening/i })).toBeVisible());
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(wakeFeed).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByRole("button", { name: /stop listening/i }));
+      expect(screen.getByRole("heading", { name: /how can i help/i })).toBeVisible();
     } finally {
       window.ren = undefined;
       globalThis.AudioContext = originalAudioContext;
