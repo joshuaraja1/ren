@@ -14,6 +14,7 @@ export type VisualConnection = {
 
 export type VisualLesson = {
   version: 1;
+  layout?: "centered";
   title: string;
   assumption?: string;
   placement: { x: number; y: number; width: number; height: number };

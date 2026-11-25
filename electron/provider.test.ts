@@ -84,6 +84,39 @@ describe("provider privacy boundary", () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
+  it("retries a requested diagram once when the first answer omits its lesson", async () => {
+    const lesson = { version: 1, title: "Hover mechanism", placement: { x: .2, y: .2, width: .6, height: .6 }, parts: [
+      { id: "engine", label: "Engine", explanation: "Drives the fan and produces thrust.", x: .3, y: .3 },
+      { id: "fan", label: "Lift fan", explanation: "Pushes air downward near the nose.", x: .7, y: .7 },
+    ], connections: [{ from: "engine", to: "fan", label: "drives" }] };
+    const responses = [
+      { answer: "The engine drives the lift fan.", visualLesson: null },
+      { answer: "The engine drives the lift fan to push air downward.", visualLesson: lesson },
+    ];
+    const calls: Array<{ messages: Array<{ content: unknown }> }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {
+      calls.push(JSON.parse(String(options.body)));
+      return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(responses.shift()) } }] }) };
+    }));
+    try {
+      const result = await askTeacher({ question: "Draw a diagram of how the jet hovers", frames: ["data:image/png;base64,test"], history: [] }, { apiKey: "test", model: "gpt-6-sol", baseUrl: "https://api.openai.com/v1" });
+      expect(result.visualLesson?.title).toBe("Hover mechanism");
+      expect(calls).toHaveLength(2);
+      expect(String(calls[0].messages[0].content)).toContain("visualLesson is REQUIRED");
+      expect(String(calls[1].messages[0].content)).toContain("Do not omit the");
+      expect(JSON.stringify(calls[1].messages.at(-1)?.content)).toContain("data:image/png;base64,test");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("reports a useful failure when both diagram plans are invalid", async () => {
+    const fetchCall = vi.fn(async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "I can explain the jet.", visualLesson: null }) } }] }) }));
+    vi.stubGlobal("fetch", fetchCall);
+    try {
+      await expect(askTeacher({ question: "Draw a diagram of this jet", frames: [], history: [] }, { apiKey: "test", model: "vision", baseUrl: "https://example.com/v1" })).rejects.toThrow("could not plan a connected diagram");
+      expect(fetchCall).toHaveBeenCalledTimes(2);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("keeps prior visual labels in explicitly untrusted user context", async () => {
     let sent: { messages: { role: string; content: unknown }[] } | undefined;
     vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {

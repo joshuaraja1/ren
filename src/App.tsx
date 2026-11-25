@@ -48,6 +48,7 @@ export function App() {
   const [hostedToken, setHostedToken] = useState("");
   const [imageAvailable, setImageAvailable] = useState(false);
   const [imageRendering, setImageRendering] = useState(false);
+  const imageRenderingRef = useRef(false);
   const speechCancelRef = useRef<(() => void) | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const wakeEnabledRef = useRef(false);
@@ -134,7 +135,7 @@ export function App() {
           let pending = false;
           const recentAudio: number[][] = [];
           processor.onaudioprocess = (event) => {
-            if (disposed || visionOpenRef.current) return;
+            if (disposed || visionOpenRef.current || imageRenderingRef.current) return;
             const samples = Array.from(event.inputBuffer.getChannelData(0));
             if (dictationActiveRef.current) {
               const now = Date.now();
@@ -245,7 +246,7 @@ export function App() {
   }
 
   async function startNativeDictation(preRoll: number[][] = []) {
-    if (!window.ren || !nativeSpeechRef.current || dictationActiveRef.current) return;
+    if (!window.ren || !nativeSpeechRef.current || dictationActiveRef.current || imageRenderingRef.current) return;
     setError("");
     dictationActiveRef.current = true;
     const session = ++dictationSessionRef.current;
@@ -519,7 +520,7 @@ export function App() {
       setImageAvailable(!!response.visualLesson);
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: response.answer, provider: response.provider, followUps: response.followUps }]);
       setVoiceState("responding"); suppressSpeechUntilRef.current = Date.now() + Math.min(12_000, response.answer.length * 45);
-      void speak(response.answer, () => { if (nativeSpeechRef.current && expandedRef.current) void startNativeDictation(); else { setVoiceState("idle"); keepAwake(); } });
+      void speak(response.answer, () => { if (nativeSpeechRef.current && expandedRef.current && !imageRenderingRef.current && !response.autoIllustrate) void startNativeDictation(); else { setVoiceState("idle"); keepAwake(); } });
       if (response.autoIllustrate) void illustrate(true);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Ren couldn’t answer."); setVoiceState("idle"); }
     finally { askingRef.current = false; }
@@ -528,12 +529,13 @@ export function App() {
   function submit(event: FormEvent) { event.preventDefault(); void askQuestion(question); }
 
   async function illustrate(automatic = false) {
-    if (!window.ren || imageRendering) return;
+    if (!window.ren || imageRenderingRef.current) return;
+    imageRenderingRef.current = true;
     setImageRendering(true); setError("");
     setImageAvailable(false);
     try { if (!await window.ren.generateIllustration(automatic)) setImageAvailable(true); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : "Could not render an illustration."); }
-    finally { setImageRendering(false); }
+    catch (reason) { setImageAvailable(true); setError(reason instanceof Error ? reason.message : "Could not render an illustration."); }
+    finally { imageRenderingRef.current = false; setImageRendering(false); }
   }
 
   if (!expanded) return <button className={`ren-pebble state-${voiceState}`} onClick={() => void setExpanded(true)} aria-label={`Open Ren. ${error ? "Needs attention" : imageRendering ? "Rendering your illustration" : permission?.microphone === "granted" ? voiceLabels[voiceState].title : "Microphone setup needed"}`}><span className="pebble-mark"><Spark /></span><span className="pebble-copy"><strong>{error ? "Try again" : imageRendering ? "Rendering visual…" : permission?.microphone === "granted" ? voiceLabels[voiceState].title : "Microphone off"}</strong><small>{error ? /didn't catch/i.test(error) ? "I didn't catch that" : "Open Ren for details" : imageRendering ? "Drawing on your screen" : permission?.microphone === "granted" ? voiceLabels[voiceState].detail : "Open Ren to enable voice"}</small></span><VoiceMeter active={voiceState !== "idle" || imageRendering} /><span className="privacy-dot" aria-hidden="true" /></button>;

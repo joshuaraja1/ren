@@ -12,9 +12,11 @@ const png = pngBytes.toString("base64");
 const event = (type: string) => `data: ${JSON.stringify({ type, b64_json: png, output_format: "png" })}\n\n`;
 
 describe("illustration adapter", () => {
-  it("builds a bounded manifest-only prompt", () => {
+  it("builds a bounded prompt that shows each part's function", () => {
     expect(imagePrompt(lesson)).toContain('"label":"Wing"');
-    expect(imagePrompt(lesson)).not.toContain("Deflects air");
+    expect(imagePrompt(lesson)).toContain('"function":"Deflects air"');
+    expect(imagePrompt(lesson)).toContain("three-quarter view");
+    expect(imagePrompt(lesson)).toContain("physically connected");
     expect(imagePrompt(lesson)).toContain("Transparent background");
   });
   it("streams previews and accepts only a completed image", async () => {

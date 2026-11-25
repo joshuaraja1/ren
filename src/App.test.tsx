@@ -160,4 +160,71 @@ describe("Ren ambient shell", () => {
       expect(ask).toHaveBeenLastCalledWith(expect.objectContaining({ question: "Why does that step work?" }));
     } finally { window.ren = undefined; }
   });
+
+  it("automatically starts one illustration for an explicit diagram request", async () => {
+    let completeRender: ((value: boolean) => void) | undefined;
+    const generateIllustration = vi.fn(() => new Promise<boolean>((resolve) => { completeRender = resolve; }));
+    const ask = vi.fn(async () => ({
+      answer: "The engine powers the lift fan and rear nozzle.", provider: "vision" as const,
+      annotations: [], autoIllustrate: true,
+      visualLesson: { version: 1 as const, layout: "centered" as const, title: "Jet hover", placement: { x: .25, y: .25, width: .5, height: .5 }, parts: [
+        { id: "fan", label: "Lift fan", explanation: "Pushes air down.", x: .3, y: .4 },
+        { id: "nozzle", label: "Rear nozzle", explanation: "Directs thrust down.", x: .7, y: .6 },
+      ], connections: [{ from: "fan", to: "nozzle", label: "balances" }] },
+    }));
+    window.ren = {
+      permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
+      primarySource: async () => ({ id: "screen", name: "Main display", thumbnail: "" }),
+      wakeAvailable: async () => false,
+      onFocusSelection: () => () => {}, setExpanded: async () => {}, speechStop: async () => {},
+      captureContext: async () => ({ frames: [], pointer: { x: .5, y: .5 } }),
+      ask, generateIllustration,
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
+      const input = await screen.findByRole("textbox", { name: /ask ren/i });
+      fireEvent.change(input, { target: { value: "Draw a jet hover diagram" } });
+      fireEvent.click(screen.getByRole("button", { name: /send question/i }));
+      await waitFor(() => expect(generateIllustration).toHaveBeenCalledExactlyOnceWith(true));
+      expect(screen.getByRole("heading", { name: /drawing on your screen/i })).toBeVisible();
+      await act(async () => { completeRender?.(true); });
+      expect(generateIllustration).toHaveBeenCalledTimes(1);
+    } finally { window.ren = undefined; }
+  });
+
+  it("offers a manual retry after an automatic illustration fails", async () => {
+    const generateIllustration = vi.fn()
+      .mockRejectedValueOnce(new Error("Image service timed out"))
+      .mockResolvedValueOnce(true);
+    window.ren = {
+      permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
+      primarySource: async () => ({ id: "screen", name: "Main display", thumbnail: "" }),
+      visionStatus: async () => ({ mode: "connected", model: "gpt-6-sol", host: "api.openai.com", baseUrl: "https://api.openai.com/v1" }),
+      wakeAvailable: async () => false,
+      onFocusSelection: () => () => {}, setExpanded: async () => {}, speechStop: async () => {},
+      captureContext: async () => ({ frames: [], pointer: { x: .5, y: .5 } }),
+      ask: async () => ({ answer: "Engine thrust and lift fan balance the aircraft.", provider: "vision", annotations: [], autoIllustrate: true,
+        visualLesson: { version: 1, layout: "centered", title: "Jet hover", placement: { x: .1, y: .1, width: .8, height: .8 }, parts: [
+          { id: "engine", label: "Engine", explanation: "Powers the lift fan.", x: .3, y: .4 },
+          { id: "fan", label: "Lift fan", explanation: "Pushes air down.", x: .7, y: .6 },
+        ], connections: [{ from: "engine", to: "fan", label: "drives" }] },
+      }),
+      generateIllustration,
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
+      const input = await screen.findByRole("textbox", { name: /ask ren/i });
+      fireEvent.change(input, { target: { value: "Draw a jet hover diagram" } });
+      fireEvent.click(screen.getByRole("button", { name: /send question/i }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("Image service timed out");
+      const retry = await screen.findByRole("button", { name: /illustrate on screen/i });
+      expect(retry).toBeEnabled();
+      fireEvent.click(retry);
+      await waitFor(() => expect(generateIllustration).toHaveBeenCalledTimes(2));
+      expect(generateIllustration).toHaveBeenNthCalledWith(1, true);
+      expect(generateIllustration).toHaveBeenNthCalledWith(2, false);
+    } finally { window.ren = undefined; }
+  });
 });

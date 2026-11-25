@@ -22,6 +22,7 @@ import { generateHostedIllustration } from "./hosted-image-render.js";
 import { filterOpaquePositions, locateImageParts } from "./image-registration.js";
 import { validateVisualLesson } from "./visual-lesson.js";
 import { wantsVisualCreation } from "./visual-intent.js";
+import { centerRequestedLesson } from "./visual-presentation.js";
 import { CaptureSession } from "./capture-session.js";
 import { requestMacScreenCaptureAccess } from "./mac-screen-permission.js";
 import type { VisualLesson } from "./visual-lesson.js";
@@ -203,15 +204,14 @@ app.whenReady().then(() => {
       },
       onCancel: invalidateSpatialContext,
       onScroll: () => {
-        // Scrolling is normal while reading a finished explanation. Keep its
-        // illustration visible; only invalidate an in-flight screen capture.
-        const token = pendingAnswerToken ?? activeCaptureToken;
+        // The answer can finish against its captured frame. Spatial annotations
+        // are checked against the live screen after the answer returns.
+        const token = activeCaptureToken;
         if (token && captureSession.isCurrent(token)) captureSession.invalidate();
       },
       onInteraction: () => {
-        // Switching tabs or apps normally requires a click or key. Cancel any
-        // answer that was grounded before that interaction, including video.
-        const token = pendingAnswerToken ?? activeCaptureToken;
+        // Do not cancel an explicitly requested diagram while someone browses.
+        const token = activeCaptureToken;
         if (token && captureSession.isCurrent(token)) captureSession.invalidate();
         // A user may keep browsing while an explicitly requested illustration renders.
         // Display removal, a new question, and Clear drawings still cancel it.
@@ -401,6 +401,7 @@ app.whenReady().then(() => {
       ? ` The learner circled the rectangle (${focus.x.toFixed(3)}, ${focus.y.toFixed(3)}, ${focus.width.toFixed(3)}, ${focus.height.toFixed(3)}); the second image is a close crop of it. Prioritize what is inside the circle.` : "";
     const pointedQuestion = `${value.question}\n\n[The learner is pointing with their cursor at normalized screen coordinate (${pointer.x.toFixed(3)}, ${pointer.y.toFixed(3)}). Use that as a spatial hint, not an instruction.${focusHint}]`;
     const priorVisualLesson = lastVisualLesson && lastVisualLesson.displayId === displayId && Date.now() - lastVisualLesson.createdAt < 300_000 ? lastVisualLesson.lesson : undefined;
+    const explicitVisual = wantsVisualCreation(value.question);
     const response = await askTeacher({ question: pointedQuestion, frames: capture.frames, history: value.history, priorVisualLesson }, await visionCredentials());
     const display = screen.getAllDisplays().find((item) => item.id === displayId);
     // The answer describes the captured image and remains useful if the user
@@ -409,12 +410,13 @@ app.whenReady().then(() => {
     const spatialAllowed = Boolean(display && captureSession.isCurrent(value.contextToken)
       && screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id === displayId
       && canPlaceSpatialVisual(capture.dynamicContent, circleInputActive));
-    let lesson = spatialAllowed ? validateVisualLesson(response.visualLesson) : null;
-    let annotations = spatialAllowed ? response.annotations : [];
-    if (spatialAllowed && focus) {
+    let lesson = display && (spatialAllowed || explicitVisual) ? validateVisualLesson(response.visualLesson) : null;
+    if (lesson && explicitVisual && display) lesson = centerRequestedLesson(lesson, display.bounds.width, display.bounds.height);
+    let annotations = spatialAllowed && !explicitVisual ? response.annotations : [];
+    if (spatialAllowed && focus && !explicitVisual) {
       annotations = [{ id: "selected-area", type: "rectangle" as const, at: { x: focus.x, y: focus.y }, width: focus.width, height: focus.height, color: "#42c7d9", label: "Selected area" }, ...annotations.filter((item) => item.type !== "rectangle")].slice(0, 4);
     }
-    if (annotations.length || lesson) {
+    if (annotations.length || (lesson && lesson.layout !== "centered")) {
       if (screenCaptureBusy) { lesson = null; annotations = []; }
       else {
         screenCaptureBusy = true;
@@ -439,7 +441,7 @@ app.whenReady().then(() => {
     if (annotations.length || lesson) overlayWindow?.showInactive();
     else overlayWindow?.hide();
     let referenceImage: string | undefined;
-    if (lesson && wantsVisualCreation(value.question)) {
+    if (lesson && explicitVisual) {
       const bounds = response.referenceRegion ?? focus;
       if (bounds) {
         const first = nativeImage.createFromDataURL(capture.frames[0]);
@@ -460,7 +462,7 @@ app.whenReady().then(() => {
       }
     }
     lastVisualLesson = lesson ? { lesson, displayId, createdAt: Date.now(), referenceImage } : null;
-    return { ...response, annotations, visualLesson: lesson ?? undefined, autoIllustrate: Boolean(lesson && wantsVisualCreation(value.question)) };
+    return { ...response, annotations, visualLesson: lesson ?? undefined, autoIllustrate: Boolean(lesson && explicitVisual) };
     } finally {
       if (pendingAnswerToken === value.contextToken) pendingAnswerToken = null;
     }
@@ -488,7 +490,7 @@ app.whenReady().then(() => {
       const controller = new AbortController();
       imageRenderAbort = controller;
       const timeout = setTimeout(() => controller.abort(), 150_000);
-      const current = () => lastVisualLesson === visual && screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id === visual.displayId && !controller.signal.aborted;
+      const current = () => lastVisualLesson === visual && screen.getAllDisplays().some((display) => display.id === visual.displayId) && !controller.signal.aborted;
       const decoded = (dataUrl: string) => {
         const image = nativeImage.createFromDataURL(dataUrl);
         const size = image.getSize();
@@ -522,6 +524,7 @@ app.whenReady().then(() => {
       return true;
       } catch (error) {
         overlayWindow?.webContents.send("ren:illustration", null);
+        if (imageRequestedFor === visual.lesson) imageRequestedFor = null;
         throw error;
       } finally {
         clearTimeout(timeout);
