@@ -47,6 +47,8 @@ export function App() {
   const [hostedToken, setHostedToken] = useState("");
   const [imageAvailable, setImageAvailable] = useState(false);
   const [imageRendering, setImageRendering] = useState(false);
+  const spokenAudioRef = useRef<HTMLAudioElement | null>(null);
+  const speechEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const wakeEnabledRef = useRef(false);
   const awakeUntilRef = useRef(0);
@@ -399,17 +401,34 @@ export function App() {
 
   async function speak(text: string, onEnd: () => void) {
     if (!window.ren) { onEnd(); return; }
+    spokenAudioRef.current?.pause();
+    if (speechEndTimerRef.current) clearTimeout(speechEndTimerRef.current);
+    suppressSpeechUntilRef.current = Date.now() + 120_000;
+    let finished = false;
+    let url: string | null = null;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      if (speechEndTimerRef.current) clearTimeout(speechEndTimerRef.current);
+      speechEndTimerRef.current = null;
+      spokenAudioRef.current = null;
+      if (url) URL.revokeObjectURL(url);
+      suppressSpeechUntilRef.current = Date.now() + 800;
+      onEnd();
+    };
     try {
       const base64 = await window.ren.speak(text);
       const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
-      const url = URL.createObjectURL(new Blob([bytes], { type: "audio/mpeg" }));
+      url = URL.createObjectURL(new Blob([bytes], { type: "audio/mpeg" }));
       const audio = new Audio(url);
-      audio.onended = () => { URL.revokeObjectURL(url); onEnd(); };
-      audio.onerror = () => { URL.revokeObjectURL(url); setError("Deepgram speech could not play."); onEnd(); };
+      spokenAudioRef.current = audio;
+      audio.onended = finish;
+      audio.onerror = () => { setError("Deepgram speech could not play."); finish(); };
+      speechEndTimerRef.current = setTimeout(finish, Math.max(15_000, Math.min(90_000, text.length * 150)));
       await audio.play();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Deepgram speech is unavailable.");
-      onEnd();
+      finish();
     }
   }
 
