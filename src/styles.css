@@ -236,6 +236,7 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--listen);
 .vision-settings label { display: grid; gap: 5px; color: var(--ink); font-size: 10px; font-weight: 700; }
 .vision-settings input { width: 100%; box-sizing: border-box; padding: 10px 11px; border: 1px solid var(--line); border-radius: 10px; outline: 0; background: oklch(98% 0.005 75); color: var(--ink); font: inherit; font-size: 11px; }
 .vision-settings input:focus { border-color: oklch(64% 0.10 225); box-shadow: 0 0 0 3px oklch(67% 0.15 225 / 12%); }
+.hosted-settings { display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--line); padding-top: 18px; }
 .vision-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin-top: auto; }
 .vision-actions .allow-button { width: 100%; margin-top: 0; }
 .vision-actions > button:not(.allow-button) { border: 0; background: transparent; color: oklch(44% 0.10 228); cursor: pointer; font-size: 10px; font-weight: 700; }

@@ -54,6 +54,15 @@ to the contained image. Missing or ambiguous parts return to the schematic.
 This is a conservative placement check, not proof of engineering accuracy.
 Voice-only image requests, other image providers, and physical QA remain open.
 
+The draft hosted route moves image generation and independent part registration
+to a Ren server. The desktop sends only the validated title, assumption, part
+IDs/names, and connections after a native dialog shows the exact manifest and
+destination. The server holds the provider key, streams previews, and returns
+part coordinates only after the vision check. Ren still validates PNG bytes,
+coordinates, and opaque anchors before attaching callouts. This route needs a
+deployed service, project funding, and real-image QA before public release;
+see [hosted images](HOSTED_IMAGES.md).
+
 On macOS, Ren also detects an already installed Ollama vision model and offers
 a one-time local connection without an API key for screen questions. It does
 not offer local realistic image generation: Ollama 0.33.3 advertises the

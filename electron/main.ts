@@ -10,11 +10,13 @@ import { normalizeCursor } from "./display-geometry.js";
 import { startCircleInput, stopCircleInput } from "./circle-input.js";
 import type { FocusRegion } from "./circle-geometry.js";
 import { clearVisionSettings, saveVisionSettings, visionCredentials, visionStatus } from "./vision-settings.js";
+import { clearHostedImageSettings, hostedImageCredentials, hostedImageStatus, saveHostedImageSettings } from "./hosted-image-settings.js";
 import { parseAskRequest } from "./request-validation.js";
 import { hasMeaningfulMotion } from "./frame-motion.js";
 import { isSameStableScreen } from "./screen-continuity.js";
 import { canPlaceSpatialVisual } from "./visual-safety.js";
-import { generateIllustration, imagePrompt } from "./image-render.js";
+import { generateIllustration, imageManifest, imagePrompt } from "./image-render.js";
+import { generateHostedIllustration } from "./hosted-image-render.js";
 import { locateImageParts, positionsOnOpaquePixels } from "./image-registration.js";
 import { validateVisualLesson } from "./visual-lesson.js";
 import { CaptureSession } from "./capture-session.js";
@@ -215,6 +217,15 @@ app.whenReady().then(() => {
     if (event.sender !== mainWindow?.webContents) throw new Error("Not allowed");
     return clearVisionSettings();
   });
+  ipcMain.handle("ren:image-service-status", (event) => event.sender === mainWindow?.webContents ? hostedImageStatus() : null);
+  ipcMain.handle("ren:image-service-save", (event, value: unknown) => {
+    requireMainRenderer(event);
+    return saveHostedImageSettings(value);
+  });
+  ipcMain.handle("ren:image-service-clear", (event) => {
+    requireMainRenderer(event);
+    return clearHostedImageSettings();
+  });
   ipcMain.handle("ren:enable-circle-input", (event) => {
     if (event.sender !== mainWindow?.webContents) return permissionStatus();
     if (process.platform === "darwin") systemPreferences.isTrustedAccessibilityClient(true);
@@ -384,9 +395,12 @@ app.whenReady().then(() => {
     if (imageRequestedFor === visual.lesson) throw new Error("This lesson already requested an image. Ask a new question to create another.");
     imageRequestBusy = true;
     try {
-      const credentials = await visionCredentials();
-      if (!credentials || new URL(credentials.baseUrl).origin !== "https://api.openai.com") throw new Error("Illustrations currently require an OpenAI provider.");
-      const detail = `Ren will send this screen-derived lesson text to OpenAI:\n\n${imagePrompt(visual.lesson)}\n\nThe generated image is sent to your configured vision model to check part locations. No screen screenshot is sent to the image generator. Both requests may incur provider charges.`;
+      const hosted = await hostedImageCredentials();
+      const credentials = hosted ? null : await visionCredentials();
+      if (!hosted && (!credentials || new URL(credentials.baseUrl).origin !== "https://api.openai.com")) throw new Error("Connect the Ren image service to create an illustration.");
+      const detail = hosted
+        ? `Ren will send this validated lesson manifest to ${new URL(hosted.baseUrl).host}:\n\n${JSON.stringify(imageManifest(visual.lesson), null, 2)}\n\nThe Ren service uses hosted image and vision models to generate and check the image. No screen screenshot is sent. This request uses your Ren illustration allowance.`
+        : `Ren will send this screen-derived lesson text to OpenAI:\n\n${imagePrompt(visual.lesson)}\n\nThe generated image is sent to your configured vision model to check part locations. No screen screenshot is sent to the image generator. Both requests may incur provider charges.`;
       const decision = await dialog.showMessageBox(mainWindow!, { type: "question", title: "Create a Ren illustration", message: "Generate an illustration for this lesson?", detail, buttons: ["Cancel", "Generate image"], defaultId: 0, cancelId: 0, noLink: true });
       if (decision.response !== 1) return false;
       if (lastVisualLesson !== visual || !circleInputActive) throw new Error("The lesson changed before image generation began.");
@@ -401,21 +415,29 @@ app.whenReady().then(() => {
         return !image.isEmpty() && size.width > 0 && size.height > 0 && size.width <= 2048 && size.height <= 2048 ? { image, size } : null;
       };
       try {
-      const image = await generateIllustration(visual.lesson, credentials.apiKey, (preview) => {
+      const preview = (preview: string) => {
         if (!current()) { controller.abort(); return; }
         const checked = decoded(preview);
         if (!checked) return;
         overlayWindow?.webContents.send("ren:illustration", { image: preview, preview: true, width: checked.size.width, height: checked.size.height });
-      }, controller.signal);
+      };
+      const result = hosted
+        ? await generateHostedIllustration(visual.lesson, hosted, preview, controller.signal)
+        : await (async () => {
+          const provider = credentials!;
+          const image = await generateIllustration(visual.lesson, provider.apiKey, preview, controller.signal);
+          if (!current()) throw new Error("The screen changed while the illustration was rendering.");
+          const registration = await locateImageParts(visual.lesson, image, provider.apiKey, provider.model, controller.signal, fetch, provider.baseUrl);
+          return { image, registration };
+        })();
       if (!current()) throw new Error("The screen changed while the illustration was rendering.");
-      const checked = decoded(image);
+      const checked = decoded(result.image);
       if (!checked) throw new Error("Image provider returned an unreadable image.");
-      const registration = await locateImageParts(visual.lesson, image, credentials.apiKey, credentials.model, controller.signal, fetch, credentials.baseUrl);
       if (!current()) throw new Error("The screen changed while the illustration was being checked.");
-      if (!registration || !positionsOnOpaquePixels(checked.image.toBitmap(), checked.size.width, checked.size.height, registration)) {
+      if (!result.registration || !positionsOnOpaquePixels(checked.image.toBitmap(), checked.size.width, checked.size.height, result.registration)) {
         throw new Error("The illustration could not be matched to every lesson part. Keeping the schematic.");
       }
-      overlayWindow?.webContents.send("ren:illustration", { image, preview: false, width: checked.size.width, height: checked.size.height, registration });
+      overlayWindow?.webContents.send("ren:illustration", { image: result.image, preview: false, width: checked.size.width, height: checked.size.height, registration: result.registration });
       return true;
       } catch (error) {
         overlayWindow?.webContents.send("ren:illustration", null);

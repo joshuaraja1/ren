@@ -46,6 +46,12 @@ contract. Environment files are ignored by git. Without a configured provider
 or detected local vision model, Ren shows an explicit demo notice and cannot
 inspect screen contents.
 
+For realistic on-screen illustrations, Ren can connect once to a
+[project-hosted image service](docs/HOSTED_IMAGES.md). The desktop sends only
+the approved lesson manifest to that service; the provider credential and
+image-generation compute stay on the server. The hosted service currently
+requires a Ren access token for staging and has not been deployed publicly.
+
 ```bash
 npm run check
 ```
@@ -71,8 +77,9 @@ Connected parts diagrams and realistic generated lesson images, composed
 directly over the user's current screen, are specified in
 [the visual teaching plan](docs/VISUAL_TEACHING.md). Current drawings remain
 on-screen schematic overlays. The draft branch can also generate a realistic
-image with the OpenAI Image API. An Ollama vision model can answer screen
-questions locally, but it does not generate the realistic image. Ren only
+image with the OpenAI Image API, directly or through the Ren-hosted service.
+An Ollama vision model can answer screen questions locally, but it does not
+generate the realistic image. Ren only
 places image callouts when every part passes the location check; otherwise it
 keeps the schematic.
 When a screen changes during an answer, Ren withholds spatial drawings and

@@ -48,6 +48,8 @@ export type Illustration = { image: string; preview: boolean; width: number; hei
 
 export type VisionStatus = { mode: "connected" | "environment" | "local" | "available" | "demo"; model: string; host: string; baseUrl: string };
 export type VisionSettingsInput = { apiKey: string; model: string; baseUrl: string };
+export type HostedImageStatus = { mode: "connected" | "environment" | "demo"; baseUrl: string; host: string };
+export type HostedImageSettingsInput = { baseUrl: string; accessToken: string };
 
 export type RenBridge = {
   platform: string;
@@ -58,6 +60,9 @@ export type RenBridge = {
   visionStatus(): Promise<VisionStatus>;
   saveVisionSettings(value: VisionSettingsInput): Promise<VisionStatus>;
   clearVisionSettings(): Promise<VisionStatus>;
+  hostedImageStatus(): Promise<HostedImageStatus>;
+  saveHostedImageSettings(value: HostedImageSettingsInput): Promise<HostedImageStatus>;
+  clearHostedImageSettings(): Promise<HostedImageStatus>;
   enableCircleInput(): Promise<AmbientStatus>;
   requestPermissions(): Promise<AmbientStatus>;
   openPermissionSettings(): Promise<void>;
