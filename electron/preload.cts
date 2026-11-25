@@ -13,7 +13,6 @@ contextBridge.exposeInMainWorld("ren", {
   requestPermissions: () => ipcRenderer.invoke("ren:request-permissions"),
   openPermissionSettings: () => ipcRenderer.invoke("ren:open-permission-settings"),
   setExpanded: (expanded: boolean) => ipcRenderer.invoke("ren:set-expanded", expanded),
-  setCaptureHidden: (hidden: boolean) => ipcRenderer.invoke("ren:set-capture-hidden", hidden),
   captureContext: () => ipcRenderer.invoke("ren:capture-context"),
   wakeAvailable: () => ipcRenderer.invoke("ren:wake-available"),
   wakeStart: (sampleRate: number) => ipcRenderer.invoke("ren:wake-start", sampleRate),
@@ -25,12 +24,16 @@ contextBridge.exposeInMainWorld("ren", {
   speechFinish: () => ipcRenderer.invoke("ren:speech-finish"),
   speechStop: () => ipcRenderer.invoke("ren:speech-stop"),
   ask: (request: unknown) => ipcRenderer.invoke("ren:ask", request),
-  showAnnotations: (annotations: unknown[]) => ipcRenderer.invoke("ren:show-annotations", annotations),
   clearAnnotations: () => ipcRenderer.invoke("ren:clear-annotations"),
   onAnnotations: (listener: (annotations: unknown[]) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, annotations: unknown[]) => listener(annotations);
     ipcRenderer.on("ren:annotations", handler);
     return () => ipcRenderer.removeListener("ren:annotations", handler);
+  },
+  onVisualLesson: (listener: (lesson: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, lesson: unknown) => listener(lesson);
+    ipcRenderer.on("ren:visual-lesson", handler);
+    return () => ipcRenderer.removeListener("ren:visual-lesson", handler);
   },
   onFocusSelection: (listener: () => void) => {
     const handler = () => listener();

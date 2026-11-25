@@ -1,6 +1,6 @@
 # Connected visual lessons
 
-Status: requirement and first schema implementation. Tracked in
+Status: validated schema and first on-screen schematic implementation. Tracked in
 [issue #35](https://github.com/joshuaraja1/ren/issues/35). Ren does not yet
 generate realistic teaching images.
 
@@ -51,6 +51,16 @@ would make its callouts misleading. The user can hide it immediately. The
 overlay stays click-through so the underlying app remains operable; pointing
 and voice are the default ways to refer to its parts.
 
+The first renderer uses still pixels from a short capture burst as a screen
+anchor, so an ordinary playing video does not cancel the lesson. A click or
+key during an in-flight answer cancels the answer, covering normal tab and app
+switches. This is not proof of browser tab identity: automatic navigation or
+two visually similar dynamic views can evade that check. Ren rejects a drawing
+when too few still pixels remain to anchor it. If global interaction tracking
+is unavailable, Ren returns the text answer but suppresses spatial drawings
+for moving content. A future browser-aware context
+adapter and physical video/tab-switch QA are release follow-ups.
+
 Generated imagery is marked as illustrative. Ren checks it against the
 manifest before using it as an explanation, and overlays labels from the
 validated manifest rather than relying on image-embedded text. If the object
@@ -62,7 +72,8 @@ not a manufacturing drawing, dimensional specification, or proof of operation.
 1. **Contract:** requirements, validated manifest, and tests.
 2. **Fast on-screen diagram:** transparent overlay composition, placement,
    connected callouts, pointer/voice reference, clear control, and multi-display
-   and reduced-motion tests.
+   and reduced-motion tests. The first connected drawing is implemented;
+   physical multi-display QA and pointer-based part selection remain open.
 3. **Realistic on-screen image:** optional cutout image adapter, progressive
    previews, overlay composition, cancellation, resource bounds, provider
    disclosure, fallback, and security tests.

@@ -64,7 +64,9 @@ specified in [the requirements](docs/VOICE_AGENTS.md) and are not yet available.
 Connected parts diagrams and realistic generated lesson images, composed
 directly over the user's current screen, are specified in
 [the visual teaching plan](docs/VISUAL_TEACHING.md). Current drawings remain
-simple overlays.
+on-screen schematic overlays; realistic image generation is pending.
+When a screen changes during an answer, Ren withholds spatial drawings and
+asks for a fresh question rather than placing callouts on stale content.
 
 ## License
 

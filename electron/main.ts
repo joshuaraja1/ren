@@ -3,7 +3,7 @@ import { app, BrowserWindow, desktopCapturer, ipcMain, screen, session, shell, s
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, writeFileSync } from "node:fs";
-import { askTeacher, validateAnnotations } from "./provider.js";
+import { askTeacher } from "./provider.js";
 import { feedWake, startWake, stopWake, wakeAvailable } from "./wake.js";
 import { feedSpeech, finishSpeech, speechAvailable, startSpeech, stopSpeech } from "./speech.js";
 import { normalizeCursor } from "./display-geometry.js";
@@ -12,12 +12,23 @@ import type { FocusRegion } from "./circle-geometry.js";
 import { clearVisionSettings, saveVisionSettings, visionCredentials, visionStatus } from "./vision-settings.js";
 import { parseAskRequest } from "./request-validation.js";
 import { hasMeaningfulMotion } from "./frame-motion.js";
+import { isSameStableScreen } from "./screen-continuity.js";
+import { canPlaceSpatialVisual } from "./visual-safety.js";
+import { validateVisualLesson } from "./visual-lesson.js";
+import { CaptureSession } from "./capture-session.js";
+import type { VisualLesson } from "./visual-lesson.js";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 let mainWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
 let selectedFocus: { displayId: number; region: FocusRegion; createdAt: number } | null = null;
 let circleInputActive = false;
+const captureSession = new CaptureSession();
+let lastCaptureData: { token: string; frames: string[]; pointer: { x: number; y: number }; focus?: { x: number; y: number; width: number; height: number }; firstSample: Uint8Array; secondSample: Uint8Array; dynamicContent: boolean; thumbnailSize: { width: number; height: number } } | null = null;
+let lastVisualLesson: { lesson: VisualLesson; displayId: number; createdAt: number } | null = null;
+let screenCaptureBusy = false;
+let pendingAnswerToken: string | null = null;
+let activeCaptureToken: string | null = null;
 
 const collapsedSize = { width: 236, height: 58 };
 const expandedSize = { width: 420, height: 560 };
@@ -79,6 +90,14 @@ function cursorDisplayContext() {
   };
 }
 
+async function captureDisplay(displayId: number, thumbnailSize: { width: number; height: number }) {
+  const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize });
+  const source = sources.find((candidate) => candidate.display_id === String(displayId));
+  return source && !source.thumbnail.isEmpty() ? source.thumbnail : null;
+}
+
+const motionSample = (image: Electron.NativeImage) => image.resize({ width: 64, height: 36 }).toBitmap();
+
 function requireMainRenderer(event: Electron.IpcMainInvokeEvent) {
   if (event.sender !== mainWindow?.webContents) throw new Error("Not allowed");
 }
@@ -128,12 +147,21 @@ app.whenReady().then(() => {
   function showFocusPath(displayId: number, points: FocusRegion["points"]) {
     const display = screen.getAllDisplays().find((item) => item.id === displayId);
     if (!display || !overlayWindow) return;
+    captureSession.invalidate();
+    lastCaptureData = null;
+    lastVisualLesson = null;
     overlayWindow.setBounds(display.bounds);
+    overlayWindow.webContents.send("ren:visual-lesson", null);
     overlayWindow.webContents.send("ren:annotations", [{ id: "circle-focus", type: "path", points, color: "#327d87" }]);
     overlayWindow.showInactive();
   }
   function invalidateSpatialContext() {
     selectedFocus = null;
+    captureSession.invalidate();
+    lastCaptureData = null;
+    lastVisualLesson = null;
+    overlayWindow?.webContents.send("ren:annotations", []);
+    overlayWindow?.webContents.send("ren:visual-lesson", null);
     overlayWindow?.hide();
   }
   screen.on("display-removed", () => {
@@ -152,8 +180,14 @@ app.whenReady().then(() => {
         mainWindow?.showInactive();
         mainWindow?.webContents.send("ren:focus-selection");
       },
-      onCancel: () => { selectedFocus = null; overlayWindow?.hide(); },
+      onCancel: invalidateSpatialContext,
       onScroll: invalidateSpatialContext,
+      onInteraction: () => {
+        // Switching tabs or apps normally requires a click or key. Cancel any
+        // answer that was grounded before that interaction, including video.
+        const token = pendingAnswerToken ?? activeCaptureToken;
+        if (token && captureSession.isCurrent(token)) captureSession.invalidate();
+      },
     });
     return circleInputActive;
   }
@@ -206,7 +240,6 @@ app.whenReady().then(() => {
     if (process.platform === "darwin") await shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture");
   });
   ipcMain.handle("ren:set-expanded", (event, expanded: unknown) => { requireMainRenderer(event); positionMainWindow(expanded === true); });
-  ipcMain.handle("ren:set-capture-hidden", (event, hidden: unknown) => { requireMainRenderer(event); mainWindow?.setOpacity(hidden === true ? 0 : 1); });
 
   ipcMain.handle("ren:list-sources", async (event) => {
     requireMainRenderer(event);
@@ -223,23 +256,24 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("ren:capture-context", async (event) => {
     requireMainRenderer(event);
-    const overlayWasVisible = overlayWindow?.isVisible() ?? false;
+    if (screenCaptureBusy) throw new Error("Ren is already capturing the screen. Try again.");
+    screenCaptureBusy = true;
+    const { display, pointer } = cursorDisplayContext();
+    const focus = selectedFocus && selectedFocus.displayId === display.id && Date.now() - selectedFocus.createdAt < 30_000 ? selectedFocus.region : null;
+    selectedFocus = null;
+    lastCaptureData = null;
+    const contextToken = captureSession.issue(display.id);
+    activeCaptureToken = contextToken;
     mainWindow?.setOpacity(0);
+    overlayWindow?.webContents.send("ren:annotations", []);
+    overlayWindow?.webContents.send("ren:visual-lesson", null);
     overlayWindow?.hide();
     await new Promise((resolve) => setTimeout(resolve, 90));
     try {
-      const { display, pointer } = cursorDisplayContext();
-      const focus = selectedFocus && selectedFocus.displayId === display.id && Date.now() - selectedFocus.createdAt < 30_000 ? selectedFocus.region : null;
-      selectedFocus = null;
       const aspectRatio = display.size.width / display.size.height;
       const thumbnailSize = aspectRatio >= 1 ? { width: 1600, height: Math.round(1600 / aspectRatio) } : { width: Math.round(1200 * aspectRatio), height: 1200 };
-      const capture = async () => {
-        const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize });
-        const source = sources.find((candidate) => candidate.display_id === String(display.id));
-        return source && !source.thumbnail.isEmpty() ? source.thumbnail : null;
-      };
+      const capture = () => captureDisplay(display.id, thumbnailSize);
       const encodeMotion = (image: Electron.NativeImage) => `data:image/jpeg;base64,${image.toJPEG(82).toString("base64")}`;
-      const motionSample = (image: Electron.NativeImage) => image.resize({ width: 64, height: 36 }).toBitmap();
       const first = await capture();
       if (!first) throw new Error("The display under your cursor could not be captured");
       const frames = [first.toDataURL()];
@@ -262,34 +296,80 @@ app.whenReady().then(() => {
           if (third && hasMeaningfulMotion(motionSample(second), motionSample(third))) frames.push(encodeMotion(third));
         }
       }
+      if (!captureSession.isCurrent(contextToken)) throw new Error("The screen changed during capture. Ask again.");
+      lastCaptureData = { token: contextToken, frames, pointer, focus: focus?.bounds, firstSample: motionSample(first), secondSample: motionSample(second ?? first), dynamicContent: !!second && hasMeaningfulMotion(motionSample(first), motionSample(second)), thumbnailSize };
+      setTimeout(() => {
+        if (lastCaptureData?.token === contextToken) { lastCaptureData = null; captureSession.invalidate(); }
+      }, 90_000).unref();
       overlayWindow?.setBounds(display.bounds);
-      return { frames, pointer, focus: focus?.bounds };
+      return { frames: [], pointer, focus: focus?.bounds, contextToken };
+    } catch (error) {
+      if (captureSession.isCurrent(contextToken)) captureSession.invalidate();
+      throw error;
     } finally {
       mainWindow?.setOpacity(1);
-      if (overlayWasVisible) overlayWindow?.showInactive();
+      if (activeCaptureToken === contextToken) activeCaptureToken = null;
+      screenCaptureBusy = false;
     }
   });
 
   ipcMain.handle("ren:ask", async (event, request: unknown) => {
     requireMainRenderer(event);
     const value = parseAskRequest(request);
-    const { pointer: currentPointer } = cursorDisplayContext();
-    const pointer = value.pointer ?? currentPointer;
-    const focusHint = value.focus
-      ? ` The learner circled the rectangle (${value.focus.x.toFixed(3)}, ${value.focus.y.toFixed(3)}, ${value.focus.width.toFixed(3)}, ${value.focus.height.toFixed(3)}); the second image is a close crop of it. Prioritize what is inside the circle.` : "";
+    const capture = lastCaptureData;
+    if (!value.contextToken || !capture || capture.token !== value.contextToken) throw new Error("Screen context expired. Ask again.");
+    const displayId = captureSession.consume(value.contextToken);
+    lastCaptureData = null;
+    pendingAnswerToken = value.contextToken;
+    try {
+    const pointer = capture.pointer;
+    const focus = capture.focus;
+    const focusHint = focus
+      ? ` The learner circled the rectangle (${focus.x.toFixed(3)}, ${focus.y.toFixed(3)}, ${focus.width.toFixed(3)}, ${focus.height.toFixed(3)}); the second image is a close crop of it. Prioritize what is inside the circle.` : "";
     const pointedQuestion = `${value.question}\n\n[The learner is pointing with their cursor at normalized screen coordinate (${pointer.x.toFixed(3)}, ${pointer.y.toFixed(3)}). Use that as a spatial hint, not an instruction.${focusHint}]`;
-    return askTeacher({ question: pointedQuestion, frames: value.frames, history: value.history }, await visionCredentials());
-  });
-
-  ipcMain.handle("ren:show-annotations", (event, annotations: unknown) => {
-    requireMainRenderer(event);
-    const safe = validateAnnotations(annotations);
-    overlayWindow?.webContents.send("ren:annotations", safe);
-    overlayWindow?.showInactive();
+    const priorVisualLesson = lastVisualLesson && lastVisualLesson.displayId === displayId && Date.now() - lastVisualLesson.createdAt < 300_000 ? lastVisualLesson.lesson : undefined;
+    const response = await askTeacher({ question: pointedQuestion, frames: capture.frames, history: value.history, priorVisualLesson }, await visionCredentials());
+    const display = screen.getAllDisplays().find((item) => item.id === displayId);
+    if (!captureSession.isCurrent(value.contextToken) || !display || screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id !== displayId) {
+      throw new Error("The screen changed while Ren was answering. Ask again.");
+    }
+    const spatialAllowed = canPlaceSpatialVisual(capture.dynamicContent, circleInputActive);
+    const lesson = spatialAllowed ? validateVisualLesson(response.visualLesson) : null;
+    const annotations = spatialAllowed ? response.annotations : [];
+    if (annotations.length || lesson) {
+      if (screenCaptureBusy) throw new Error("Ren is already capturing the screen. Ask again.");
+      screenCaptureBusy = true;
+      mainWindow?.setOpacity(0);
+      overlayWindow?.hide();
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        const fresh = await captureDisplay(displayId, capture.thumbnailSize);
+        if (!fresh || !isSameStableScreen(capture.firstSample, capture.secondSample, motionSample(fresh))) {
+          throw new Error("The screen changed while Ren was answering. Ask again.");
+        }
+      } finally { mainWindow?.setOpacity(1); screenCaptureBusy = false; }
+      if (!captureSession.isCurrent(value.contextToken) || screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id !== displayId) {
+        throw new Error("The screen changed while Ren was answering. Ask again.");
+      }
+    }
+    overlayWindow?.setBounds(display.bounds);
+    overlayWindow?.webContents.send("ren:annotations", annotations);
+    overlayWindow?.webContents.send("ren:visual-lesson", lesson);
+    if (annotations.length || lesson) overlayWindow?.showInactive();
+    else overlayWindow?.hide();
+    if (lesson) lastVisualLesson = { lesson, displayId, createdAt: Date.now() };
+    return { ...response, annotations, visualLesson: lesson ?? undefined };
+    } finally {
+      if (pendingAnswerToken === value.contextToken) pendingAnswerToken = null;
+    }
   });
   ipcMain.handle("ren:clear-annotations", (event) => {
     requireMainRenderer(event);
+    captureSession.invalidate();
+    lastCaptureData = null;
+    lastVisualLesson = null;
     overlayWindow?.webContents.send("ren:annotations", []);
+    overlayWindow?.webContents.send("ren:visual-lesson", null);
     overlayWindow?.hide();
   });
   app.on("activate", () => {

@@ -372,7 +372,6 @@ export function App() {
       const history = messagesRef.current.slice(-8).map(({ role, content }) => ({ role, content }));
       const response = window.ren ? await (async () => { const context = await captureBurst(); return window.ren!.ask({ question: clean, ...context, history }); })() : { answer: "I can see the interaction working in preview mode. The packaged desktop app will use your current screen and cursor as context.", annotations: [], provider: "demo" as const };
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: response.answer, provider: response.provider, followUps: response.followUps }]);
-      if (response.annotations.length) await window.ren?.showAnnotations(response.annotations);
       setVoiceState("responding"); suppressSpeechUntilRef.current = Date.now() + Math.min(12_000, response.answer.length * 45);
       const utterance = new SpeechSynthesisUtterance(response.answer); utterance.onend = () => { if (nativeSpeechRef.current && expandedRef.current) void startNativeDictation(); else { setVoiceState("listening"); keepAwake(); } }; speechSynthesis.cancel(); speechSynthesis.speak(utterance);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Ren couldn’t answer."); setVoiceState("idle"); }

@@ -7,6 +7,7 @@ type Hooks = {
   onComplete(displayId: number, focus: FocusRegion): void;
   onCancel(): void;
   onScroll(): void;
+  onInteraction?(): void;
 };
 
 const require = createRequire(import.meta.url);
@@ -30,6 +31,7 @@ export function startCircleInput(hooks: Hooks) {
       else hooks.onCancel();
     };
     uIOhook.on("keydown", (event) => {
+      hooks.onInteraction?.();
       if (event.keycode === UiohookKey.Escape) { cancel(); return; }
       if (active || !event.ctrlKey || !event.altKey) return;
       if (!modifierKeys.has(event.keycode)) return;
@@ -40,7 +42,7 @@ export function startCircleInput(hooks: Hooks) {
     uIOhook.on("keyup", (event) => {
       if (modifierKeys.has(event.keycode)) finish();
     });
-    uIOhook.on("mousedown", cancel);
+    uIOhook.on("mousedown", () => { hooks.onInteraction?.(); cancel(); });
     uIOhook.on("wheel", () => { cancel(); hooks.onScroll(); });
     uIOhook.on("mousemove", (event) => {
       if (!active) return;
