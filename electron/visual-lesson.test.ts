@@ -5,6 +5,7 @@ const valid = () => ({
   version: 1,
   title: "How a wing creates lift",
   assumption: "A conventional fixed-wing aircraft",
+  placement: { x: 0.35, y: 0.3, width: 0.45, height: 0.5 },
   parts: [
     { id: "wing", label: "Wing", explanation: "Redirects airflow downward.", x: 0.3, y: 0.4 },
     { id: "airflow", label: "Airflow", explanation: "Moves around the airfoil.", x: 0.7, y: 0.4 },
@@ -31,6 +32,7 @@ describe("visual lesson contract", () => {
     expect(validateVisualLesson({ ...lesson, parts: Array(13).fill(lesson.parts[0]) })).toBeNull();
     expect(validateVisualLesson({ ...lesson, parts: [{ ...lesson.parts[0], x: 1.1 }, lesson.parts[1]] })).toBeNull();
     expect(validateVisualLesson({ ...lesson, connections: [] })).toBeNull();
+    expect(validateVisualLesson({ ...lesson, placement: { x: 0.8, y: 0.3, width: 0.4, height: 0.5 } })).toBeNull();
   });
 
   it("bounds text and removes controls before rendering", () => {

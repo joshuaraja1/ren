@@ -16,6 +16,7 @@ export type VisualLesson = {
   version: 1;
   title: string;
   assumption?: string;
+  placement: { x: number; y: number; width: number; height: number };
   parts: VisualPart[];
   connections: VisualConnection[];
 };
@@ -32,8 +33,13 @@ export function validateVisualLesson(value: unknown): VisualLesson | null {
   const raw = record(value);
   if (!raw) return null;
   const title = clean(raw.title, 100);
+  const placement = record(raw.placement);
   if (raw.version !== 1 || !title || !Array.isArray(raw.parts) || raw.parts.length < 2 || raw.parts.length > 12
-    || !Array.isArray(raw.connections) || raw.connections.length < 1 || raw.connections.length > 20) return null;
+    || !Array.isArray(raw.connections) || raw.connections.length < 1 || raw.connections.length > 20
+    || !placement || !coordinate(placement.x) || !coordinate(placement.y)
+    || !coordinate(placement.width) || !coordinate(placement.height)
+    || placement.width < 0.1 || placement.height < 0.1
+    || placement.x + placement.width > 1 || placement.y + placement.height > 1) return null;
 
   const parts: VisualPart[] = [];
   const ids = new Set<string>();
@@ -74,5 +80,9 @@ export function validateVisualLesson(value: unknown): VisualLesson | null {
   }
   if (reached.size !== parts.length) return null;
 
-  return { version: 1, title, assumption: clean(raw.assumption, 180) || undefined, parts, connections };
+  return {
+    version: 1, title, assumption: clean(raw.assumption, 180) || undefined,
+    placement: { x: placement.x, y: placement.y, width: placement.width, height: placement.height },
+    parts, connections,
+  };
 }
