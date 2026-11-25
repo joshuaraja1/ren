@@ -84,21 +84,47 @@ export function makeJet() {
 }
 
 const points: Record<JetAnchor, THREE.Vector3> = {
-  engine: new THREE.Vector3(1.55,.65,0), fan: new THREE.Vector3(-.85,.55,0),
+  engine: new THREE.Vector3(1.55,.65,.42), fan: new THREE.Vector3(-.85,.55,0),
   nozzle: new THREE.Vector3(4.75,-.65,0), posts: new THREE.Vector3(.95,-.42,2.4),
   controls: new THREE.Vector3(3.4,.7,.8),
 };
 
-export function JetScene({ onAnchors }: { onAnchors: (anchors: JetAnchors) => void }) {
+/** Hide leaders for parts that the jet itself blocks at the current camera angle. */
+export function projectedJetAnchors(jet: THREE.Group, camera: THREE.PerspectiveCamera): JetAnchors {
+  jet.updateMatrixWorld(true);
+  camera.updateMatrixWorld(true);
+  const ray = new THREE.Raycaster();
+  const anchors: JetAnchors = {};
+  for (const [key, value] of Object.entries(points)) {
+    const position = value.clone();
+    if (key === "engine") position.z = Math.sign(camera.position.z || 1) * .42;
+    if (key === "posts") position.z = Math.sign(camera.position.z || 1) * 2.4;
+    const direction = position.clone().sub(camera.position);
+    const distance = direction.length();
+    ray.set(camera.position, direction.normalize());
+    const blocked = ray.intersectObject(jet, true).some((hit) => {
+      const material = (hit.object as THREE.Mesh).material;
+      return hit.distance < distance - .35 && !Array.isArray(material) && !material.transparent;
+    });
+    if (blocked) continue;
+    const projected = position.project(camera);
+    anchors[key as JetAnchor] = { x: .17 + (projected.x + 1) * .33, y: .13 + (1 - projected.y) * .38 };
+  }
+  return anchors;
+}
+
+export function JetScene({ onAnchors, onUnavailable }: { onAnchors: (anchors: JetAnchors) => void; onUnavailable: () => void }) {
   const host = useRef<HTMLDivElement>(null);
   const callback = useRef(onAnchors);
+  const failure = useRef(onUnavailable);
   callback.current = onAnchors;
+  failure.current = onUnavailable;
   useEffect(() => {
     const element = host.current;
     if (!element) return;
     let renderer: THREE.WebGLRenderer;
     try { renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "low-power" }); }
-    catch { element.dataset.unavailable = "true"; return; }
+    catch { failure.current(); return; }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -113,26 +139,20 @@ export function JetScene({ onAnchors }: { onAnchors: (anchors: JetAnchors) => vo
     scene.add(jet);
     const camera = new THREE.PerspectiveCamera(38,1,.1,100);
     const cursor = { x: .5, y: .5 };
-    const unsubscribe = window.ren?.onOrbitPointer((point) => {
-      if (Number.isFinite(point?.x) && Number.isFinite(point?.y)) {
-        cursor.x = Math.max(0,Math.min(1,point.x)); cursor.y = Math.max(0,Math.min(1,point.y));
-      }
-    });
     let azimuth = -.68;
     let elevation = .42;
     let frame = 0;
     let lastLabels = 0;
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(draw); };
     const resize = () => {
       const width = Math.max(1,element.clientWidth), height = Math.max(1,element.clientHeight);
       renderer.setSize(width,height,false);
       camera.aspect = width/height;
       camera.updateProjectionMatrix();
+      schedule();
     };
-    resize();
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(resize);
-    observer?.observe(element);
-    window.addEventListener("resize", resize);
     const draw = (time: number) => {
+      frame = 0;
       const targetAzimuth = -.68 + (cursor.x-.5)*Math.PI*2;
       const targetElevation = .42 + (.5-cursor.y)*.85;
       azimuth += (targetAzimuth-azimuth)*.085;
@@ -142,17 +162,21 @@ export function JetScene({ onAnchors }: { onAnchors: (anchors: JetAnchors) => vo
       camera.lookAt(0,0,0);
       renderer.render(scene,camera);
       if (time-lastLabels > 40) {
-        const anchors: JetAnchors = {};
-        for (const [key, value] of Object.entries(points)) {
-          const p = value.clone().project(camera);
-          anchors[key as JetAnchor] = { x: .17 + (p.x+1)*.33, y: .14 + (1-p.y)*.38 };
-        }
-        callback.current(anchors);
+        callback.current(projectedJetAnchors(jet,camera));
         lastLabels = time;
       }
-      frame = requestAnimationFrame(draw);
+      if (Math.abs(targetAzimuth-azimuth) > .001 || Math.abs(targetElevation-elevation) > .001) schedule();
     };
-    frame = requestAnimationFrame(draw);
+    resize();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(resize);
+    observer?.observe(element);
+    window.addEventListener("resize", resize);
+    const unsubscribe = window.ren?.onOrbitPointer((point) => {
+      if (Number.isFinite(point?.x) && Number.isFinite(point?.y)) {
+        cursor.x = Math.max(0,Math.min(1,point.x)); cursor.y = Math.max(0,Math.min(1,point.y));
+        schedule();
+      }
+    });
     return () => {
       cancelAnimationFrame(frame);
       unsubscribe?.(); observer?.disconnect(); window.removeEventListener("resize",resize);

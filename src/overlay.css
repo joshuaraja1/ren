@@ -60,3 +60,8 @@ html, body, #overlay-root { width: 100%; height: 100%; margin: 0; overflow: hidd
 .interactive-jet-lines circle { fill: #f4c372; stroke: #173438; stroke-width: 3; vector-effect: non-scaling-stroke; }
 .interactive-jet-note { position: absolute; bottom: 1%; left: 50%; transform: translateX(-50%); color: #d1e0dc; background: rgba(18,37,40,.7); border-radius: 5px; padding: 3px 7px; font: 10px/1.2 "Avenir Next", sans-serif; white-space: nowrap; }
 .interactive-jet-lesson .visual-lesson-part { background: rgba(18,37,40,.82); }
+.interactive-jet-lesson .visual-lesson-part.is-hidden-part { opacity: .72; }
+.interactive-jet-lesson .visual-lesson-part em { color: #f4c372; font: 700 10px/1.2 "Avenir Next", sans-serif; font-style: normal; }
+.jet-fallback { fill: #6e8190; stroke: #bed5d9; stroke-width: 5; }
+.jet-fallback ellipse { fill: #244856; }
+.jet-fallback rect { fill: #aeb6b9; }

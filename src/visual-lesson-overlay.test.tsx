@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { VisualLessonOverlay } from "./visual-lesson-overlay";
 import { centerRequestedLesson } from "../electron/visual-presentation";
 import type { VisualLesson } from "../electron/visual-lesson";
@@ -117,4 +117,36 @@ it("keeps five essential parts around a centered render through preview and fina
   expect(container.querySelector(".visual-lesson-illustration img")).toHaveAttribute("src", image);
   lesson.parts.forEach((part) => expect(container).toHaveTextContent(part.label));
   assertSpacing();
+});
+
+it("switches between interactive aircraft and ordinary lessons without losing hooks or labels", () => {
+  const aircraft: VisualLesson = {
+    version: 1, layout: "centered", title: "F-35B hover", placement: { x: .1, y: .1, width: .8, height: .8 },
+    parts: [
+      { id: "fan", label: "Lift fan", explanation: "Pushes air down.", x: .3, y: .4 },
+      { id: "engine", label: "Engine", explanation: "Powers the fan.", x: .7, y: .5 },
+    ], connections: [{ from: "engine", to: "fan", label: "drives" }],
+  };
+  const phone: VisualLesson = { ...aircraft, layout: undefined, title: "Phone", parts: aircraft.parts.map((part) => ({ ...part, label: "Keypad" })) };
+  const { container, rerender } = render(<VisualLessonOverlay lesson={aircraft} />);
+  expect(container.querySelector(".interactive-jet-lesson")).toBeInTheDocument();
+  rerender(<VisualLessonOverlay lesson={phone} />);
+  expect(container.querySelector(".interactive-jet-lesson")).not.toBeInTheDocument();
+  expect(container).toHaveTextContent("Keypad");
+  rerender(<VisualLessonOverlay lesson={aircraft} />);
+  expect(container.querySelector(".interactive-jet-lesson")).toBeInTheDocument();
+});
+
+it("keeps the aircraft explanation visible when WebGL is unavailable", async () => {
+  const lesson: VisualLesson = {
+    version: 1, layout: "centered", title: "F-35B hover", placement: { x: .1, y: .1, width: .8, height: .8 },
+    parts: [
+      { id: "fan", label: "Lift fan", explanation: "Pushes air down.", x: .3, y: .4 },
+      { id: "engine", label: "Engine", explanation: "Powers the fan.", x: .7, y: .5 },
+    ], connections: [{ from: "engine", to: "fan", label: "drives" }],
+  };
+  const { container } = render(<VisualLessonOverlay lesson={lesson} />);
+  await waitFor(() => expect(container.querySelector(".jet-fallback")).toBeInTheDocument());
+  expect(container.querySelectorAll(".interactive-jet-lines line")).toHaveLength(2);
+  expect(container).toHaveTextContent("3D view unavailable");
 });

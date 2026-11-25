@@ -3,13 +3,17 @@ import { lazy, Suspense, useLayoutEffect, useRef, useState } from "react";
 import { placeLessonCard } from "./lesson-placement";
 import type { Illustration } from "./contracts";
 import { imageBox } from "./image-geometry";
-import { interactiveSceneFor } from "../electron/interactive-scene";
-import type { JetAnchor, JetAnchors } from "./jet-scene";
+import { interactiveSceneFor, jetPartForLabel, type JetPart } from "../electron/interactive-scene";
+import type { JetAnchors } from "./jet-scene";
 
 const JetScene = lazy(() => import("./jet-scene").then((module) => ({ default: module.JetScene })));
 
 export function VisualLessonOverlay({ lesson, illustration }: { lesson: VisualLesson; illustration?: Illustration | null }) {
   if (lesson.layout === "centered" && interactiveSceneFor(lesson)) return <InteractiveJetLesson lesson={lesson} />;
+  return <StaticVisualLessonOverlay lesson={lesson} illustration={illustration} />;
+}
+
+function StaticVisualLessonOverlay({ lesson, illustration }: { lesson: VisualLesson; illustration?: Illustration | null }) {
   const box = illustration ? imageBox(lesson.placement.width * window.innerWidth, lesson.placement.height * window.innerHeight, illustration.width, illustration.height) : null;
   const displayParts = lesson.parts.map((part) => {
     const location = illustration?.registration?.[part.id];
@@ -67,35 +71,27 @@ export function VisualLessonOverlay({ lesson, illustration }: { lesson: VisualLe
   </section>;
 }
 
-function jetAnchor(label: string): JetAnchor | null {
-  const value = label.toLowerCase();
-  if (/lift fan/.test(value)) return "fan";
-  if (/roll post|wing outlet/.test(value)) return "posts";
-  if (/nozzle|exhaust/.test(value)) return "nozzle";
-  if (/engine|powerplant/.test(value)) return "engine";
-  if (/flight control/.test(value)) return "controls";
-  return null;
-}
-
 function InteractiveJetLesson({ lesson }: { lesson: VisualLesson }) {
   const [anchors, setAnchors] = useState<JetAnchors>({});
+  const [unavailable, setUnavailable] = useState(false);
   const placement = {
     left: `${lesson.placement.x * 100}%`, top: `${lesson.placement.y * 100}%`,
     width: `${lesson.placement.width * 100}%`, height: `${lesson.placement.height * 100}%`,
   };
   const description = `${lesson.title}. Interactive three-dimensional model. Move the cursor to rotate it. ${lesson.parts.map((part) => `${part.label}: ${part.explanation}`).join(" ")}`;
   const cards = lesson.parts.map((part) => {
-    const anchor = jetAnchor(part.label);
+    const anchor = jetPartForLabel(part.label);
     return anchor ? { part, anchor, side: anchor === "fan" || anchor === "posts" || anchor === "controls" ? "left" as const : "right" as const } : null;
   }).filter((card): card is NonNullable<typeof card> => card !== null);
-  const slots: Record<JetAnchor, number> = { fan: .35, posts: .65, controls: .83, engine: .39, nozzle: .7 };
+  const slots: Record<JetPart, number> = { fan: .35, posts: .65, controls: .83, engine: .39, nozzle: .7 };
+  const shownAnchors: JetAnchors = unavailable ? { fan: { x: .41, y: .48 }, engine: { x: .6, y: .46 }, nozzle: { x: .73, y: .53 }, posts: { x: .53, y: .67 }, controls: { x: .68, y: .43 } } : anchors;
   return <section className="visual-lesson interactive-jet-lesson centered-stage" style={placement} role="img" aria-label={description}>
-    <Suspense fallback={<div className="jet-scene" aria-hidden="true" />}><JetScene onAnchors={setAnchors} /></Suspense>
-    <div className="interactive-jet-heading" aria-hidden="true"><span>REN EXPLAINS</span><strong>{lesson.title}</strong><small>Move your cursor to rotate the model</small></div>
+    {unavailable ? <svg className="jet-scene jet-fallback" viewBox="0 0 1000 700" aria-hidden="true"><path d="M80 350 270 300 420 285 820 310 920 350 820 390 420 415 270 400Z" /><path d="M360 320 450 75 620 85 575 325 575 375 620 615 450 625 360 380Z" /><ellipse cx="415" cy="350" rx="72" ry="65" /><rect x="550" y="310" width="220" height="80" rx="32" /><path d="M780 320 860 350 780 380" /></svg> : <Suspense fallback={<div className="jet-scene" aria-hidden="true" />}><JetScene onAnchors={setAnchors} onUnavailable={() => setUnavailable(true)} /></Suspense>}
+    <div className="interactive-jet-heading" aria-hidden="true"><span>REN EXPLAINS</span><strong>{lesson.title}</strong><small>{unavailable ? "2D schematic · 3D view unavailable" : "Move your cursor to rotate the model"}</small></div>
     <svg className="visual-lesson-lines interactive-jet-lines" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
-      {cards.map(({ part, anchor, side }) => anchors[anchor] && <g key={part.id}><line x1={side === "left" ? 180 : 820} y1={slots[anchor] * 1000} x2={anchors[anchor]!.x * 1000} y2={anchors[anchor]!.y * 1000} /><circle cx={anchors[anchor]!.x * 1000} cy={anchors[anchor]!.y * 1000} r="4" /></g>)}
+      {cards.map(({ part, anchor, side }) => shownAnchors[anchor] && <g key={part.id}><line x1={side === "left" ? 180 : 820} y1={slots[anchor] * 1000} x2={shownAnchors[anchor]!.x * 1000} y2={shownAnchors[anchor]!.y * 1000} /><circle cx={shownAnchors[anchor]!.x * 1000} cy={shownAnchors[anchor]!.y * 1000} r="4" /></g>)}
     </svg>
-    {cards.map(({ part, anchor, side }) => <div key={part.id} className={`visual-lesson-part illustrated-lesson-part ${side}`} style={{ left: side === "left" ? "0%" : "82%", top: `${slots[anchor] * 100}%` }} aria-hidden="true"><strong>{part.label}</strong><small>{part.explanation}</small></div>)}
+    {cards.map(({ part, anchor, side }) => <div key={part.id} className={`visual-lesson-part illustrated-lesson-part ${side}${shownAnchors[anchor] ? "" : " is-hidden-part"}`} style={{ left: side === "left" ? "0%" : "82%", top: `${slots[anchor] * 100}%` }} aria-hidden="true"><strong>{part.label}</strong><small>{part.explanation}</small>{!unavailable && !shownAnchors[anchor] && <em>Rotate to reveal</em>}</div>)}
     <div className="interactive-jet-note" aria-hidden="true">Interactive teaching model · proportions simplified</div>
   </section>;
 }

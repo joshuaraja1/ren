@@ -521,7 +521,7 @@ export function App() {
       setImageAvailable(!!response.visualLesson && !interactiveSceneFor(response.visualLesson));
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: response.answer, provider: response.provider, followUps: response.followUps }]);
       setVoiceState("responding"); suppressSpeechUntilRef.current = Date.now() + Math.min(12_000, response.answer.length * 45);
-      void speak(response.answer, () => { if (nativeSpeechRef.current && expandedRef.current && !imageRenderingRef.current && !response.autoIllustrate) void startNativeDictation(); else { setVoiceState("idle"); keepAwake(); } });
+      void speak(response.answer, () => { if (nativeSpeechRef.current && expandedRef.current && !imageRenderingRef.current && !response.visualLesson && !response.autoIllustrate) void startNativeDictation(); else { setVoiceState("idle"); keepAwake(); } });
       if (response.autoIllustrate) void illustrate(true);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Ren couldn’t answer."); setVoiceState("idle"); }
     finally { askingRef.current = false; }

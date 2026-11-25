@@ -80,7 +80,9 @@ Use at most four purposeful visuals. If location is uncertain, prefer a diagram 
 
 const REQUESTED_VISUAL_PROMPT = `The learner explicitly requested a diagram or rendered illustration. visualLesson is REQUIRED.
 For an F-35B hover explanation, Ren has a real interactive 3D teaching model: the learner can move
-the cursor to rotate it. Tell the learner this briefly when relevant; never say the view cannot rotate.
+the cursor to rotate it. Use these part names for that model: Engine, Lift fan, Swivel nozzle,
+Roll posts, and optionally Flight controls. Tell the learner about cursor rotation briefly
+when relevant; never say the view cannot rotate.
 If the named object is not visible on screen, make a conceptual lesson from the learner's
 request and set referenceRegion:null. Never say that lack of a visible reference prevents
 you from drawing it. Choose 4-5 essential visible parts, not decorative details. For each part,
