@@ -392,29 +392,33 @@ app.whenReady().then(() => {
     const priorVisualLesson = lastVisualLesson && lastVisualLesson.displayId === displayId && Date.now() - lastVisualLesson.createdAt < 300_000 ? lastVisualLesson.lesson : undefined;
     const response = await askTeacher({ question: pointedQuestion, frames: capture.frames, history: value.history, priorVisualLesson }, await visionCredentials());
     const display = screen.getAllDisplays().find((item) => item.id === displayId);
-    if (!captureSession.isCurrent(value.contextToken) || !display || screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id !== displayId) {
-      throw new Error("The screen changed while Ren was answering. Ask again.");
-    }
-    const spatialAllowed = canPlaceSpatialVisual(capture.dynamicContent, circleInputActive);
-    const lesson = spatialAllowed ? validateVisualLesson(response.visualLesson) : null;
-    const annotations = spatialAllowed ? response.annotations : [];
+    // The answer describes the captured image and remains useful if the user
+    // moves the pointer or changes apps while OpenAI is responding. Only the
+    // spatial overlay needs the original display and a stable screen.
+    const spatialAllowed = Boolean(display && captureSession.isCurrent(value.contextToken)
+      && screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id === displayId
+      && canPlaceSpatialVisual(capture.dynamicContent, circleInputActive));
+    let lesson = spatialAllowed ? validateVisualLesson(response.visualLesson) : null;
+    let annotations = spatialAllowed ? response.annotations : [];
     if (annotations.length || lesson) {
-      if (screenCaptureBusy) throw new Error("Ren is already capturing the screen. Ask again.");
-      screenCaptureBusy = true;
-      mainWindow?.setOpacity(0);
-      overlayWindow?.hide();
-      try {
-        await new Promise((resolve) => setTimeout(resolve, 60));
-        const fresh = await captureDisplay(displayId, capture.thumbnailSize);
-        if (!fresh || !isSameStableScreen(capture.firstSample, capture.secondSample, motionSample(fresh))) {
-          throw new Error("The screen changed while Ren was answering. Ask again.");
-        }
-      } finally { mainWindow?.setOpacity(1); screenCaptureBusy = false; }
-      if (!captureSession.isCurrent(value.contextToken) || screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id !== displayId) {
-        throw new Error("The screen changed while Ren was answering. Ask again.");
+      if (screenCaptureBusy) { lesson = null; annotations = []; }
+      else {
+        screenCaptureBusy = true;
+        mainWindow?.setOpacity(0);
+        overlayWindow?.hide();
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          const fresh = await captureDisplay(displayId, capture.thumbnailSize);
+          if (!fresh || !isSameStableScreen(capture.firstSample, capture.secondSample, motionSample(fresh))
+            || !captureSession.isCurrent(value.contextToken)
+            || screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id !== displayId) {
+            lesson = null; annotations = [];
+          }
+        } catch { lesson = null; annotations = []; }
+        finally { mainWindow?.setOpacity(1); screenCaptureBusy = false; }
       }
     }
-    overlayWindow?.setBounds(display.bounds);
+    if (display) overlayWindow?.setBounds(display.bounds);
     overlayWindow?.webContents.send("ren:annotations", annotations);
     overlayWindow?.webContents.send("ren:visual-lesson", lesson);
     overlayWindow?.webContents.send("ren:illustration", null);

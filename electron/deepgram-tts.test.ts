@@ -23,7 +23,7 @@ describe("Deepgram speech streaming", () => {
       releaseLastChunk();
       await result;
       expect(seen).toEqual([[1, 2], [3]]);
-      expect(fetchMock.mock.calls[0][0]).toContain("encoding=mp3");
+      expect(fetchMock.mock.calls[0][0]).toContain("encoding=linear16&sample_rate=24000&container=none");
     } finally {
       releaseLastChunk();
       fetchMock.mockRestore();

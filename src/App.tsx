@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import type { AmbientStatus, AskResponse, ConversationTurn, DeepgramStatus, HostedImageStatus, ScreenContext, ScreenSource, VisionStatus } from "./contracts";
+import { PcmStreamPlayer } from "./pcm-player";
 
 type VoiceState = "idle" | "listening" | "processing" | "responding";
 type Message = ConversationTurn & { id: string; provider?: AskResponse["provider"]; followUps?: string[] };
@@ -47,8 +48,6 @@ export function App() {
   const [hostedToken, setHostedToken] = useState("");
   const [imageAvailable, setImageAvailable] = useState(false);
   const [imageRendering, setImageRendering] = useState(false);
-  const spokenAudioRef = useRef<HTMLAudioElement | null>(null);
-  const speechEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechCancelRef = useRef<(() => void) | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const wakeEnabledRef = useRef(false);
@@ -401,77 +400,47 @@ export function App() {
   }
 
   async function speak(text: string, onEnd: () => void) {
-    if (!window.ren?.onSpeechData || typeof MediaSource === "undefined" || !MediaSource.isTypeSupported("audio/mpeg")) {
-      setError("Streaming speech playback is unavailable on this system.");
+    if (!window.ren?.onSpeechData || typeof AudioContext === "undefined") {
+      setError("Speech playback is unavailable on this system.");
       onEnd(); return;
     }
     speechCancelRef.current?.();
     suppressSpeechUntilRef.current = Date.now() + 120_000;
     const id = crypto.randomUUID();
-    const mediaSource = new MediaSource();
-    const url = URL.createObjectURL(mediaSource);
-    const audio = new Audio(url);
-    spokenAudioRef.current = audio;
-    const queue: Uint8Array[] = [];
-    let sourceBuffer: SourceBuffer | null = null;
-    let streamDone = false;
-    let started = false;
+    const context = new AudioContext();
     let finished = false;
-    const cleanup = () => {
-      if (speechEndTimerRef.current) clearTimeout(speechEndTimerRef.current);
-      speechEndTimerRef.current = null;
-      unsubscribe();
-      audio.pause();
-      spokenAudioRef.current = null;
-      speechCancelRef.current = null;
-      URL.revokeObjectURL(url);
-    };
-    const finish = () => {
+    let unsubscribe = () => {};
+    let startTimer: ReturnType<typeof setTimeout> | null = null;
+    let player: PcmStreamPlayer | null = null;
+    const finish = (reason?: string, notify = true) => {
       if (finished) return;
       finished = true;
-      cleanup();
+      if (startTimer) clearTimeout(startTimer);
+      unsubscribe();
+      player?.dispose();
+      speechCancelRef.current = null;
+      if (reason) setError(reason);
       suppressSpeechUntilRef.current = Date.now() + 800;
-      onEnd();
+      if (notify) onEnd();
     };
-    const pump = () => {
-      if (!sourceBuffer || sourceBuffer.updating || finished) return;
-      if (queue.length) {
-        sourceBuffer.appendBuffer(Uint8Array.from(queue.shift()!));
-      } else if (streamDone && mediaSource.readyState === "open") {
-        mediaSource.endOfStream();
-      }
-    };
-    const unsubscribe = window.ren.onSpeechData((data) => {
+    player = new PcmStreamPlayer(context, () => finish());
+    unsubscribe = window.ren.onSpeechData((data) => {
       if (data.id !== id || finished) return;
-      if (data.error) { setError(data.error); finish(); return; }
-      if (data.chunk) queue.push(Uint8Array.from(atob(data.chunk), (character) => character.charCodeAt(0)));
-      if (data.done) streamDone = true;
-      pump();
+      if (data.error) { finish(data.error); return; }
+      try {
+        if (data.chunk) player?.push(Uint8Array.from(atob(data.chunk), (character) => character.charCodeAt(0)));
+        if (data.done) player?.complete();
+      } catch (reason) { finish(reason instanceof Error ? reason.message : "Deepgram speech could not play."); }
     });
-    speechCancelRef.current = () => { if (!finished) { finished = true; cleanup(); } };
-    mediaSource.addEventListener("sourceopen", () => {
-      if (finished) return;
-      sourceBuffer = mediaSource.addSourceBuffer("audio/mpeg");
-      sourceBuffer.addEventListener("updateend", () => {
-        if (!started) {
-          started = true;
-          void audio.play().catch((reason: unknown) => {
-            setError(reason instanceof Error ? reason.message : "Deepgram speech could not play.");
-            finish();
-          });
-        }
-        pump();
-      });
-      pump();
-    });
-    audio.onended = finish;
-    audio.onerror = () => { setError("Deepgram speech could not play."); finish(); };
-    speechEndTimerRef.current = setTimeout(finish, Math.max(15_000, Math.min(90_000, text.length * 150)));
+    speechCancelRef.current = () => finish(undefined, false);
+    startTimer = setTimeout(() => {
+      if (context.state !== "running") finish("Audio playback did not start. Click Ren’s microphone button and try again.");
+    }, 10_000);
+    void context.resume().catch(() => finish("Audio playback could not start."));
     try {
       await window.ren.speak(id, text);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Deepgram speech is unavailable.");
-      finish();
+      finish(reason instanceof Error ? reason.message : "Deepgram speech is unavailable.");
     }
   }
 
