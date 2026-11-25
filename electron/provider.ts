@@ -6,6 +6,8 @@ type Point = { x: number; y: number };
 type Annotation =
   | { id: string; type: "arrow"; from: Point; to: Point; label?: string; color?: string }
   | { id: string; type: "rectangle"; at: Point; width: number; height: number; label?: string; color?: string }
+  | { id: string; type: "ellipse"; at: Point; radiusX: number; radiusY: number; label?: string; color?: string }
+  | { id: string; type: "polygon"; points: Point[]; label?: string; color?: string }
   | { id: string; type: "point"; at: Point; label?: string; color?: string }
   | { id: string; type: "text"; at: Point; text: string; color?: string }
   | { id: string; type: "path"; points: Point[]; label?: string; color?: string }
@@ -79,6 +81,8 @@ video's earlier or later content. Annotations use normalized coordinates from
 every annotation relative to that first image. Allowed forms:
 {"id":"a1","type":"arrow","from":{"x":0.1,"y":0.2},"to":{"x":0.5,"y":0.6},"label":"..."}
 {"id":"a2","type":"rectangle","at":{"x":0.1,"y":0.2},"width":0.3,"height":0.2,"label":"..."}
+{"id":"a2b","type":"ellipse","at":{"x":0.5,"y":0.5},"radiusX":0.12,"radiusY":0.08,"label":"..."}
+{"id":"a2c","type":"polygon","points":[{"x":0.2,"y":0.2},{"x":0.4,"y":0.2},{"x":0.3,"y":0.4}],"label":"..."}
 {"id":"a3","type":"point","at":{"x":0.4,"y":0.5},"label":"..."}
 {"id":"a4","type":"text","at":{"x":0.2,"y":0.3},"text":"..."}
 {"id":"a5","type":"path","points":[{"x":0.1,"y":0.2},{"x":0.2,"y":0.3}],"label":"..."}
@@ -143,6 +147,11 @@ export function validateAnnotations(value: unknown): Annotation[] {
     switch (raw.type) {
       case "arrow": return [{ id, type: "arrow", from: point(raw.from), to: point(raw.to), label, color }];
       case "rectangle": return [{ id, type: "rectangle", at: point(raw.at), width: clamp(raw.width), height: clamp(raw.height), label, color }];
+      case "ellipse": return [{ id, type: "ellipse", at: point(raw.at), radiusX: clamp(raw.radiusX), radiusY: clamp(raw.radiusY), label, color }];
+      case "polygon": {
+        const points = Array.isArray(raw.points) ? raw.points.slice(0, 12).map(point) : [];
+        return points.length >= 3 ? [{ id, type: "polygon", points, label, color }] : [];
+      }
       case "point": return [{ id, type: "point", at: point(raw.at), label, color }];
       case "text": return [{ id, type: "text", at: point(raw.at), text: text(raw.text), color }];
       case "path": {
@@ -173,7 +182,7 @@ function demoAnswer(question: string): ProviderResponse {
   };
 }
 
-export async function askTeacher(request: AskRequest, credentials: VisionCredentials | null): Promise<ProviderResponse> {
+export async function askTeacher(request: AskRequest, credentials: VisionCredentials | null, signal?: AbortSignal): Promise<ProviderResponse> {
   if (!credentials) return demoAnswer(request.question);
 
   const { apiKey, model, baseUrl: base } = credentials;
@@ -186,7 +195,7 @@ export async function askTeacher(request: AskRequest, credentials: VisionCredent
     const response = await fetch(`${base}/chat/completions`, {
       method: "POST",
       redirect: "error",
-      signal: AbortSignal.timeout(30_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
         model,
@@ -201,6 +210,7 @@ export async function askTeacher(request: AskRequest, credentials: VisionCredent
       }),
     }).catch((error: unknown) => {
       const name = error && typeof error === "object" && "name" in error ? error.name : null;
+      if (signal?.aborted) throw new Error("Ren is paused or the request was cancelled.");
       if (name === "TimeoutError" || name === "AbortError") {
         throw new Error("The vision provider took too long to respond. Try again.");
       }

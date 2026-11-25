@@ -9,6 +9,7 @@ type ActiveSpeech = {
   finish?: { resolve(value: string): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
 };
 let active: ActiveSpeech | null = null;
+let speechGeneration = 0;
 const rates = new Set([8000, 16000, 24000, 44100, 48000]);
 
 export async function speechAvailable() { return !!await deepgramKey(); }
@@ -27,8 +28,9 @@ function closeSpeech(current: ActiveSpeech, error?: Error) {
 
 export async function startSpeech(sampleRate: number) {
   if (active || !rates.has(sampleRate)) return false;
+  const generation = speechGeneration;
   const key = await deepgramKey();
-  if (!key) return false;
+  if (!key || generation !== speechGeneration) return false;
   const url = new URL("wss://api.deepgram.com/v2/listen");
   url.searchParams.set("model", "flux-general-en");
   url.searchParams.set("encoding", "linear16");
@@ -83,5 +85,6 @@ export async function finishSpeech() {
 }
 
 export async function stopSpeech() {
+  speechGeneration += 1;
   if (active) closeSpeech(active, new Error("Dictation cancelled."));
 }

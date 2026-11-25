@@ -7,10 +7,28 @@ import { interactiveSceneFor, jetPartForLabel, type JetPart } from "../electron/
 import type { JetAnchors } from "./jet-scene";
 
 const JetScene = lazy(() => import("./jet-scene").then((module) => ({ default: module.JetScene })));
+const GenericScene = lazy(() => import("./generic-scene").then((module) => ({ default: module.GenericScene })));
 
 export function VisualLessonOverlay({ lesson, illustration }: { lesson: VisualLesson; illustration?: Illustration | null }) {
-  if (lesson.layout === "centered" && interactiveSceneFor(lesson)) return <InteractiveJetLesson lesson={lesson} />;
+  if (lesson.layout === "centered" && interactiveSceneFor(lesson) === "f35b-hover") return <InteractiveJetLesson lesson={lesson} />;
+  if (lesson.layout === "centered" && interactiveSceneFor(lesson) === "conceptual-3d") return <InteractiveGenericLesson lesson={lesson} />;
   return <StaticVisualLessonOverlay lesson={lesson} illustration={illustration} />;
+}
+
+function InteractiveGenericLesson({ lesson }: { lesson: VisualLesson }) {
+  const [anchors, setAnchors] = useState<Record<string, { x: number; y: number }>>({});
+  const [unavailable, setUnavailable] = useState(false);
+  const placement = { left: `${lesson.placement.x * 100}%`, top: `${lesson.placement.y * 100}%`, width: `${lesson.placement.width * 100}%`, height: `${lesson.placement.height * 100}%` };
+  const cards = lesson.parts.slice(0, 8).map((part, index) => ({ part, side: index % 2 ? "right" as const : "left" as const, slot: .2 + .6 * (Math.floor(index / 2) + .5) / Math.ceil(lesson.parts.length / 2) }));
+  return <section className="visual-lesson interactive-jet-lesson centered-stage" style={placement} role="img" aria-label={`${lesson.title}. Conceptual 3D schematic. Move your cursor to rotate. ${lesson.parts.map((part) => `${part.label}: ${part.explanation}`).join(" ")}`}>
+    {unavailable ? <div className="visual-lesson-placeholder"><strong>{lesson.title}</strong><small>3D view unavailable</small></div> : <Suspense fallback={<div className="jet-scene" aria-hidden="true" />}><GenericScene lesson={lesson} onAnchors={setAnchors} onUnavailable={() => setUnavailable(true)} /></Suspense>}
+    <div className="interactive-jet-heading" aria-hidden="true"><span>REN EXPLAINS</span><strong>{lesson.title}</strong><small>{unavailable ? "Conceptual diagram" : "Move your cursor to rotate the schematic"}</small></div>
+    <svg className="visual-lesson-lines interactive-jet-lines" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+      {cards.map(({ part, side, slot }) => anchors[part.id] && <g key={part.id}><line x1={side === "left" ? 180 : 820} y1={slot * 1000} x2={(.17 + .66 * anchors[part.id].x) * 1000} y2={(.13 + .76 * anchors[part.id].y) * 1000} /><circle cx={(.17 + .66 * anchors[part.id].x) * 1000} cy={(.13 + .76 * anchors[part.id].y) * 1000} r="4" /></g>)}
+    </svg>
+    {cards.map(({ part, side, slot }) => <div key={part.id} className={`visual-lesson-part illustrated-lesson-part ${side}`} style={{ left: side === "left" ? "0%" : "82%", top: `${slot * 100}%` }} aria-hidden="true"><strong>{part.label}</strong><small>{part.explanation}</small></div>)}
+    <div className="interactive-jet-note" aria-hidden="true">Conceptual 3D schematic · relationships, not physical geometry</div>
+  </section>;
 }
 
 function StaticVisualLessonOverlay({ lesson, illustration }: { lesson: VisualLesson; illustration?: Illustration | null }) {

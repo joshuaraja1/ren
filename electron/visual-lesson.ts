@@ -15,7 +15,7 @@ export type VisualConnection = {
 export type VisualLesson = {
   version: 1;
   layout?: "centered";
-  scene?: "f35b-hover";
+  scene?: "f35b-hover" | "conceptual-3d";
   title: string;
   assumption?: string;
   placement: { x: number; y: number; width: number; height: number };

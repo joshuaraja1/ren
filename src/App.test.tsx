@@ -189,6 +189,34 @@ describe("Ren ambient shell", () => {
     } finally { window.ren = undefined; }
   });
 
+  it("starts a voice-style agent job and presents its result", async () => {
+    let update: ((job: { id: string; task: string; status: "running" | "completed"; stage: string; completedSteps: number; totalSteps: number; scope: "current screen"; answer?: string }) => void) | undefined;
+    const startAgentJob = vi.fn(async () => ({ id: "job-1", task: "investigate this system", status: "running" as const, stage: "Planning", completedSteps: 0, totalSteps: 3, scope: "current screen" as const }));
+    const ask = vi.fn();
+    window.ren = {
+      permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
+      primarySource: async () => ({ id: "screen", name: "Main display", thumbnail: "" }),
+      wakeAvailable: async () => false,
+      onFocusSelection: () => () => {},
+      onAgentJobUpdate: (listener: typeof update) => { update = listener; return () => { update = undefined; }; },
+      setExpanded: async () => {}, setCompanionVisible: async () => {}, speechStop: async () => {},
+      captureContext: async () => ({ frames: [], pointer: { x: .5, y: .5 }, contextToken: "capture-1" }),
+      startAgentJob, ask,
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
+      const input = await screen.findByRole("textbox", { name: /ask ren/i });
+      fireEvent.change(input, { target: { value: "Run a job to investigate this system" } });
+      fireEvent.click(screen.getByRole("button", { name: /send question/i }));
+      await waitFor(() => expect(startAgentJob).toHaveBeenCalledWith({ task: "investigate this system", contextToken: "capture-1" }));
+      expect(ask).not.toHaveBeenCalled();
+      expect(screen.getByRole("status")).toHaveTextContent(/planning/i);
+      act(() => update?.({ id: "job-1", task: "investigate this system", status: "completed", stage: "Done", completedSteps: 3, totalSteps: 3, scope: "current screen", answer: "The fan and nozzle balance lift." }));
+      expect(await screen.findByText("The fan and nozzle balance lift.")).toBeVisible();
+    } finally { window.ren = undefined; }
+  });
+
   it("keeps diagram context for a spoken follow-up and starts listening after the answer", async () => {
     let now = 10_000;
     const dateNow = vi.spyOn(Date, "now").mockImplementation(() => now);

@@ -1,7 +1,7 @@
 import { deepgramKey } from "./deepgram-settings.js";
 import { plainAnswer } from "./plain-answer.js";
 
-export async function streamWithDeepgram(value: unknown, onChunk: (audio: Uint8Array) => void): Promise<void> {
+export async function streamWithDeepgram(value: unknown, onChunk: (audio: Uint8Array) => void, signal?: AbortSignal): Promise<void> {
   if (typeof value !== "string" || !value.trim() || value.length > 5000) throw new Error("Speech text is invalid.");
   const spoken = plainAnswer(value);
   if (!spoken) throw new Error("Speech text is invalid.");
@@ -11,7 +11,7 @@ export async function streamWithDeepgram(value: unknown, onChunk: (audio: Uint8A
   try {
     response = await fetch("https://api.deepgram.com/v1/speak?model=aura-2-thalia-en&encoding=linear16&sample_rate=24000&container=none", {
       method: "POST", headers: { Authorization: `Token ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ text: spoken }), signal: AbortSignal.timeout(90_000), redirect: "error",
+      body: JSON.stringify({ text: spoken }), signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(90_000)]) : AbortSignal.timeout(90_000), redirect: "error",
     });
   } catch { throw new Error("Deepgram speech is unavailable. Check your network."); }
   if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? "Deepgram rejected the saved key." : `Deepgram speech failed (${response.status}).`);

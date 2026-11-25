@@ -14,11 +14,14 @@ export function jetPartForLabel(label: string): JetPart | null {
 
 export function tagRequestedInteractiveScene(lesson: VisualLesson, question: string): VisualLesson {
   const requested = /\bf[\s-]?35\s*b\b/i.test(question) && /\b(hover|vertical|lift)\b/i.test(question);
-  return requested && lesson.parts.every((part) => jetPartForLabel(part.label)) ? { ...lesson, scene: "f35b-hover" } : lesson;
+  if (requested && lesson.parts.every((part) => jetPartForLabel(part.label))) return { ...lesson, scene: "f35b-hover" };
+  return /\b(?:interactive|rotat(?:e|able|ing)|orbit|move (?:it|the model) around)\b/i.test(question) && /\b(?:3d|three.dimensional|diagram|model)\b/i.test(question) && /\b(?:relationship graph|conceptual network|concept map)\b/i.test(question)
+    ? { ...lesson, scene: "conceptual-3d" } : lesson;
 }
 
 /** Only offer orbit controls for subjects backed by actual 3D geometry. */
-export function interactiveSceneFor(lesson: VisualLesson): "f35b-hover" | null {
+export function interactiveSceneFor(lesson: VisualLesson): "f35b-hover" | "conceptual-3d" | null {
+  if (lesson.scene === "conceptual-3d") return "conceptual-3d";
   const text = `${lesson.title} ${lesson.parts.map((part) => part.label).join(" ")}`.toLowerCase();
   const namedAircraft = /\bf[\s-]?35\s*b\b/.test(text) && /\b(hover|vertical lift|lift fan)\b/.test(text);
   return (lesson.scene === "f35b-hover" || namedAircraft) && lesson.parts.every((part) => jetPartForLabel(part.label)) ? "f35b-hover" : null;
@@ -30,5 +33,5 @@ export function answerForInteractiveScene(answer: string, lesson: VisualLesson):
     .replace(/\bI can explain[^.!?]*, but I (?:can't|cannot) rotate[^.!?]*[.!?]?/gi, "")
     .replace(/\bI (?:can't|cannot) rotate[^.!?]*[.!?]?/gi, "")
     .trim();
-  return `${withoutContradiction} Move your cursor to rotate the 3D model.`.trim();
+  return `${withoutContradiction} Move your cursor to rotate the ${interactiveSceneFor(lesson) === "conceptual-3d" ? "conceptual 3D schematic" : "3D model"}.`.trim();
 }

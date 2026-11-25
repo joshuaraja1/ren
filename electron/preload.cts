@@ -59,8 +59,8 @@ contextBridge.exposeInMainWorld("ren", {
     ipcRenderer.on("ren:orbit-pointer", handler);
     return () => ipcRenderer.removeListener("ren:orbit-pointer", handler);
   },
-  onFocusSelection: (listener: () => void) => {
-    const handler = () => listener();
+  onFocusSelection: (listener: (kind: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, kind: unknown) => listener(kind);
     ipcRenderer.on("ren:focus-selection", handler);
     return () => ipcRenderer.removeListener("ren:focus-selection", handler);
   },
@@ -75,4 +75,18 @@ contextBridge.exposeInMainWorld("ren", {
     return () => ipcRenderer.removeListener("ren:open-panel", handler);
   },
   voiceShortcutAvailable: () => ipcRenderer.invoke("ren:voice-shortcut-available"),
+  voiceModeStatus: () => ipcRenderer.invoke("ren:voice-mode"),
+  stopVoiceConversation: () => ipcRenderer.invoke("ren:voice-stop-conversation"),
+  onVoiceModeChanged: (listener: (mode: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, mode: unknown) => listener(mode);
+    ipcRenderer.on("ren:voice-mode", handler);
+    return () => ipcRenderer.removeListener("ren:voice-mode", handler);
+  },
+  startAgentJob: (input: unknown) => ipcRenderer.invoke("ren:job-start", input),
+  cancelAgentJob: (id: string) => ipcRenderer.invoke("ren:job-cancel", id),
+  onAgentJobUpdate: (listener: (job: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, job: unknown) => listener(job);
+    ipcRenderer.on("ren:job-update", handler);
+    return () => ipcRenderer.removeListener("ren:job-update", handler);
+  },
 });

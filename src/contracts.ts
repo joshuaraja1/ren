@@ -1,11 +1,14 @@
 import type { VisualLesson } from "../electron/visual-lesson";
 import type { ImageRegistration } from "../electron/image-registration";
+import type { AgentJobSnapshot } from "../electron/agent-jobs";
 
 export type Point = { x: number; y: number };
 
 export type Annotation =
   | { id: string; type: "arrow"; from: Point; to: Point; label?: string; color?: string }
   | { id: string; type: "rectangle"; at: Point; width: number; height: number; label?: string; color?: string }
+  | { id: string; type: "ellipse"; at: Point; radiusX: number; radiusY: number; label?: string; color?: string }
+  | { id: string; type: "polygon"; points: Point[]; label?: string; color?: string }
   | { id: string; type: "point"; at: Point; label?: string; color?: string }
   | { id: string; type: "text"; at: Point; text: string; color?: string }
   | { id: string; type: "path"; points: Point[]; label?: string; color?: string }
@@ -54,6 +57,7 @@ export type VisionSettingsInput = { apiKey: string; model: string; baseUrl: stri
 export type HostedImageStatus = { mode: "connected" | "environment" | "demo"; baseUrl: string; host: string };
 export type HostedImageSettingsInput = { baseUrl: string; accessToken: string };
 export type DeepgramStatus = { mode: "connected" | "environment" | "demo" };
+export type VoiceMode = { paused: boolean; alwaysOn: boolean };
 
 export type RenBridge = {
   platform: string;
@@ -94,8 +98,14 @@ export type RenBridge = {
   onAnnotations(listener: (annotations: Annotation[]) => void): () => void;
   onVisualLesson(listener: (lesson: VisualLesson | null) => void): () => void;
   onOrbitPointer(listener: (point: Point) => void): () => void;
-  onFocusSelection(listener: () => void): () => void;
+  onFocusSelection(listener: (kind: "circle" | "sketch") => void): () => void;
   onActivateVoice(listener: () => void): () => void;
   onOpenPanel(listener: () => void): () => void;
   voiceShortcutAvailable(): Promise<boolean>;
+  voiceModeStatus(): Promise<VoiceMode>;
+  stopVoiceConversation(): Promise<VoiceMode>;
+  onVoiceModeChanged(listener: (mode: VoiceMode) => void): () => void;
+  startAgentJob(input: { task: string; contextToken: string }): Promise<AgentJobSnapshot>;
+  cancelAgentJob(id: string): Promise<boolean>;
+  onAgentJobUpdate(listener: (job: AgentJobSnapshot) => void): () => void;
 };
