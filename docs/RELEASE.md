@@ -19,11 +19,11 @@ release/mac-arm64/Ren.app` reports `Identifier=ai.ren.teacher` and the expected
 Developer ID authority before testing permission onboarding. See
 [Apple's code signing identity guidance](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements)
 and [Electron safeStorage](https://www.electronjs.org/docs/latest/api/safe-storage).
-If macOS shows Accessibility enabled while Ren still reports it missing after
-switching from an unsigned build, remove the old Ren entry in System Settings →
-Privacy & Security → Accessibility, launch the signed build, and grant its fresh
-request. Ren checks the permission again and starts the circle listener when
-macOS grants it.
+If macOS shows Accessibility or Microphone enabled while Ren still reports it
+missing after switching from an unsigned build, remove the old Ren entry in
+System Settings → Privacy & Security, launch the signed build, and grant its
+fresh request. Ren checks permissions again and starts the circle and voice
+listeners when macOS grants them.
 
 Local smoke package (signs automatically when a Developer ID certificate is
 available):

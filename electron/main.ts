@@ -211,7 +211,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle("ren:permission-status", (event) => {
     requireMainRenderer(event);
-    if (!permissionRequest && !circleInputActive && (process.platform !== "darwin" || systemPreferences.isTrustedAccessibilityClient(false))) enableCircleInput();
+    if (!permissionRequest && permissionStatus().ready && !circleInputActive && (process.platform !== "darwin" || systemPreferences.isTrustedAccessibilityClient(false))) enableCircleInput();
     return permissionStatus();
   });
   ipcMain.handle("ren:vision-status", (event) => event.sender === mainWindow?.webContents ? visionStatus() : null);
@@ -274,9 +274,9 @@ app.whenReady().then(() => {
     })().finally(() => { permissionRequest = null; });
     return permissionRequest;
   });
-  ipcMain.handle("ren:open-permission-settings", async (event) => {
+  ipcMain.handle("ren:open-permission-settings", async (event, kind: unknown) => {
     requireMainRenderer(event);
-    if (process.platform === "darwin") await shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture");
+    if (process.platform === "darwin") await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${kind === "microphone" ? "Privacy_Microphone" : "Privacy_ScreenCapture"}`);
   });
   ipcMain.handle("ren:set-expanded", (event, expanded: unknown) => { requireMainRenderer(event); positionMainWindow(expanded === true); });
 

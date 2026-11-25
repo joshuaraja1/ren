@@ -61,18 +61,24 @@ describe("Ren ambient shell", () => {
   });
 
   it("keeps text learning available when microphone access is denied", async () => {
+    const requestPermissions = vi.fn(async () => ({ ready: true, microphone: "denied", screen: "granted", interaction: "not-granted" }));
+    const openPermissionSettings = vi.fn(async () => {});
     window.ren = {
       platform: "darwin",
       permissionStatus: async () => ({ ready: true, microphone: "denied", screen: "granted", interaction: "not-granted" }),
       primarySource: async () => ({ id: "screen", name: "Main display", thumbnail: "" }),
       wakeAvailable: async () => false,
+      requestPermissions,
+      openPermissionSettings,
       onFocusSelection: () => () => {},
       setExpanded: async () => {},
     } as unknown as RenBridge;
     try {
       render(<App />);
       fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
-      expect(await screen.findByRole("button", { name: /microphone is off.*type questions/i })).toBeVisible();
+      fireEvent.click(await screen.findByRole("button", { name: /enable microphone to talk to ren/i }));
+      await waitFor(() => expect(openPermissionSettings).toHaveBeenCalledWith("microphone"));
+      expect(requestPermissions).toHaveBeenCalledTimes(1);
       expect(screen.queryByRole("heading", { name: /give ren permission once/i })).not.toBeInTheDocument();
       expect(screen.getByRole("textbox", { name: /ask ren/i })).toBeVisible();
     } finally { window.ren = undefined; }
