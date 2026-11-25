@@ -19,6 +19,11 @@ describe("generated image registration", () => {
     expect(validateImageRegistration({ ...valid, parts: [valid.parts[0], { ...valid.parts[1], id: "wing" }] }, lesson)).toBeNull();
     expect(validateImageRegistration({ ...valid, parts: [valid.parts[0], { ...valid.parts[1], x: .29, y: .41 }] }, lesson)).toBeNull();
   });
+  it("accepts coding part IDs that overlap Object.prototype names", () => {
+    const coding = { ...lesson, parts: [{ ...lesson.parts[0], id: "constructor" }, { ...lesson.parts[1], id: "toString" }] };
+    const mapping = { coherent: true, parts: [{ ...valid.parts[0], id: "constructor" }, { ...valid.parts[1], id: "toString" }] };
+    expect(validateImageRegistration(mapping, coding)).toEqual({ constructor: { x: .28, y: .4 }, toString: { x: .71, y: .64 } });
+  });
   it("sends only the generated image and manifest to the vision checker", async () => {
     const fetcher = vi.fn(async (_url, init) => {
       const body = JSON.parse(String(init?.body));
@@ -34,5 +39,15 @@ describe("generated image registration", () => {
     expect(positionsOnOpaquePixels(bitmap, 20, 20, registration)).toBe(false);
     for (let y = 0; y < 20; y += 1) for (let x = 0; x < 20; x += 1) bitmap[(y * 20 + x) * 4 + 3] = 255;
     expect(positionsOnOpaquePixels(bitmap, 20, 20, registration)).toBe(true);
+  });
+  it("stops reading an oversized image-check response", async () => {
+    const cancel = vi.fn();
+    const stream = new ReadableStream({
+      start(controller) { controller.enqueue(new Uint8Array(50_001)); },
+      cancel,
+    });
+    const fetcher = vi.fn(async () => new Response(stream, { status: 200 })) as unknown as typeof fetch;
+    await expect(locateImageParts(lesson, "data:image/png;base64,example", "key", "model", new AbortController().signal, fetcher)).rejects.toThrow("too much data");
+    expect(cancel).toHaveBeenCalled();
   });
 });

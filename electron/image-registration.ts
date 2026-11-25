@@ -30,7 +30,7 @@ export function validateImageRegistration(value: unknown, lesson: VisualLesson):
   for (const item of raw.parts) {
     if (!item || typeof item !== "object" || Array.isArray(item)) return null;
     const part = item as Record<string, unknown>;
-    if (typeof part.id !== "string" || !expected.has(part.id) || part.present !== true || typeof part.confidence !== "number" || part.confidence < 0.85 || !point(part.x) || !point(part.y) || registration[part.id]) return null;
+    if (typeof part.id !== "string" || !expected.has(part.id) || part.present !== true || typeof part.confidence !== "number" || part.confidence < 0.85 || !point(part.x) || !point(part.y) || Object.hasOwn(registration, part.id)) return null;
     registration[part.id] = { x: part.x, y: part.y };
   }
   const positions = Object.values(registration);
@@ -54,8 +54,20 @@ export async function locateImageParts(lesson: VisualLesson, imageDataUrl: strin
     ] }),
   });
   if (!response.ok) throw new Error(`Image check returned ${response.status}.`);
-  const body = await response.text();
-  if (body.length > 50_000) throw new Error("Image check returned too much data.");
+  if (!response.body) throw new Error("Image check returned no data.");
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > 50_000) throw new Error("Image check returned too much data.");
+      chunks.push(value);
+    }
+  } finally { await reader.cancel().catch(() => {}); }
+  const body = new TextDecoder().decode(Buffer.concat(chunks));
   const payload = JSON.parse(body) as { choices?: { message?: { content?: unknown } }[] };
   const content = payload.choices?.[0]?.message?.content;
   if (typeof content !== "string" || content.length > 10_000) return null;
