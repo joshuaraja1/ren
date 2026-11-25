@@ -56,7 +56,9 @@ anchor, so an ordinary playing video does not cancel the lesson. A click or
 key during an in-flight answer cancels the answer, covering normal tab and app
 switches. This is not proof of browser tab identity: automatic navigation or
 two visually similar dynamic views can evade that check. Ren rejects a drawing
-when too few still pixels remain to anchor it. A future browser-aware context
+when too few still pixels remain to anchor it. If global interaction tracking
+is unavailable, Ren returns the text answer but suppresses spatial drawings
+for moving content. A future browser-aware context
 adapter and physical video/tab-switch QA are release follow-ups.
 
 Generated imagery is marked as illustrative. Ren checks it against the
