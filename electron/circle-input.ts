@@ -1,6 +1,7 @@
 import { screen } from "electron";
 import { createRequire } from "node:module";
 import { addCirclePoint, circlePath, finishCircle, type AbsolutePoint, type FocusRegion } from "./circle-geometry.js";
+import { TripleControlGesture } from "./keyboard-gesture.js";
 
 type Hooks = {
   onProgress(displayId: number, points: FocusRegion["points"]): void;
@@ -8,6 +9,10 @@ type Hooks = {
   onCancel(): void;
   onScroll(): void;
   onInteraction?(): void;
+  onTripleControl?(): void;
+  onSketchProgress?(displayId: number, points: FocusRegion["points"]): void;
+  onSketchComplete?(displayId: number, points: FocusRegion["points"]): void;
+  onSketchCancel?(): void;
 };
 
 const require = createRequire(import.meta.url);
@@ -28,42 +33,67 @@ export function startCircleInput(hooks: Hooks) {
         }
       }
     };
-    const modifierKeys = new Set<number>([UiohookKey.Ctrl, UiohookKey.CtrlRight, UiohookKey.Alt, UiohookKey.AltRight]);
-    let active: { displayId: number; bounds: Electron.Rectangle; points: AbsolutePoint[] } | null = null;
+    const controlKeys = new Set<number>([UiohookKey.Ctrl, UiohookKey.CtrlRight]);
+    const circleKeys = new Set<number>([...controlKeys, UiohookKey.Alt, UiohookKey.AltRight]);
+    const sketchKeys = new Set<number>([UiohookKey.Meta, UiohookKey.MetaRight, UiohookKey.Alt, UiohookKey.AltRight]);
+    const gesture = new TripleControlGesture(controlKeys, () => hooks.onTripleControl?.());
+    let active: { mode: "circle" | "sketch"; displayId: number; bounds: Electron.Rectangle; points: AbsolutePoint[] } | null = null;
     let lastDrawn = 0;
-    const cancel = () => { if (active) { active = null; hooks.onCancel(); } };
+    const cancel = () => {
+      if (!active) return;
+      const mode = active.mode;
+      active = null;
+      if (mode === "circle") hooks.onCancel();
+      else hooks.onSketchCancel?.();
+    };
     const finish = () => {
       if (!active) return;
-      const result = finishCircle(active.points, active.bounds);
-      const displayId = active.displayId;
+      const { mode, points, bounds, displayId } = active;
       active = null;
-      if (result) hooks.onComplete(displayId, result);
-      else hooks.onCancel();
+      if (mode === "circle") {
+        const result = finishCircle(points, bounds);
+        if (result) hooks.onComplete(displayId, result);
+        else hooks.onCancel();
+      } else if (points.length >= 4 && points.slice(1).reduce((length, point, index) =>
+        length + Math.hypot(point.x - points[index].x, point.y - points[index].y), 0) >= 24) {
+        hooks.onSketchComplete?.(displayId, circlePath(points, bounds));
+      } else hooks.onSketchCancel?.();
     };
     uIOhook.on("keydown", (event) => {
       hooks.onInteraction?.();
+      gesture.keyDown(event);
       if (event.keycode === UiohookKey.Escape) { cancel(); return; }
-      if (active || !event.ctrlKey || !event.altKey) return;
-      if (!modifierKeys.has(event.keycode)) return;
+      if (active) return;
+      const mode = event.ctrlKey && event.altKey && !event.metaKey && !event.shiftKey && circleKeys.has(event.keycode)
+        ? "circle"
+        : event.metaKey && event.altKey && !event.ctrlKey && !event.shiftKey && sketchKeys.has(event.keycode)
+          ? "sketch"
+          : null;
+      if (!mode) return;
       const cursor = screen.getCursorScreenPoint();
       const display = screen.getDisplayNearestPoint(cursor);
-      active = { displayId: display.id, bounds: display.bounds, points: [cursor] };
+      active = { mode, displayId: display.id, bounds: display.bounds, points: [cursor] };
     });
     uIOhook.on("keyup", (event) => {
-      if (modifierKeys.has(event.keycode)) finish();
+      gesture.keyUp(event);
+      if (active?.mode === "circle" && circleKeys.has(event.keycode)) finish();
+      else if (active?.mode === "sketch" && sketchKeys.has(event.keycode)) finish();
     });
     uIOhook.on("mousedown", () => { hooks.onInteraction?.(); cancel(); });
     uIOhook.on("wheel", () => { cancel(); hooks.onScroll(); });
     uIOhook.on("mousemove", (event) => {
       if (!active) return;
-      if (!event.ctrlKey || !event.altKey) { finish(); return; }
+      if (active.mode === "circle" && (!event.ctrlKey || !event.altKey)) { finish(); return; }
+      if (active.mode === "sketch" && (!event.metaKey || !event.altKey)) { finish(); return; }
       const cursor = screen.getCursorScreenPoint();
       if (screen.getDisplayNearestPoint(cursor).id !== active.displayId) { cancel(); return; }
       if (!addCirclePoint(active.points, cursor)) return;
       const now = Date.now();
       if (now - lastDrawn >= 33 && active.points.length >= 3) {
         lastDrawn = now;
-        hooks.onProgress(active.displayId, circlePath(active.points, active.bounds));
+        const path = circlePath(active.points, active.bounds);
+        if (active.mode === "circle") hooks.onProgress(active.displayId, path);
+        else hooks.onSketchProgress?.(active.displayId, path);
       }
     });
     uIOhook.start();

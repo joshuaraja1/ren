@@ -1,7 +1,10 @@
 html, body, #overlay-root { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; pointer-events: none; }
 .overlay-canvas { position: fixed; inset: 0; font-family: "Avenir Next", sans-serif; }
 .overlay-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.overlay-svg line, .overlay-svg rect, .overlay-svg polyline { fill: none; stroke: currentColor; stroke-width: 5; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 2px 1px rgba(255,255,255,.9)); }
+.overlay-svg line, .overlay-svg rect, .overlay-svg ellipse, .overlay-svg polygon, .overlay-svg polyline { fill: none; stroke: currentColor; stroke-width: 5; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 2px 1px rgba(255,255,255,.9)); }
+.overlay-svg line, .overlay-svg rect, .overlay-svg ellipse, .overlay-svg polygon, .overlay-svg polyline { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw-mark .45s ease-out forwards; }
+@keyframes draw-mark { to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) { .overlay-svg line, .overlay-svg rect, .overlay-svg ellipse, .overlay-svg polygon, .overlay-svg polyline { animation: none; stroke-dashoffset: 0; } }
 .overlay-svg marker path { fill: context-stroke; }
 .text-mark { position: absolute; max-width: 240px; transform: translate(12px, 12px) rotate(-1deg); padding: 8px 12px; border: 2px solid currentColor; border-radius: 4px 14px 14px 14px; background: rgba(250,248,242,.96); color: #e7653a; font: italic 17px Georgia, serif; box-shadow: 3px 4px 0 currentColor; }
 .point-mark { position: absolute; width: 20px; height: 20px; transform: translate(-10px,-10px); border: 5px solid currentColor; border-radius: 50%; background: rgba(250,248,242,.9); }
@@ -13,7 +16,7 @@ html, body, #overlay-root { width: 100%; height: 100%; margin: 0; overflow: hidd
 .visual-lesson-illustration { position: absolute; inset: 0; opacity: .82; }
 .visual-lesson-illustration img { position: absolute; object-fit: fill; filter: drop-shadow(0 8px 20px rgba(0,0,0,.38)); }
 .visual-lesson-illustration span { position: absolute; bottom: 0; right: 0; padding: 4px 7px; border-radius: 4px; background: rgba(18,37,40,.94); color: #f4c372; font: 700 10px/1.2 "Avenir Next", sans-serif; letter-spacing: .08em; }
-.visual-lesson.is-preview .visual-lesson-lines, .visual-lesson.is-preview .visual-lesson-part, .visual-lesson.is-preview .visual-lesson-relation { display: none; }
+.visual-lesson.is-preview:not(.illustrated-lesson) .visual-lesson-lines, .visual-lesson.is-preview:not(.illustrated-lesson) .visual-lesson-part, .visual-lesson.is-preview:not(.illustrated-lesson) .visual-lesson-relation { display: none; }
 .visual-lesson-heading { position: absolute; left: 0; top: 0; z-index: 2; display: grid; gap: 3px; max-width: 65%; transform: translateY(-110%); padding: 9px 13px; border-left: 4px solid #f4c372; border-radius: 3px 11px 11px 3px; background: rgba(18, 37, 40, .92); }
 .visual-lesson-heading span { color: #f4c372; font: 700 10px/1.1 "Avenir Next", sans-serif; letter-spacing: .15em; }
 .visual-lesson-heading strong { font: 600 21px/1.1 Georgia, serif; }
@@ -28,5 +31,40 @@ html, body, #overlay-root { width: 100%; height: 100%; margin: 0; overflow: hidd
 .visual-lesson-part strong { color: #fff3d4; font: 700 13px/1.1 "Avenir Next", sans-serif; }
 .visual-lesson-part small { color: #d1e0dc; font: 11px/1.25 "Avenir Next", sans-serif; }
 .visual-lesson-relation { position: absolute; z-index: 2; max-width: 110px; transform: translate(-50%, -50%); padding: 3px 6px; border-radius: 4px; background: rgba(244,195,114,.95); color: #173438; font: 700 10px/1.2 "Avenir Next", sans-serif; text-align: center; }
+.illustrated-lesson .visual-lesson-illustration { opacity: 1; }
+.illustrated-lesson-lines { z-index: 1; }
+.illustrated-lesson-lines circle { fill: #f4c372; stroke: #173438; stroke-width: 3; vector-effect: non-scaling-stroke; }
+.illustrated-lesson-part { z-index: 2; box-sizing: border-box; width: 17%; min-width: 0; max-width: none; transform: translateY(-50%); overflow-wrap: anywhere; }
+.illustrated-lesson-part i { display: none; }
+.illustrated-lesson-part.is-unlocated { opacity: .82; border-color: rgba(244,195,114,.45); }
+.centered-stage::before { content: ""; position: absolute; inset: 5% 17%; border-radius: 50%; background: radial-gradient(ellipse at center, rgba(9,24,27,.56), rgba(9,24,27,.24) 55%, transparent 78%); }
+.centered-stage .visual-lesson-heading { left: 50%; top: 3%; max-width: 55%; transform: translateX(-50%); text-align: center; padding: 7px 12px; border: 1px solid rgba(244,195,114,.5); border-radius: 8px; }
+.centered-stage .visual-lesson-heading.is-inside { transform: translateX(-50%); }
+.centered-stage .visual-lesson-heading strong { font: 700 16px/1.15 "Avenir Next", sans-serif; }
+.centered-stage .visual-lesson-heading small { display: none; }
+.centered-stage .visual-lesson-part { padding: 8px 10px; border-radius: 8px; }
+.centered-stage .visual-lesson-part strong { font-size: 13px; }
+.centered-stage .visual-lesson-part small { font-size: 11px; line-height: 1.25; }
+.centered-stage .visual-lesson-illustration span { display: none; }
+.centered-stage .visual-lesson-lines line { stroke-width: 2; }
+.visual-lesson-placeholder { position: absolute; z-index: 1; left: 28%; top: 20%; width: 44%; height: 60%; display: grid; align-content: center; justify-items: center; gap: 10px; border: 1px dashed rgba(244,195,114,.5); border-radius: 18px; background: rgba(18,37,40,.5); color: #f7f0dc; text-align: center; }
+.visual-lesson-placeholder strong { font: 600 25px/1.2 Georgia, serif; }
+.visual-lesson-placeholder small { font: 13px/1.35 "Avenir Next", sans-serif; }
 @keyframes lesson-appear { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .visual-lesson-part { animation: none; } }
+.interactive-jet-lesson::before { display: none; }
+.jet-scene { position: absolute; left: 17%; top: 13%; width: 66%; height: 76%; pointer-events: none; filter: drop-shadow(0 18px 24px rgba(0,0,0,.42)); }
+.jet-scene canvas { display: block; width: 100%; height: 100%; }
+.interactive-jet-heading { position: absolute; z-index: 3; top: 0; left: 50%; display: grid; gap: 3px; transform: translateX(-50%); text-align: center; padding: 7px 15px; border: 1px solid rgba(244,195,114,.55); border-radius: 9px; background: rgba(18,37,40,.86); white-space: nowrap; }
+.interactive-jet-heading span { color: #f4c372; font: 700 10px/1.1 "Avenir Next", sans-serif; letter-spacing: .14em; }
+.interactive-jet-heading strong { font: 700 16px/1.15 "Avenir Next", sans-serif; }
+.interactive-jet-heading small { color: #d1e0dc; font: 11px/1.2 "Avenir Next", sans-serif; }
+.interactive-jet-lines { z-index: 1; }
+.interactive-jet-lines circle { fill: #f4c372; stroke: #173438; stroke-width: 3; vector-effect: non-scaling-stroke; }
+.interactive-jet-note { position: absolute; bottom: 1%; left: 50%; transform: translateX(-50%); color: #d1e0dc; background: rgba(18,37,40,.7); border-radius: 5px; padding: 3px 7px; font: 10px/1.2 "Avenir Next", sans-serif; white-space: nowrap; }
+.interactive-jet-lesson .visual-lesson-part { background: rgba(18,37,40,.82); }
+.interactive-jet-lesson .visual-lesson-part.is-hidden-part { opacity: .72; }
+.interactive-jet-lesson .visual-lesson-part em { color: #f4c372; font: 700 10px/1.2 "Avenir Next", sans-serif; font-style: normal; }
+.jet-fallback { fill: #6e8190; stroke: #bed5d9; stroke-width: 5; }
+.jet-fallback ellipse { fill: #244856; }
+.jet-fallback rect { fill: #aeb6b9; }

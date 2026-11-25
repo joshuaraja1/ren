@@ -63,11 +63,7 @@ coordinates, and opaque anchors before attaching callouts. This route needs a
 deployed service, project funding, and real-image QA before public release;
 see [hosted images](HOSTED_IMAGES.md).
 
-On macOS, Ren also detects an already installed Ollama vision model and offers
-a one-time local connection without an API key for screen questions. It does
-not offer local realistic image generation: Ollama 0.33.3 advertises the
-`x/flux2-klein:4b` image model but rejects a live generation request. A local
-image runtime and real-scene accuracy review remain open.
+Ren uses OpenAI for on-demand screen understanding. The desktop no longer autodetects or connects to Ollama.
 
 The image backend receives the validated manifest only by default. Sending a
 screen frame, crop, selected text, or app content to an image provider requires

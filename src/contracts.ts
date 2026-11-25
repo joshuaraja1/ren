@@ -1,11 +1,14 @@
 import type { VisualLesson } from "../electron/visual-lesson";
 import type { ImageRegistration } from "../electron/image-registration";
+import type { AgentJobSnapshot } from "../electron/agent-jobs";
 
 export type Point = { x: number; y: number };
 
 export type Annotation =
   | { id: string; type: "arrow"; from: Point; to: Point; label?: string; color?: string }
   | { id: string; type: "rectangle"; at: Point; width: number; height: number; label?: string; color?: string }
+  | { id: string; type: "ellipse"; at: Point; radiusX: number; radiusY: number; label?: string; color?: string }
+  | { id: string; type: "polygon"; points: Point[]; label?: string; color?: string }
   | { id: string; type: "point"; at: Point; label?: string; color?: string }
   | { id: string; type: "text"; at: Point; text: string; color?: string }
   | { id: string; type: "path"; points: Point[]; label?: string; color?: string }
@@ -43,6 +46,9 @@ export type AskResponse = {
   followUps?: string[];
   provider: "demo" | "vision";
   visualLesson?: VisualLesson;
+  autoIllustrate?: boolean;
+  reusedVisual?: boolean;
+  retainVisual?: boolean;
 };
 export type Illustration = { image: string; preview: boolean; width: number; height: number; registration?: ImageRegistration };
 
@@ -50,6 +56,8 @@ export type VisionStatus = { mode: "connected" | "environment" | "local" | "avai
 export type VisionSettingsInput = { apiKey: string; model: string; baseUrl: string };
 export type HostedImageStatus = { mode: "connected" | "environment" | "demo"; baseUrl: string; host: string };
 export type HostedImageSettingsInput = { baseUrl: string; accessToken: string };
+export type DeepgramStatus = { mode: "connected" | "environment" | "demo" };
+export type VoiceMode = { paused: boolean; alwaysOn: boolean };
 
 export type RenBridge = {
   platform: string;
@@ -67,7 +75,8 @@ export type RenBridge = {
   requestPermissions(): Promise<AmbientStatus>;
   openPermissionSettings(kind?: "screen" | "microphone"): Promise<void>;
   setExpanded(expanded: boolean): Promise<void>;
-  captureContext(): Promise<ScreenContext>;
+  setCompanionVisible(visible: boolean): Promise<void>;
+  captureContext(preserveVisual?: boolean, question?: string): Promise<ScreenContext>;
   wakeAvailable(): Promise<boolean>;
   wakeStart(sampleRate: number): Promise<boolean>;
   wakeFeed(samples: number[]): Promise<boolean>;
@@ -77,11 +86,26 @@ export type RenBridge = {
   speechFeed(samples: number[]): Promise<boolean>;
   speechFinish(): Promise<string>;
   speechStop(): Promise<void>;
+  deepgramStatus(): Promise<DeepgramStatus>;
+  saveDeepgramKey(key: string): Promise<DeepgramStatus>;
+  clearDeepgramKey(): Promise<DeepgramStatus>;
+  speak(id: string, text: string): Promise<boolean>;
+  onSpeechData(listener: (data: { id: string; chunk?: string; done?: boolean; error?: string }) => void): () => void;
   ask(request: AskRequest): Promise<AskResponse>;
   clearAnnotations(): Promise<void>;
-  generateIllustration(): Promise<boolean>;
+  generateIllustration(automatic?: boolean): Promise<boolean>;
   onIllustration(listener: (image: Illustration | null) => void): () => void;
   onAnnotations(listener: (annotations: Annotation[]) => void): () => void;
   onVisualLesson(listener: (lesson: VisualLesson | null) => void): () => void;
-  onFocusSelection(listener: () => void): () => void;
+  onOrbitPointer(listener: (point: Point) => void): () => void;
+  onFocusSelection(listener: (kind: "circle" | "sketch") => void): () => void;
+  onActivateVoice(listener: () => void): () => void;
+  onOpenPanel(listener: () => void): () => void;
+  voiceShortcutAvailable(): Promise<boolean>;
+  voiceModeStatus(): Promise<VoiceMode>;
+  stopVoiceConversation(): Promise<VoiceMode>;
+  onVoiceModeChanged(listener: (mode: VoiceMode) => void): () => void;
+  startAgentJob(input: { task: string; contextToken: string }): Promise<AgentJobSnapshot>;
+  cancelAgentJob(id: string): Promise<boolean>;
+  onAgentJobUpdate(listener: (job: AgentJobSnapshot) => void): () => void;
 };

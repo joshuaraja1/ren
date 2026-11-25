@@ -1,11 +1,13 @@
 import "dotenv/config";
-import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, nativeImage, screen, session, shell, systemPreferences } from "electron";
+import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, screen, session, shell, systemPreferences, Tray } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { askTeacher } from "./provider.js";
 import { feedWake, startWake, stopWake, wakeAvailable } from "./wake.js";
 import { feedSpeech, finishSpeech, speechAvailable, startSpeech, stopSpeech } from "./speech.js";
+import { clearDeepgramKey, deepgramStatus, saveDeepgramKey } from "./deepgram-settings.js";
+import { streamWithDeepgram } from "./deepgram-tts.js";
 import { normalizeCursor } from "./display-geometry.js";
 import { startCircleInput, stopCircleInput } from "./circle-input.js";
 import type { FocusRegion } from "./circle-geometry.js";
@@ -17,26 +19,42 @@ import { isSameStableScreen } from "./screen-continuity.js";
 import { canPlaceSpatialVisual } from "./visual-safety.js";
 import { generateIllustration, imageManifest, imagePrompt } from "./image-render.js";
 import { generateHostedIllustration } from "./hosted-image-render.js";
-import { locateImageParts, positionsOnOpaquePixels } from "./image-registration.js";
+import { filterOpaquePositions, locateImageParts } from "./image-registration.js";
 import { validateVisualLesson } from "./visual-lesson.js";
+import { likelyVisualFollowUp, wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
+import { centerRequestedLesson } from "./visual-presentation.js";
+import { answerForInteractiveScene, interactiveSceneFor, tagRequestedInteractiveScene } from "./interactive-scene.js";
 import { CaptureSession } from "./capture-session.js";
 import { requestMacScreenCaptureAccess } from "./mac-screen-permission.js";
 import type { VisualLesson } from "./visual-lesson.js";
+import { AgentJobManager } from "./agent-jobs.js";
+import { consumeAgentJobCapture } from "./agent-job-capture.js";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 let mainWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let voicePaused = false;
+let voicePauseEpoch = 0;
+let alwaysOnVoice = false;
+const agentJobs = new AgentJobManager();
 let selectedFocus: { displayId: number; region: FocusRegion; createdAt: number } | null = null;
+let userSketch: { displayId: number; points: FocusRegion["points"] } | null = null;
 let circleInputActive = false;
 const captureSession = new CaptureSession();
-let lastCaptureData: { token: string; frames: string[]; pointer: { x: number; y: number }; focus?: { x: number; y: number; width: number; height: number }; firstSample: Uint8Array; secondSample: Uint8Array; dynamicContent: boolean; thumbnailSize: { width: number; height: number } } | null = null;
-let lastVisualLesson: { lesson: VisualLesson; displayId: number; createdAt: number } | null = null;
+let lastCaptureData: { token: string; generation: number; frames: string[]; pointer: { x: number; y: number }; focus?: { x: number; y: number; width: number; height: number }; firstSample: Uint8Array; secondSample: Uint8Array; dynamicContent: boolean; thumbnailSize: { width: number; height: number } } | null = null;
+let lastVisualLesson: { lesson: VisualLesson; displayId: number; createdAt: number; referenceImage?: string } | null = null;
 let screenCaptureBusy = false;
 let pendingAnswerToken: string | null = null;
 let activeCaptureToken: string | null = null;
 let imageRenderAbort: AbortController | null = null;
+let activeAskController: AbortController | null = null;
 let imageRequestBusy = false;
 let imageRequestedFor: VisualLesson | null = null;
+let pendingVisualDecision = false;
+let voiceShortcutActive = false;
+const speechOutputControllers = new Set<AbortController>();
+let visualGeneration = 0;
 let permissionRequest: Promise<ReturnType<typeof permissionStatus>> | null = null;
 
 const collapsedSize = { width: 236, height: 58 };
@@ -68,6 +86,7 @@ function createOverlayWindow() {
   const bounds = screen.getPrimaryDisplay().bounds;
   overlayWindow = new BrowserWindow({
     ...bounds,
+    ...(process.platform === "darwin" ? { type: "panel" as const } : {}),
     transparent: true,
     frame: false,
     hasShadow: false,
@@ -114,6 +133,7 @@ function requireMainRenderer(event: Electron.IpcMainInvokeEvent) {
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     ...expandedSize,
+    ...(process.platform === "darwin" ? { type: "panel" as const } : {}),
     frame: false,
     transparent: true,
     resizable: false,
@@ -128,17 +148,19 @@ function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      backgroundThrottling: false,
     },
   });
 
-  mainWindow.setAlwaysOnTop(true, "floating");
+  // A floating window falls behind native full-screen Spaces on macOS.
+  // Keep the assistant at the same level as its drawing overlay.
+  mainWindow.setAlwaysOnTop(true, "screen-saver");
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   mainWindow.once("ready-to-show", () => {
     const access = permissionStatus();
     const needsOnboarding = !access.ready || (process.platform === "darwin" && access.microphone !== "granted");
     positionMainWindow(needsOnboarding);
     if (needsOnboarding) mainWindow?.show();
-    else mainWindow?.showInactive();
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith("https://")) void shell.openExternal(url);
@@ -151,13 +173,106 @@ function createMainWindow() {
   else void mainWindow.loadFile(join(currentDirectory, "../dist/index.html"));
 }
 
+function createTray() {
+  const iconPath = app.isPackaged ? join(process.resourcesPath, "tray-icon.png") : join(app.getAppPath(), "build/icon.png");
+  const icon = nativeImage.createFromPath(iconPath).resize({ width: 18, height: 18 });
+  tray = new Tray(icon);
+  tray.setToolTip("Ren");
+  updateTrayMenu();
+}
+
+function voiceMode() { return { paused: voicePaused, alwaysOn: alwaysOnVoice }; }
+
+function updateTrayMenu() {
+  if (!tray) return;
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: "Open Ren", click: () => mainWindow?.webContents.send("ren:open-panel") },
+    { label: "Start voice conversation", enabled: !voicePaused, click: () => mainWindow?.webContents.send("ren:activate-voice") },
+    { label: alwaysOnVoice ? "Turn always-on voice off" : "Turn always-on voice on", click: () => setAlwaysOnVoice(!alwaysOnVoice) },
+    { label: voicePaused ? "Resume Ren" : "Pause Ren", click: () => setVoicePaused(!voicePaused) },
+    { type: "separator" },
+    { role: "quit" },
+  ]));
+}
+
+function setAlwaysOnVoice(value: boolean) {
+  alwaysOnVoice = value;
+  try { writeFileSync(join(app.getPath("userData"), "voice-mode.json"), JSON.stringify({ alwaysOn: value }), { mode: 0o600 }); } catch { /* session still works */ }
+  updateTrayMenu();
+  mainWindow?.webContents.send("ren:voice-mode", voiceMode());
+}
+
+function setVoicePaused(value: boolean) {
+  voicePaused = value;
+  if (value) {
+    voicePauseEpoch += 1;
+    visualGeneration += 1;
+    stopWake();
+    stopSpeech();
+    for (const controller of speechOutputControllers) controller.abort();
+    activeAskController?.abort();
+    agentJobs.cancelAll();
+    imageRenderAbort?.abort();
+    imageRenderAbort = null;
+    lastCaptureData = null;
+    captureSession.invalidate();
+    overlayWindow?.hide();
+  }
+  updateTrayMenu();
+  mainWindow?.webContents.send("ren:voice-mode", voiceMode());
+  if (value) mainWindow?.hide();
+}
+
 app.whenReady().then(() => {
+  try { alwaysOnVoice = JSON.parse(readFileSync(join(app.getPath("userData"), "voice-mode.json"), "utf8")).alwaysOn === true; } catch { /* default is wake mode */ }
   if (permissionStatus().ready && app.isPackaged) app.setLoginItemSettings({ openAtLogin: true });
   createMainWindow();
   createOverlayWindow();
+  createTray();
+  agentJobs.onUpdate((snapshot) => mainWindow?.webContents.send("ren:job-update", snapshot));
+  voiceShortcutActive = globalShortcut.register("CommandOrControl+Shift+Space", () => {
+    mainWindow?.webContents.send("ren:activate-voice");
+  });
+  app.once("will-quit", () => globalShortcut.unregisterAll());
+  ipcMain.handle("ren:voice-shortcut-available", (event) => event.sender === mainWindow?.webContents && voiceShortcutActive);
+  ipcMain.handle("ren:voice-mode", (event) => event.sender === mainWindow?.webContents ? voiceMode() : { paused: true, alwaysOn: false });
+  ipcMain.handle("ren:voice-stop-conversation", (event) => {
+    requireMainRenderer(event);
+    if (alwaysOnVoice) setAlwaysOnVoice(false);
+    return voiceMode();
+  });
+  ipcMain.handle("ren:job-start", async (event, input: unknown) => {
+    requireMainRenderer(event);
+    if (voicePaused) throw new Error("Ren is paused. Resume it before starting a job.");
+    const pauseEpoch = voicePauseEpoch;
+    const jobInput = consumeAgentJobCapture(input, lastCaptureData, captureSession);
+    lastCaptureData = null;
+    const credentials = await visionCredentials();
+    if (voicePaused || pauseEpoch !== voicePauseEpoch) throw new Error("Ren was paused before the job started.");
+    return agentJobs.start(jobInput, credentials);
+  });
+  ipcMain.handle("ren:job-cancel", (event, id: unknown) => {
+    requireMainRenderer(event);
+    if (typeof id !== "string") return false;
+    return agentJobs.cancel(id);
+  });
+  let lastOrbitPointer = "";
+  const orbitCursorTimer = setInterval(() => {
+    const visual = lastVisualLesson;
+    if (!visual || !interactiveSceneFor(visual.lesson) || !overlayWindow?.isVisible()) return;
+    const display = screen.getAllDisplays().find((item) => item.id === visual.displayId);
+    if (!display) return;
+    const pointer = normalizeCursor(screen.getCursorScreenPoint(), display.bounds);
+    const key = `${Math.round(pointer.x * 200)},${Math.round(pointer.y * 200)}`;
+    if (key === lastOrbitPointer) return;
+    lastOrbitPointer = key;
+    overlayWindow.webContents.send("ren:orbit-pointer", pointer);
+  }, 33);
+  app.once("before-quit", () => clearInterval(orbitCursorTimer));
   function showFocusPath(displayId: number, points: FocusRegion["points"]) {
     const display = screen.getAllDisplays().find((item) => item.id === displayId);
     if (!display || !overlayWindow) return;
+    visualGeneration += 1;
     captureSession.invalidate();
     lastCaptureData = null;
     lastVisualLesson = null;
@@ -167,6 +282,9 @@ app.whenReady().then(() => {
     overlayWindow.showInactive();
   }
   function invalidateSpatialContext() {
+    userSketch = null;
+    visualGeneration += 1;
+    pendingVisualDecision = false;
     imageRenderAbort?.abort();
     imageRenderAbort = null;
     selectedFocus = null;
@@ -186,22 +304,41 @@ app.whenReady().then(() => {
   function enableCircleInput() {
     if (process.platform === "darwin" && !systemPreferences.isTrustedAccessibilityClient(false)) return false;
     circleInputActive = startCircleInput({
-      onProgress: showFocusPath,
+      onTripleControl: () => setAlwaysOnVoice(!alwaysOnVoice),
+      onSketchProgress: (displayId, points) => { if (!voicePaused) showFocusPath(displayId, points); },
+      onSketchComplete: (displayId, points) => {
+        if (voicePaused) return;
+        userSketch = { displayId, points };
+        const xs = points.map((point) => point.x), ys = points.map((point) => point.y);
+        const x = Math.max(0, Math.min(...xs) - .015), y = Math.max(0, Math.min(...ys) - .015);
+        const right = Math.min(1, Math.max(...xs) + .015), bottom = Math.min(1, Math.max(...ys) + .015);
+        selectedFocus = { displayId, region: { points, bounds: { x, y, width: right - x, height: bottom - y } }, createdAt: Date.now() };
+        showFocusPath(displayId, points);
+        mainWindow?.webContents.send("ren:focus-selection", "sketch");
+      },
+      onSketchCancel: invalidateSpatialContext,
+      onProgress: (displayId, points) => { if (!voicePaused) showFocusPath(displayId, points); },
       onComplete: (displayId, region) => {
+        if (voicePaused) return;
         selectedFocus = { displayId, region, createdAt: Date.now() };
         showFocusPath(displayId, region.points);
-        positionMainWindow(true, displayId);
+        positionMainWindow(mainWindow?.getBounds().width === expandedSize.width, displayId);
         mainWindow?.showInactive();
-        mainWindow?.webContents.send("ren:focus-selection");
+        mainWindow?.webContents.send("ren:focus-selection", "circle");
       },
       onCancel: invalidateSpatialContext,
-      onScroll: invalidateSpatialContext,
-      onInteraction: () => {
-        // Switching tabs or apps normally requires a click or key. Cancel any
-        // answer that was grounded before that interaction, including video.
-        const token = pendingAnswerToken ?? activeCaptureToken;
+      onScroll: () => {
+        // The answer can finish against its captured frame. Spatial annotations
+        // are checked against the live screen after the answer returns.
+        const token = activeCaptureToken;
         if (token && captureSession.isCurrent(token)) captureSession.invalidate();
-        imageRenderAbort?.abort();
+      },
+      onInteraction: () => {
+        // Do not cancel an explicitly requested diagram while someone browses.
+        const token = activeCaptureToken;
+        if (token && captureSession.isCurrent(token)) captureSession.invalidate();
+        // A user may keep browsing while an explicitly requested illustration renders.
+        // Display removal, a new question, and Clear drawings still cancel it.
       },
     });
     return circleInputActive;
@@ -241,14 +378,33 @@ app.whenReady().then(() => {
     return permissionStatus();
   });
   ipcMain.handle("ren:wake-available", () => wakeAvailable());
-  ipcMain.handle("ren:wake-start", (event, sampleRate: unknown) => event.sender === mainWindow?.webContents && typeof sampleRate === "number" && startWake(sampleRate));
-  ipcMain.handle("ren:wake-feed", (event, samples: unknown) => event.sender === mainWindow?.webContents && feedWake(samples));
+  ipcMain.handle("ren:wake-start", (event, sampleRate: unknown) => !voicePaused && event.sender === mainWindow?.webContents && typeof sampleRate === "number" && startWake(sampleRate));
+  ipcMain.handle("ren:wake-feed", (event, samples: unknown) => !voicePaused && event.sender === mainWindow?.webContents && feedWake(samples));
   ipcMain.handle("ren:wake-stop", (event) => { if (event.sender === mainWindow?.webContents) stopWake(); });
   ipcMain.handle("ren:speech-available", (event) => event.sender === mainWindow?.webContents && speechAvailable());
-  ipcMain.handle("ren:speech-start", (event, sampleRate: unknown) => event.sender === mainWindow?.webContents && typeof sampleRate === "number" && startSpeech(sampleRate));
-  ipcMain.handle("ren:speech-feed", (event, samples: unknown) => event.sender === mainWindow?.webContents && feedSpeech(samples));
-  ipcMain.handle("ren:speech-finish", (event) => event.sender === mainWindow?.webContents ? finishSpeech() : "");
+  ipcMain.handle("ren:speech-start", (event, sampleRate: unknown) => !voicePaused && event.sender === mainWindow?.webContents && typeof sampleRate === "number" && startSpeech(sampleRate));
+  ipcMain.handle("ren:speech-feed", (event, samples: unknown) => !voicePaused && event.sender === mainWindow?.webContents && feedSpeech(samples));
+  ipcMain.handle("ren:speech-finish", (event) => !voicePaused && event.sender === mainWindow?.webContents ? finishSpeech() : "");
   ipcMain.handle("ren:speech-stop", (event) => event.sender === mainWindow?.webContents ? stopSpeech() : undefined);
+  ipcMain.handle("ren:deepgram-status", (event) => { requireMainRenderer(event); return deepgramStatus(); });
+  ipcMain.handle("ren:deepgram-save", (event, value: unknown) => { requireMainRenderer(event); return saveDeepgramKey(value); });
+  ipcMain.handle("ren:deepgram-clear", (event) => { requireMainRenderer(event); return clearDeepgramKey(); });
+  ipcMain.handle("ren:speak", (event, id: unknown, value: unknown) => {
+    requireMainRenderer(event);
+    if (voicePaused) throw new Error("Ren is paused.");
+    if (typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Invalid speech request.");
+    const sender = event.sender;
+    const controller = new AbortController();
+    speechOutputControllers.add(controller);
+    void streamWithDeepgram(value, (chunk) => {
+      if (!controller.signal.aborted && !sender.isDestroyed()) sender.send("ren:speech-data", { id, chunk: Buffer.from(chunk).toString("base64") });
+    }, controller.signal).then(() => {
+      if (!sender.isDestroyed()) sender.send("ren:speech-data", { id, done: true });
+    }).catch((reason: unknown) => {
+      if (!sender.isDestroyed()) sender.send("ren:speech-data", { id, error: reason instanceof Error ? reason.message : "Deepgram speech failed." });
+    }).finally(() => { speechOutputControllers.delete(controller); });
+    return true;
+  });
   ipcMain.handle("ren:request-permissions", (event) => {
     requireMainRenderer(event);
     if (permissionRequest) return permissionRequest;
@@ -271,7 +427,7 @@ app.whenReady().then(() => {
         }
         return permissionStatus();
       } finally {
-        if (wasOnTop) mainWindow?.setAlwaysOnTop(true, "floating");
+        if (wasOnTop) mainWindow?.setAlwaysOnTop(true, "screen-saver");
       }
     })().finally(() => { permissionRequest = null; });
     return permissionRequest;
@@ -280,7 +436,16 @@ app.whenReady().then(() => {
     requireMainRenderer(event);
     if (process.platform === "darwin") await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${kind === "microphone" ? "Privacy_Microphone" : "Privacy_ScreenCapture"}`);
   });
-  ipcMain.handle("ren:set-expanded", (event, expanded: unknown) => { requireMainRenderer(event); positionMainWindow(expanded === true); });
+  ipcMain.handle("ren:set-expanded", (event, expanded: unknown) => {
+    requireMainRenderer(event);
+    positionMainWindow(expanded === true);
+    if (expanded === true) mainWindow?.showInactive();
+  });
+  ipcMain.handle("ren:set-companion-visible", (event, visible: unknown) => {
+    requireMainRenderer(event);
+    if (visible === true) mainWindow?.showInactive();
+    else if (visible === false) mainWindow?.hide();
+  });
 
   ipcMain.handle("ren:list-sources", async (event) => {
     requireMainRenderer(event);
@@ -295,22 +460,29 @@ app.whenReady().then(() => {
     if (!source) throw new Error("No display source is available");
     return { id: source.id, name: source.name, thumbnail: source.thumbnail.toDataURL() };
   });
-  ipcMain.handle("ren:capture-context", async (event) => {
+  ipcMain.handle("ren:capture-context", async (event, keepVisual: unknown, question: unknown) => {
     requireMainRenderer(event);
+    if (voicePaused) throw new Error("Ren is paused. Resume it before asking.");
     if (screenCaptureBusy) throw new Error("Ren is already capturing the screen. Try again.");
     screenCaptureBusy = true;
+    const generation = ++visualGeneration;
     const { display, pointer } = cursorDisplayContext();
+    const preservedVisual = keepVisual === true && lastVisualLesson?.displayId === display.id ? lastVisualLesson : null;
+    const showDuringAnswer = preservedVisual && typeof question === "string" && question.length <= 5000
+      && likelyVisualFollowUp(question, preservedVisual.lesson.title, preservedVisual.lesson.parts.map((part) => part.label));
+    pendingVisualDecision = Boolean(preservedVisual);
     const focus = selectedFocus && selectedFocus.displayId === display.id && Date.now() - selectedFocus.createdAt < 30_000 ? selectedFocus.region : null;
     selectedFocus = null;
     lastCaptureData = null;
-    imageRenderAbort?.abort();
-    imageRenderAbort = null;
+    if (!preservedVisual) { imageRenderAbort?.abort(); imageRenderAbort = null; }
     const contextToken = captureSession.issue(display.id);
     activeCaptureToken = contextToken;
     mainWindow?.setOpacity(0);
-    overlayWindow?.webContents.send("ren:annotations", []);
-    overlayWindow?.webContents.send("ren:visual-lesson", null);
-    overlayWindow?.webContents.send("ren:illustration", null);
+    if (!preservedVisual) {
+      overlayWindow?.webContents.send("ren:annotations", []);
+      overlayWindow?.webContents.send("ren:visual-lesson", null);
+      overlayWindow?.webContents.send("ren:illustration", null);
+    }
     overlayWindow?.hide();
     await new Promise((resolve) => setTimeout(resolve, 90));
     try {
@@ -341,17 +513,20 @@ app.whenReady().then(() => {
         }
       }
       if (!captureSession.isCurrent(contextToken)) throw new Error("The screen changed during capture. Ask again.");
-      lastCaptureData = { token: contextToken, frames, pointer, focus: focus?.bounds, firstSample: motionSample(first), secondSample: motionSample(second ?? first), dynamicContent: !!second && hasMeaningfulMotion(motionSample(first), motionSample(second)), thumbnailSize };
+      lastCaptureData = { token: contextToken, generation, frames, pointer, focus: focus?.bounds, firstSample: motionSample(first), secondSample: motionSample(second ?? first), dynamicContent: !!second && hasMeaningfulMotion(motionSample(first), motionSample(second)), thumbnailSize };
       setTimeout(() => {
-        if (lastCaptureData?.token === contextToken) { lastCaptureData = null; captureSession.invalidate(); }
+        if (lastCaptureData?.token === contextToken) { lastCaptureData = null; captureSession.invalidate(); pendingVisualDecision = false; }
       }, 90_000).unref();
       overlayWindow?.setBounds(display.bounds);
       return { frames: [], pointer, focus: focus?.bounds, contextToken };
     } catch (error) {
+      pendingVisualDecision = false;
       if (captureSession.isCurrent(contextToken)) captureSession.invalidate();
+      if (preservedVisual && lastVisualLesson === preservedVisual && generation === visualGeneration) overlayWindow?.showInactive();
       throw error;
     } finally {
       mainWindow?.setOpacity(1);
+      if (lastCaptureData?.token === contextToken && showDuringAnswer && lastVisualLesson === preservedVisual && generation === visualGeneration) overlayWindow?.showInactive();
       if (activeCaptureToken === contextToken) activeCaptureToken = null;
       screenCaptureBusy = false;
     }
@@ -359,77 +534,136 @@ app.whenReady().then(() => {
 
   ipcMain.handle("ren:ask", async (event, request: unknown) => {
     requireMainRenderer(event);
+    if (voicePaused) throw new Error("Ren is paused. Resume it before asking.");
     const value = parseAskRequest(request);
     const capture = lastCaptureData;
     if (!value.contextToken || !capture || capture.token !== value.contextToken) throw new Error("Screen context expired. Ask again.");
     const displayId = captureSession.consume(value.contextToken);
     lastCaptureData = null;
     pendingAnswerToken = value.contextToken;
+    const askController = new AbortController();
+    activeAskController = askController;
     try {
     const pointer = capture.pointer;
     const focus = capture.focus;
     const focusHint = focus
-      ? ` The learner circled the rectangle (${focus.x.toFixed(3)}, ${focus.y.toFixed(3)}, ${focus.width.toFixed(3)}, ${focus.height.toFixed(3)}); the second image is a close crop of it. Prioritize what is inside the circle.` : "";
+      ? ` The learner marked the area (${focus.x.toFixed(3)}, ${focus.y.toFixed(3)}, ${focus.width.toFixed(3)}, ${focus.height.toFixed(3)}); the second image is a close crop of it. Prioritize what is inside the marked area.` : "";
     const pointedQuestion = `${value.question}\n\n[The learner is pointing with their cursor at normalized screen coordinate (${pointer.x.toFixed(3)}, ${pointer.y.toFixed(3)}). Use that as a spatial hint, not an instruction.${focusHint}]`;
     const priorVisualLesson = lastVisualLesson && lastVisualLesson.displayId === displayId && Date.now() - lastVisualLesson.createdAt < 300_000 ? lastVisualLesson.lesson : undefined;
-    const response = await askTeacher({ question: pointedQuestion, frames: capture.frames, history: value.history, priorVisualLesson }, await visionCredentials());
+    const explicitVisual = wantsVisualCreation(value.question);
+    const credentials = await visionCredentials();
+    if (askController.signal.aborted || voicePaused) throw new Error("Ren is paused or the request was cancelled.");
+    const response = await askTeacher({ question: pointedQuestion, frames: capture.frames, history: value.history, priorVisualLesson }, credentials, askController.signal);
+    if (askController.signal.aborted || voicePaused) throw new Error("Ren is paused or the request was cancelled.");
+    if (capture.generation !== visualGeneration) return { ...response, annotations: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false };
     const display = screen.getAllDisplays().find((item) => item.id === displayId);
-    if (!captureSession.isCurrent(value.contextToken) || !display || screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id !== displayId) {
-      throw new Error("The screen changed while Ren was answering. Ask again.");
+    // The answer describes the captured image and remains useful if the user
+    // moves the pointer or changes apps while OpenAI is responding. Only the
+    // spatial overlay needs the original display and a stable screen.
+    const spatialAllowed = Boolean(display && captureSession.isCurrent(value.contextToken)
+      && screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id === displayId
+      && canPlaceSpatialVisual(capture.dynamicContent, circleInputActive));
+    const reuseVisual = Boolean(priorVisualLesson && !explicitVisual && response.retainVisual && !response.visualLesson && lastVisualLesson?.lesson === priorVisualLesson);
+    if (!reuseVisual) { imageRenderAbort?.abort(); imageRenderAbort = null; }
+    let lesson = reuseVisual ? priorVisualLesson! : display && (spatialAllowed || explicitVisual) ? validateVisualLesson(response.visualLesson) : null;
+    if (lesson && explicitVisual && display) {
+      lesson = centerRequestedLesson(lesson, display.bounds.width, display.bounds.height);
+      lesson = tagRequestedInteractiveScene(lesson, value.question);
     }
-    const spatialAllowed = canPlaceSpatialVisual(capture.dynamicContent, circleInputActive);
-    const lesson = spatialAllowed ? validateVisualLesson(response.visualLesson) : null;
-    const annotations = spatialAllowed ? response.annotations : [];
-    if (annotations.length || lesson) {
-      if (screenCaptureBusy) throw new Error("Ren is already capturing the screen. Ask again.");
-      screenCaptureBusy = true;
-      mainWindow?.setOpacity(0);
-      overlayWindow?.hide();
-      try {
-        await new Promise((resolve) => setTimeout(resolve, 60));
-        const fresh = await captureDisplay(displayId, capture.thumbnailSize);
-        if (!fresh || !isSameStableScreen(capture.firstSample, capture.secondSample, motionSample(fresh))) {
-          throw new Error("The screen changed while Ren was answering. Ask again.");
-        }
-      } finally { mainWindow?.setOpacity(1); screenCaptureBusy = false; }
-      if (!captureSession.isCurrent(value.contextToken) || screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id !== displayId) {
-        throw new Error("The screen changed while Ren was answering. Ask again.");
+    let annotations = spatialAllowed && !explicitVisual && !reuseVisual ? response.annotations : [];
+    if (spatialAllowed && focus && !explicitVisual && !reuseVisual) {
+      annotations = [{ id: "selected-area", type: "rectangle" as const, at: { x: focus.x, y: focus.y }, width: focus.width, height: focus.height, color: "#42c7d9", label: "Selected area" }, ...annotations.filter((item) => item.type !== "rectangle")].slice(0, 4);
+    }
+    if (annotations.length || (lesson && lesson.layout !== "centered" && !reuseVisual)) {
+      if (screenCaptureBusy) { lesson = null; annotations = []; }
+      else {
+        screenCaptureBusy = true;
+        mainWindow?.setOpacity(0);
+        overlayWindow?.hide();
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          const fresh = await captureDisplay(displayId, capture.thumbnailSize);
+          if (!fresh || !isSameStableScreen(capture.firstSample, capture.secondSample, motionSample(fresh))
+            || !captureSession.isCurrent(value.contextToken)
+            || screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id !== displayId) {
+            lesson = null; annotations = [];
+          }
+        } catch { lesson = null; annotations = []; }
+        finally { mainWindow?.setOpacity(1); screenCaptureBusy = false; }
       }
     }
-    overlayWindow?.setBounds(display.bounds);
-    overlayWindow?.webContents.send("ren:annotations", annotations);
-    overlayWindow?.webContents.send("ren:visual-lesson", lesson);
-    overlayWindow?.webContents.send("ren:illustration", null);
+    if (capture.generation !== visualGeneration) return { ...response, annotations: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false };
+    if (display) overlayWindow?.setBounds(display.bounds);
+    if (!reuseVisual) {
+      const sketch = userSketch;
+      overlayWindow?.webContents.send("ren:annotations", sketch && sketch.displayId === display?.id
+        ? [{ id: "user-sketch", type: "path", points: sketch.points, color: "#327d87" }, ...annotations] : annotations);
+      overlayWindow?.webContents.send("ren:visual-lesson", lesson);
+      overlayWindow?.webContents.send("ren:illustration", null);
+    }
     if (annotations.length || lesson) overlayWindow?.showInactive();
     else overlayWindow?.hide();
-    lastVisualLesson = lesson ? { lesson, displayId, createdAt: Date.now() } : null;
-    return { ...response, annotations, visualLesson: lesson ?? undefined };
+    let referenceImage: string | undefined;
+    if (lesson && explicitVisual && wantsReferenceRecreation(value.question)) {
+      const bounds = response.referenceRegion ?? focus;
+      if (bounds) {
+        const first = nativeImage.createFromDataURL(capture.frames[0]);
+        const size = first.getSize();
+        const rect = {
+          x: Math.floor(bounds.x * size.width), y: Math.floor(bounds.y * size.height),
+          width: Math.max(1, Math.floor(bounds.width * size.width)),
+          height: Math.max(1, Math.floor(bounds.height * size.height)),
+        };
+        const cropped = first.crop(rect);
+        if (!cropped.isEmpty()) {
+          const cropSize = cropped.getSize();
+          const image = Math.max(cropSize.width, cropSize.height) > 1024
+            ? cropped.resize({ width: Math.round(cropSize.width * 1024 / Math.max(cropSize.width, cropSize.height)) }) : cropped;
+          const dataUrl = image.toDataURL();
+          if (dataUrl.length < 10_000_000) referenceImage = dataUrl;
+        }
+      }
+    }
+    if (reuseVisual && lastVisualLesson) lastVisualLesson.createdAt = Date.now();
+    else lastVisualLesson = lesson ? { lesson, displayId, createdAt: Date.now(), referenceImage } : null;
+    return { ...response, answer: lesson ? answerForInteractiveScene(response.answer, lesson) : response.answer, annotations, visualLesson: reuseVisual ? undefined : lesson ?? undefined, reusedVisual: reuseVisual, autoIllustrate: Boolean(lesson && explicitVisual && !interactiveSceneFor(lesson)) };
+    } catch (error) {
+      if (pendingVisualDecision && lastVisualLesson && capture.generation === visualGeneration) overlayWindow?.showInactive();
+      throw error;
     } finally {
+      if (activeAskController === askController) activeAskController = null;
+      pendingVisualDecision = false;
       if (pendingAnswerToken === value.contextToken) pendingAnswerToken = null;
     }
   });
-  ipcMain.handle("ren:generate-illustration", async (event) => {
+  ipcMain.handle("ren:generate-illustration", async (event, automatic: unknown) => {
     requireMainRenderer(event);
+    if (voicePaused) throw new Error("Ren is paused. Resume it before drawing.");
+    const pauseEpoch = voicePauseEpoch;
     if (imageRequestBusy || imageRenderAbort) throw new Error("An illustration is already rendering.");
     const visual = lastVisualLesson;
-    if (!visual || !circleInputActive) throw new Error("A current visual lesson and pointer permission are required.");
+    if (!visual) throw new Error("A current visual lesson is required.");
     if (imageRequestedFor === visual.lesson) throw new Error("This lesson already requested an image. Ask a new question to create another.");
     imageRequestBusy = true;
     try {
       const hosted = await hostedImageCredentials();
       const credentials = hosted ? null : await visionCredentials();
+      if (voicePaused || pauseEpoch !== voicePauseEpoch) throw new Error("Ren was paused before drawing began.");
       if (!hosted && (!credentials || new URL(credentials.baseUrl).origin !== "https://api.openai.com")) throw new Error("Connect the Ren image service to create an illustration.");
       const detail = hosted
         ? `Ren will send this validated lesson manifest to ${new URL(hosted.baseUrl).host}:\n\n${JSON.stringify(imageManifest(visual.lesson), null, 2)}\n\nThe Ren service uses hosted image and vision models to generate and check the image. No screen screenshot is sent. This request uses your Ren illustration allowance.`
-        : `Ren will send this screen-derived lesson text to OpenAI:\n\n${imagePrompt(visual.lesson)}\n\nThe generated image is sent to your configured vision model to check part locations. No screen screenshot is sent to the image generator. Both requests may incur provider charges.`;
-      const decision = await dialog.showMessageBox(mainWindow!, { type: "question", title: "Create a Ren illustration", message: "Generate an illustration for this lesson?", detail, buttons: ["Cancel", "Generate image"], defaultId: 0, cancelId: 0, noLink: true });
-      if (decision.response !== 1) return false;
-      if (lastVisualLesson !== visual || !circleInputActive) throw new Error("The lesson changed before image generation began.");
+        : `Ren will send this screen-derived lesson text${visual.referenceImage ? " and a tight crop of the requested object" : ""} to OpenAI:\n\n${imagePrompt(visual.lesson, Boolean(visual.referenceImage))}\n\nThe generated image is sent to your configured vision model to check part locations. Both requests may incur provider charges.`;
+      if (automatic !== true) {
+        const decision = await dialog.showMessageBox(mainWindow!, { type: "question", title: "Create a Ren illustration", message: "Generate an illustration for this lesson?", detail, buttons: ["Cancel", "Generate image"], defaultId: 0, cancelId: 0, noLink: true });
+        if (decision.response !== 1) return false;
+      }
+      if (voicePaused || pauseEpoch !== voicePauseEpoch) throw new Error("Ren was paused before drawing began.");
+      if (lastVisualLesson !== visual) throw new Error("The lesson changed before image generation began.");
       imageRequestedFor = visual.lesson;
       const controller = new AbortController();
       imageRenderAbort = controller;
       const timeout = setTimeout(() => controller.abort(), 150_000);
-      const current = () => lastVisualLesson === visual && screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id === visual.displayId && !controller.signal.aborted;
+      const current = () => !voicePaused && pauseEpoch === voicePauseEpoch && lastVisualLesson === visual && screen.getAllDisplays().some((display) => display.id === visual.displayId) && !controller.signal.aborted;
       const decoded = (dataUrl: string) => {
         const image = nativeImage.createFromDataURL(dataUrl);
         const size = image.getSize();
@@ -441,27 +675,31 @@ app.whenReady().then(() => {
         const checked = decoded(preview);
         if (!checked) return;
         overlayWindow?.webContents.send("ren:illustration", { image: preview, preview: true, width: checked.size.width, height: checked.size.height });
+        if (!screenCaptureBusy && !pendingVisualDecision) overlayWindow?.showInactive();
       };
       const result = hosted
         ? await generateHostedIllustration(visual.lesson, hosted, preview, controller.signal)
         : await (async () => {
           const provider = credentials!;
-          const image = await generateIllustration(visual.lesson, provider.apiKey, preview, controller.signal);
+          const image = await generateIllustration(visual.lesson, provider.apiKey, preview, controller.signal, fetch, visual.referenceImage);
           if (!current()) throw new Error("The screen changed while the illustration was rendering.");
-          const registration = await locateImageParts(visual.lesson, image, provider.apiKey, provider.model, controller.signal, fetch, provider.baseUrl);
+          // Show the completed render while part registration runs.
+          preview(image);
+          const registration = await locateImageParts(visual.lesson, image, provider.apiKey, provider.model, controller.signal, fetch, provider.baseUrl).catch(() => null);
           return { image, registration };
         })();
       if (!current()) throw new Error("The screen changed while the illustration was rendering.");
       const checked = decoded(result.image);
       if (!checked) throw new Error("Image provider returned an unreadable image.");
       if (!current()) throw new Error("The screen changed while the illustration was being checked.");
-      if (!result.registration || !positionsOnOpaquePixels(checked.image.toBitmap(), checked.size.width, checked.size.height, result.registration)) {
-        throw new Error("The illustration could not be matched to every lesson part. Keeping the schematic.");
-      }
-      overlayWindow?.webContents.send("ren:illustration", { image: result.image, preview: false, width: checked.size.width, height: checked.size.height, registration: result.registration });
+      const visible = result.registration && filterOpaquePositions(checked.image.toBitmap(), checked.size.width, checked.size.height, result.registration);
+      const registration = visible && Object.keys(visible).length ? visible : undefined;
+      overlayWindow?.webContents.send("ren:illustration", { image: result.image, preview: false, width: checked.size.width, height: checked.size.height, registration });
+      if (!screenCaptureBusy && !pendingVisualDecision) overlayWindow?.showInactive();
       return true;
       } catch (error) {
-        overlayWindow?.webContents.send("ren:illustration", null);
+        if (lastVisualLesson === visual) overlayWindow?.webContents.send("ren:illustration", null);
+        if (imageRequestedFor === visual.lesson) imageRequestedFor = null;
         throw error;
       } finally {
         clearTimeout(timeout);
@@ -473,6 +711,9 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("ren:clear-annotations", (event) => {
     requireMainRenderer(event);
+    userSketch = null;
+    visualGeneration += 1;
+    pendingVisualDecision = false;
     imageRenderAbort?.abort();
     imageRenderAbort = null;
     captureSession.invalidate();
@@ -485,6 +726,7 @@ app.whenReady().then(() => {
   });
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+    else mainWindow?.webContents.send("ren:open-panel");
   });
 });
 

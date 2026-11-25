@@ -40,7 +40,7 @@ describe("hosted illustration service", () => {
     const stream = await response.text();
     expect(stream).toContain("event: preview");
     expect(stream).toContain("event: complete");
-    expect(stream.match(/event: preview/g)).toHaveLength(1);
+    expect(stream.match(/event: preview/g)).toHaveLength(2);
     expect(stream).toContain('"wing":{"x":0.3,"y":0.5}');
     expect(generate).toHaveBeenCalledWith(expect.objectContaining({ title: "Aircraft" }), "server-only-key", expect.any(Function), expect.any(AbortSignal));
     expect(register).toHaveBeenCalledWith(expect.any(Object), image, "server-only-key", "vision-model", expect.any(AbortSignal));
@@ -54,12 +54,12 @@ describe("hosted illustration service", () => {
     expect(generate).toHaveBeenCalledTimes(1);
   });
 
-  it("withholds final images when part registration fails", async () => {
+  it("keeps the rendered image when part registration fails", async () => {
     const { url } = await start({ register: vi.fn(async () => null) });
     const response = await post(url);
     const stream = await response.text();
-    expect(stream).toContain("event: error");
-    expect(stream).not.toContain("event: complete");
+    expect(stream).toContain("event: complete");
+    expect(stream).toContain('"registration":null');
   });
 
   it("delivers a verified image to the desktop adapter over HTTP", async () => {

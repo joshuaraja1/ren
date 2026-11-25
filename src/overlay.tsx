@@ -18,16 +18,19 @@ function Overlay() {
     <div className="overlay-canvas">
       <svg className="overlay-svg" viewBox="0 0 1000 1000" preserveAspectRatio="none">
         <defs><marker id="arrowhead" markerWidth="12" markerHeight="12" refX="9" refY="4" orient="auto"><path d="M0,0 L0,8 L10,4 z" /></marker></defs>
-        {annotations.map((item) => {
+        {annotations.map((item, index) => {
           const color = item.color || "#e7653a";
-          if (item.type === "arrow") return <g key={item.id} style={{ color }}><line x1={item.from.x * 1000} y1={item.from.y * 1000} x2={item.to.x * 1000} y2={item.to.y * 1000} markerEnd="url(#arrowhead)" /></g>;
-          if (item.type === "rectangle") return <rect key={item.id} x={item.at.x * 1000} y={item.at.y * 1000} width={item.width * 1000} height={item.height * 1000} rx="18" style={{ color }} />;
-          if (item.type === "path") return <polyline key={item.id} points={item.points.map((p) => `${p.x * 1000},${p.y * 1000}`).join(" ")} style={{ color }} />;
+          const style = { color, animationDelay: `${index * 100}ms` };
+          if (item.type === "arrow") return <g key={item.id} style={{ color }}><line pathLength={1} style={style} x1={item.from.x * 1000} y1={item.from.y * 1000} x2={item.to.x * 1000} y2={item.to.y * 1000} markerEnd="url(#arrowhead)" /></g>;
+          if (item.type === "rectangle") return <rect key={item.id} pathLength={1} x={item.at.x * 1000} y={item.at.y * 1000} width={item.width * 1000} height={item.height * 1000} rx="18" style={style} />;
+          if (item.type === "ellipse") return <ellipse key={item.id} pathLength={1} cx={item.at.x * 1000} cy={item.at.y * 1000} rx={item.radiusX * 1000} ry={item.radiusY * 1000} style={style} />;
+          if (item.type === "polygon") return <polygon key={item.id} pathLength={1} points={item.points.map((p) => `${p.x * 1000},${p.y * 1000}`).join(" ")} style={style} />;
+          if (item.type === "path") return <polyline key={item.id} pathLength={1} points={item.points.map((p) => `${p.x * 1000},${p.y * 1000}`).join(" ")} style={style} />;
           return null;
         })}
       </svg>
       {annotations.map((item) => {
-        const at = item.type === "arrow" ? item.to : item.type === "path" ? item.points.at(-1)! : item.at;
+        const at = item.type === "arrow" ? item.to : item.type === "path" || item.type === "polygon" ? item.points.at(-1)! : item.at;
         const style = { ...pos(at), color: item.color || "#e7653a" };
         if (item.type === "diagram") return <div key={item.id} className="diagram-card" style={style}><strong>{item.title}</strong>{item.lines.map((line) => <span key={line}>{line}</span>)}</div>;
         if (item.type === "point") return <div key={item.id} className="point-mark" style={style}>{item.label && <span>{item.label}</span>}</div>;

@@ -12,16 +12,21 @@ const png = pngBytes.toString("base64");
 const event = (type: string) => `data: ${JSON.stringify({ type, b64_json: png, output_format: "png" })}\n\n`;
 
 describe("illustration adapter", () => {
-  it("builds a bounded manifest-only prompt", () => {
+  it("builds a bounded prompt that shows each part's function", () => {
     expect(imagePrompt(lesson)).toContain('"label":"Wing"');
-    expect(imagePrompt(lesson)).not.toContain("Deflects air");
-    expect(imagePrompt(lesson)).toContain("Transparent background");
+    expect(imagePrompt(lesson)).toContain('"function":"Deflects air"');
+    expect(imagePrompt(lesson)).toContain("three-quarter view");
+    expect(imagePrompt(lesson)).toContain("physically plausible");
+    expect(imagePrompt(lesson)).toContain("transparent margin");
   });
   it("streams previews and accepts only a completed image", async () => {
     const preview = vi.fn();
     const fetcher = vi.fn(async (_url, init) => {
       const body = JSON.parse(String(init?.body));
       expect(body.stream).toBe(true);
+      expect(body.model).toBe("gpt-image-2.6-flare");
+      expect(body.complexity).toBe("medium");
+      expect(body.partial_images).toBe(1);
       expect(body.background).toBe("transparent");
       expect(body.prompt).not.toContain("data:image");
       return new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(event("image_generation.partial_image") + event("image_generation.completed"))); controller.close(); } }), { status: 200 });
@@ -29,6 +34,18 @@ describe("illustration adapter", () => {
     const image = await generateIllustration(lesson, "key", preview, new AbortController().signal, fetcher);
     expect(preview).toHaveBeenCalledTimes(1);
     expect(image).toMatch(/^data:image\/png;base64,/);
+  });
+  it("edits a bounded object crop and accepts edit events without an explicit output format", async () => {
+    const crop = `data:image/png;base64,${png}`;
+    const fetcher = vi.fn(async (url, init) => {
+      expect(url).toBe("https://api.openai.com/v1/images/edits");
+      const body = JSON.parse(String(init?.body));
+      expect(body.images).toEqual([{ image_url: crop }]);
+      expect(body.prompt).toContain("tight screen crop");
+      const stream = `data: ${JSON.stringify({ type: "image_edit.completed", b64_json: png })}\n\n`;
+      return new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(stream)); controller.close(); } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await expect(generateIllustration(lesson, "key", () => {}, new AbortController().signal, fetcher, crop)).resolves.toBe(crop);
   });
   it("rejects a stream with no final image", async () => {
     const fetcher = vi.fn(async () => new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(event("image_generation.partial_image"))); controller.close(); } }), { status: 200 })) as unknown as typeof fetch;

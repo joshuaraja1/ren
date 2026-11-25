@@ -20,7 +20,7 @@ function manifestToLesson(value: unknown): VisualLesson | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as Partial<ImageManifest>;
   if (!Array.isArray(raw.parts) || raw.parts.length < 2 || raw.parts.length > 12 || !Array.isArray(raw.connections)) return null;
-  const parts = raw.parts.map((part, index) => ({ id: part?.id, label: part?.label, explanation: "Illustrative component.", x: (index + 1) / (raw.parts!.length + 1), y: 0.5 }));
+  const parts = raw.parts.map((part, index) => ({ id: part?.id, label: part?.label, explanation: typeof part?.function === "string" ? part.function : "Illustrative component.", x: (index + 1) / (raw.parts!.length + 1), y: 0.5 }));
   return validateVisualLesson({ version: 1, title: raw.title, assumption: raw.assumption, placement: { x: 0, y: 0, width: 1, height: 1 }, parts, connections: raw.connections });
 }
 
@@ -104,8 +104,8 @@ export function createImageService(config: ImageServiceConfig, deps: { generate?
     };
     try {
       const image = await generate(lesson, config.openaiKey, (preview) => emit("preview", { image: preview }), controller.signal);
-      const registration = await register(lesson, image, config.openaiKey, config.visionModel, controller.signal);
-      if (!registration) throw new Error("unverified");
+      emit("preview", { image });
+      const registration = await register(lesson, image, config.openaiKey, config.visionModel, controller.signal).catch(() => null);
       emit("complete", { image, registration });
     } catch {
       emit("error", { message: "Ren could not verify every part of this image. Keeping the schematic." });

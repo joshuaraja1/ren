@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { locateImageParts, positionsOnOpaquePixels, validateImageRegistration } from "./image-registration.js";
+import { filterOpaquePositions, locateImageParts, positionsOnOpaquePixels, validateImageRegistration, validatePartialImageRegistration } from "./image-registration.js";
 import type { VisualLesson } from "./visual-lesson.js";
 
 const lesson: VisualLesson = { version: 1, title: "Aircraft", placement: { x: .1, y: .1, width: .7, height: .7 }, parts: [
@@ -19,6 +19,11 @@ describe("generated image registration", () => {
     expect(validateImageRegistration({ ...valid, parts: [valid.parts[0], { ...valid.parts[1], id: "wing" }] }, lesson)).toBeNull();
     expect(validateImageRegistration({ ...valid, parts: [valid.parts[0], { ...valid.parts[1], x: .29, y: .41 }] }, lesson)).toBeNull();
   });
+  it("keeps confidently located parts when other generated details are absent", () => {
+    const partial = { coherent: true, parts: [valid.parts[0], { ...valid.parts[1], present: false, confidence: .2 }] };
+    expect(validatePartialImageRegistration(partial, lesson)).toEqual({ wing: { x: .28, y: .4 } });
+    expect(validatePartialImageRegistration({ ...partial, coherent: false }, lesson)).toBeNull();
+  });
   it("accepts coding part IDs that overlap Object.prototype names", () => {
     const coding = { ...lesson, parts: [{ ...lesson.parts[0], id: "constructor" }, { ...lesson.parts[1], id: "toString" }] };
     const mapping = { coherent: true, parts: [{ ...valid.parts[0], id: "constructor" }, { ...valid.parts[1], id: "toString" }] };
@@ -33,14 +38,23 @@ describe("generated image registration", () => {
     }) as unknown as typeof fetch;
     await expect(locateImageParts(lesson, "data:image/png;base64,example", "key", "vision-model", new AbortController().signal, fetcher)).resolves.toEqual({ wing: { x: .28, y: .4 }, engine: { x: .71, y: .64 } });
   });
-  it("checks local images through the local vision model", async () => {
+  it("checks generated image locations through OpenAI", async () => {
     const fetcher = vi.fn(async (url, init) => {
-      expect(url).toBe("http://127.0.0.1:11434/v1/chat/completions");
+      expect(url).toBe("https://api.openai.com/v1/chat/completions");
       const body = JSON.parse(String(init?.body));
-      expect(body.think).toBe(false);
+      expect(body.think).toBeUndefined();
       return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(valid) } }] }), { status: 200 });
     }) as unknown as typeof fetch;
-    await expect(locateImageParts(lesson, "data:image/png;base64,example", "ollama", "qwen3.5:2b", new AbortController().signal, fetcher, "http://127.0.0.1:11434/v1")).resolves.toEqual({ wing: { x: .28, y: .4 }, engine: { x: .71, y: .64 } });
+    await expect(locateImageParts(lesson, "data:image/png;base64,example", "test-key", "gpt-5.4-mini", new AbortController().signal, fetcher, "https://api.openai.com/v1")).resolves.toEqual({ wing: { x: .28, y: .4 }, engine: { x: .71, y: .64 } });
+  });
+  it("uses GPT-6 Sol's supported reasoning setting for image checks", async () => {
+    const fetcher = vi.fn(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body).toMatchObject({ model: "gpt-6-sol", reasoning_effort: "low", max_completion_tokens: 1200 });
+      expect(body.temperature).toBeUndefined();
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(valid) } }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await expect(locateImageParts(lesson, "data:image/png;base64,example", "key", "gpt-6-sol", new AbortController().signal, fetcher)).resolves.not.toBeNull();
   });
   it("rejects part anchors in transparent padding", () => {
     const bitmap = new Uint8Array(20 * 20 * 4);
@@ -48,6 +62,8 @@ describe("generated image registration", () => {
     expect(positionsOnOpaquePixels(bitmap, 20, 20, registration)).toBe(false);
     for (let y = 0; y < 20; y += 1) for (let x = 0; x < 20; x += 1) bitmap[(y * 20 + x) * 4 + 3] = 255;
     expect(positionsOnOpaquePixels(bitmap, 20, 20, registration)).toBe(true);
+    for (let y = 0; y < 10; y += 1) for (let x = 0; x < 10; x += 1) bitmap[(y * 20 + x) * 4 + 3] = 0;
+    expect(filterOpaquePositions(bitmap, 20, 20, registration)).toEqual({ engine: registration.engine });
   });
   it("stops reading an oversized image-check response", async () => {
     const cancel = vi.fn();
