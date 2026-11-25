@@ -71,6 +71,10 @@
     ],
     "extraResources": [
       {
+        "from": "build/icon.png",
+        "to": "tray-icon.png"
+      },
+      {
         "from": "models/ren-kws",
         "to": "ren-kws"
       }

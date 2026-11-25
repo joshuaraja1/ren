@@ -59,6 +59,7 @@ export function App() {
   const awakeUntilRef = useRef(0);
   const suppressSpeechUntilRef = useRef(0);
   const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesRef = useRef<Message[]>([]);
   const questionRef = useRef<HTMLTextAreaElement | null>(null);
   const nativeWakeRef = useRef(false);
@@ -76,6 +77,7 @@ export function App() {
   const conversationOpenRef = useRef(false);
   const awaitingFollowUpRef = useRef(false);
   const pendingAudioRef = useRef<number[][]>([]);
+  const expandedRef = useRef(false);
   const askingRef = useRef(false);
   const visionOpenRef = useRef(false);
 
@@ -107,8 +109,13 @@ export function App() {
     if (askingRef.current) return;
     speechCancelRef.current?.();
     if (nativeSpeechRef.current) void startNativeDictation();
-    else setError("Voice is unavailable. Open Ren manually to check the microphone and Deepgram settings.");
+    else {
+      setError("Voice is unavailable. Open Ren manually to check the microphone and Deepgram settings.");
+      showCompanion();
+      hideCompanionSoon();
+    }
   }), []);
+  useEffect(() => window.ren?.onOpenPanel?.(() => { void setExpanded(true); }), []);
 
   useEffect(() => {
     void (async () => {
@@ -173,6 +180,7 @@ export function App() {
                 awaitingFollowUpRef.current = false;
                 stopNativeDictation();
                 setVoiceState("idle");
+                hideCompanionSoon();
                 return;
               }
               const session = dictationSessionRef.current;
@@ -187,6 +195,7 @@ export function App() {
                 awaitingFollowUpRef.current = false;
                 stopNativeDictation();
                 setVoiceState("idle");
+                hideCompanionSoon();
               }).finally(() => { if (session === dictationSessionRef.current) queuedFeedsRef.current -= 1; });
               if ((voicedFramesRef.current >= 2 && now - lastVoiceAtRef.current > 2000) || now - dictationStartedAtRef.current > (voicedFramesRef.current ? 30_000 : 10_000)) void finishNativeDictation();
               return;
@@ -275,9 +284,26 @@ export function App() {
   }, [permission?.ready, permission?.microphone]);
 
   async function setExpanded(value: boolean) {
+    expandedRef.current = value;
     setExpandedState(value);
     if (!value) { conversationOpenRef.current = false; awaitingFollowUpRef.current = false; stopNativeDictation(); setVoiceState("idle"); visionOpenRef.current = false; setVisionOpen(false); setVisionKey(""); }
     await window.ren?.setExpanded(value);
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    await window.ren?.setCompanionVisible?.(value);
+  }
+
+  function showCompanion() {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    void window.ren?.setCompanionVisible?.(true);
+  }
+
+  function hideCompanionSoon() {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => {
+      if (!expandedRef.current && !dictationActiveRef.current && !askingRef.current && voiceStateRef.current !== "responding" && voiceStateRef.current !== "processing") {
+        void window.ren?.setCompanionVisible?.(false);
+      }
+    }, 1_800);
   }
 
   function stopNativeDictation() {
@@ -294,6 +320,7 @@ export function App() {
     if (!window.ren || !nativeSpeechRef.current || dictationActiveRef.current) return;
     conversationOpenRef.current = true;
     awaitingFollowUpRef.current = false;
+    showCompanion();
     setError("");
     dictationActiveRef.current = true;
     setDictationActive(true);
@@ -325,6 +352,7 @@ export function App() {
       conversationOpenRef.current = false;
       setVoiceState("idle");
       setError(reason instanceof Error ? reason.message : "Deepgram is unavailable. Check your key and network in AI settings.");
+      hideCompanionSoon();
     }
   }
 
@@ -348,10 +376,12 @@ export function App() {
         if (conversationOpenRef.current) {
           awaitingFollowUpRef.current = true;
           setVoiceState("listening");
+          hideCompanionSoon();
         } else {
           setVoiceState("idle");
           if (!automatic || voicedFramesRef.current >= 2) setError("I didn't catch that. Click the microphone or type your question.");
           keepAwake();
+          hideCompanionSoon();
         }
       }
     } catch (reason) {
@@ -361,6 +391,7 @@ export function App() {
       conversationOpenRef.current = false;
       awaitingFollowUpRef.current = false;
       stopNativeDictation();
+      hideCompanionSoon();
     }
   }
 
@@ -557,13 +588,14 @@ export function App() {
     setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: text }]);
     setVoiceState("responding"); keepAwake();
     suppressSpeechUntilRef.current = Date.now() + 2_500;
-    void speak(text, () => setVoiceState(nativeWakeRef.current ? "idle" : "listening"));
+    void speak(text, () => { setVoiceState(nativeWakeRef.current ? "idle" : "listening"); if (nativeWakeRef.current) hideCompanionSoon(); });
   }
 
   function handleAmbientTranscript(transcript: string) {
     const wakeMatch = transcript.match(/\b(?:hey\s+(?:ren|run)|ren)\b/i);
     const alreadyAwake = Date.now() < awakeUntilRef.current;
     if (!wakeMatch && !alreadyAwake) return;
+    showCompanion();
     keepAwake(); setVoiceState("listening");
     const remainder = wakeMatch ? transcript.slice((wakeMatch.index ?? 0) + wakeMatch[0].length).replace(/^[,.:;\s-]+/, "") : transcript;
     if (remainder) void askQuestion(remainder);
@@ -579,6 +611,7 @@ export function App() {
     const clean = rawQuestion.trim(); if (!clean) return;
     if (askingRef.current) { setError("Ren is still answering. Try the circle again when the answer finishes."); return; }
     askingRef.current = true;
+    showCompanion();
     awaitingFollowUpRef.current = false;
     stopNativeDictation();
     setQuestion(""); setError(""); setVoiceState("processing"); keepAwake();
@@ -593,8 +626,9 @@ export function App() {
         if (nativeSpeechRef.current && conversationOpenRef.current && !visionOpenRef.current) {
           awaitingFollowUpRef.current = true;
           setVoiceState("listening");
+          hideCompanionSoon();
         }
-        else { setVoiceState("idle"); keepAwake(); }
+        else { setVoiceState("idle"); keepAwake(); hideCompanionSoon(); }
       });
       if (response.autoIllustrate) void illustrate(true);
     } catch (reason) {
@@ -602,7 +636,8 @@ export function App() {
       if (conversationOpenRef.current && nativeSpeechRef.current) {
         awaitingFollowUpRef.current = true;
         setVoiceState("listening");
-      } else setVoiceState("idle");
+        hideCompanionSoon();
+      } else { setVoiceState("idle"); hideCompanionSoon(); }
     }
     finally { askingRef.current = false; }
   }

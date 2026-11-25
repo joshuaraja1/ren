@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, nativeImage, screen, session, shell, systemPreferences } from "electron";
+import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, screen, session, shell, systemPreferences, Tray } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, writeFileSync } from "node:fs";
@@ -31,6 +31,7 @@ import type { VisualLesson } from "./visual-lesson.js";
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 let mainWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
 let selectedFocus: { displayId: number; region: FocusRegion; createdAt: number } | null = null;
 let circleInputActive = false;
 const captureSession = new CaptureSession();
@@ -138,6 +139,7 @@ function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      backgroundThrottling: false,
     },
   });
 
@@ -150,7 +152,6 @@ function createMainWindow() {
     const needsOnboarding = !access.ready || (process.platform === "darwin" && access.microphone !== "granted");
     positionMainWindow(needsOnboarding);
     if (needsOnboarding) mainWindow?.show();
-    else mainWindow?.showInactive();
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith("https://")) void shell.openExternal(url);
@@ -163,12 +164,25 @@ function createMainWindow() {
   else void mainWindow.loadFile(join(currentDirectory, "../dist/index.html"));
 }
 
+function createTray() {
+  const iconPath = app.isPackaged ? join(process.resourcesPath, "tray-icon.png") : join(app.getAppPath(), "build/icon.png");
+  const icon = nativeImage.createFromPath(iconPath).resize({ width: 18, height: 18 });
+  tray = new Tray(icon);
+  tray.setToolTip("Ren");
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: "Open Ren", click: () => mainWindow?.webContents.send("ren:open-panel") },
+    { label: "Start voice conversation", click: () => mainWindow?.webContents.send("ren:activate-voice") },
+    { type: "separator" },
+    { role: "quit" },
+  ]));
+}
+
 app.whenReady().then(() => {
   if (permissionStatus().ready && app.isPackaged) app.setLoginItemSettings({ openAtLogin: true });
   createMainWindow();
   createOverlayWindow();
+  createTray();
   voiceShortcutActive = globalShortcut.register("CommandOrControl+Shift+Space", () => {
-    if (!mainWindow?.isVisible()) mainWindow?.showInactive();
     mainWindow?.webContents.send("ren:activate-voice");
   });
   app.once("will-quit", () => globalShortcut.unregisterAll());
@@ -335,7 +349,16 @@ app.whenReady().then(() => {
     requireMainRenderer(event);
     if (process.platform === "darwin") await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${kind === "microphone" ? "Privacy_Microphone" : "Privacy_ScreenCapture"}`);
   });
-  ipcMain.handle("ren:set-expanded", (event, expanded: unknown) => { requireMainRenderer(event); positionMainWindow(expanded === true); });
+  ipcMain.handle("ren:set-expanded", (event, expanded: unknown) => {
+    requireMainRenderer(event);
+    positionMainWindow(expanded === true);
+    if (expanded === true) mainWindow?.showInactive();
+  });
+  ipcMain.handle("ren:set-companion-visible", (event, visible: unknown) => {
+    requireMainRenderer(event);
+    if (visible === true) mainWindow?.showInactive();
+    else if (visible === false) mainWindow?.hide();
+  });
 
   ipcMain.handle("ren:list-sources", async (event) => {
     requireMainRenderer(event);
@@ -601,6 +624,7 @@ app.whenReady().then(() => {
   });
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+    else mainWindow?.webContents.send("ren:open-panel");
   });
 });
 

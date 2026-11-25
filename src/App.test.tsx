@@ -34,6 +34,7 @@ describe("Ren ambient shell", () => {
 
   it("keeps the question box closed from the voice shortcut when dictation is unavailable", async () => {
     let activate: (() => void) | undefined;
+    let openPanel: (() => void) | undefined;
     window.ren = {
       platform: "darwin",
       permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
@@ -42,7 +43,9 @@ describe("Ren ambient shell", () => {
       voiceShortcutAvailable: async () => true,
       onFocusSelection: () => () => {},
       onActivateVoice: (listener: () => void) => { activate = listener; return () => { activate = undefined; }; },
+      onOpenPanel: (listener: () => void) => { openPanel = listener; return () => { openPanel = undefined; }; },
       setExpanded: async () => {},
+      setCompanionVisible: async () => {},
       speechStop: async () => {},
     } as unknown as RenBridge;
     try {
@@ -51,7 +54,7 @@ describe("Ren ambient shell", () => {
       act(() => activate?.());
       expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible();
       expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: /open ren/i }));
+      act(() => openPanel?.());
       expect(screen.getByRole("textbox", { name: /ask ren/i })).toBeVisible();
       expect(screen.getByText(/⌘⇧Space/)).toBeVisible();
     } finally { window.ren = undefined; }
@@ -210,6 +213,7 @@ describe("Ren ambient shell", () => {
     globalThis.AudioContext = FakeAudioContext as unknown as typeof AudioContext;
     Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } });
     const speechStart = vi.fn(async () => true);
+    const setCompanionVisible = vi.fn(async () => {});
     const wakeFeed = vi.fn(async () => true);
     const captureContext = vi.fn(async () => ({ frames: [], pointer: { x: .5, y: .5 } }));
     const ask = vi.fn(async ({ question }: { question: string }) => ({
@@ -230,7 +234,7 @@ describe("Ren ambient shell", () => {
       onSpeechData: (listener: typeof speechListener) => { speechListener = listener; return () => { speechListener = undefined; }; },
       speak: async (id: string) => { queueMicrotask(() => { speechListener?.({ id, chunk: "AAA=", done: true }); }); return true; },
       onFocusSelection: () => () => {}, onActivateVoice: () => () => {},
-      setExpanded: async () => {}, captureContext, ask,
+      setExpanded: async () => {}, setCompanionVisible, captureContext, ask,
     } as unknown as RenBridge;
     try {
       render(<App />);
@@ -240,6 +244,7 @@ describe("Ren ambient shell", () => {
       const silentFrame = { inputBuffer: { getChannelData: () => new Float32Array(2048) } };
       act(() => processor?.onaudioprocess?.(voiceFrame));
       await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(1));
+      expect(setCompanionVisible).toHaveBeenCalledWith(true);
       expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible();
       expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
       now += 2_100;
@@ -247,11 +252,13 @@ describe("Ren ambient shell", () => {
       await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
       expect(captureContext).toHaveBeenNthCalledWith(1, false, "Draw a diagram of the hover system");
       await waitFor(() => expect(screen.getByText(/ask your next question/i)).toBeVisible());
+      await waitFor(() => expect(setCompanionVisible).toHaveBeenCalledWith(false), { timeout: 2_500 });
       expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
       expect(speechStart).toHaveBeenCalledTimes(1);
       now += 400;
       act(() => { for (let index = 0; index < 3; index += 1) processor?.onaudioprocess?.(quietFollowUpFrame); });
       await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(2));
+      expect(setCompanionVisible).toHaveBeenLastCalledWith(true);
       expect(wakeFeed).toHaveBeenCalledTimes(1);
       now += 2_100;
       act(() => processor?.onaudioprocess?.(silentFrame));
