@@ -65,7 +65,7 @@ export type RenBridge = {
   clearHostedImageSettings(): Promise<HostedImageStatus>;
   enableCircleInput(): Promise<AmbientStatus>;
   requestPermissions(): Promise<AmbientStatus>;
-  openPermissionSettings(): Promise<void>;
+  openPermissionSettings(kind?: "screen" | "microphone"): Promise<void>;
   setExpanded(expanded: boolean): Promise<void>;
   captureContext(): Promise<ScreenContext>;
   wakeAvailable(): Promise<boolean>;

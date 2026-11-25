@@ -42,6 +42,47 @@ describe("Ren ambient shell", () => {
     expect(screen.getByLabelText(/ren access token/i)).toHaveAttribute("type", "password");
   });
 
+  it("attempts screen access before opening macOS privacy settings", async () => {
+    const steps: string[] = [];
+    const denied = { ready: false, microphone: "not-determined", screen: "denied", interaction: "not-granted" };
+    window.ren = {
+      platform: "darwin",
+      permissionStatus: async () => denied,
+      requestPermissions: async () => { steps.push("request"); return denied; },
+      openPermissionSettings: async () => { steps.push("settings"); },
+      setExpanded: async () => {},
+      onFocusSelection: () => () => {},
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      fireEvent.click(await screen.findByRole("button", { name: /request access and open system settings/i }));
+      await waitFor(() => expect(steps).toEqual(["request", "settings"]));
+    } finally { window.ren = undefined; }
+  });
+
+  it("keeps text learning available when microphone access is denied", async () => {
+    const requestPermissions = vi.fn(async () => ({ ready: true, microphone: "denied", screen: "granted", interaction: "not-granted" }));
+    const openPermissionSettings = vi.fn(async () => {});
+    window.ren = {
+      platform: "darwin",
+      permissionStatus: async () => ({ ready: true, microphone: "denied", screen: "granted", interaction: "not-granted" }),
+      primarySource: async () => ({ id: "screen", name: "Main display", thumbnail: "" }),
+      wakeAvailable: async () => false,
+      requestPermissions,
+      openPermissionSettings,
+      onFocusSelection: () => () => {},
+      setExpanded: async () => {},
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      fireEvent.click(await screen.findByRole("button", { name: /enable microphone to talk to ren/i }));
+      await waitFor(() => expect(openPermissionSettings).toHaveBeenCalledWith("microphone"));
+      expect(requestPermissions).not.toHaveBeenCalled();
+      expect(screen.queryByRole("heading", { name: /give ren permission once/i })).not.toBeInTheDocument();
+      expect(screen.getByRole("textbox", { name: /ask ren/i })).toBeVisible();
+    } finally { window.ren = undefined; }
+  });
+
   it("asks about the circled region without requiring a typed prompt", async () => {
     let selected: (() => void) | undefined;
     const ask = vi.fn(async () => ({ answer: "Look at the circled part.", annotations: [], provider: "demo" as const }));

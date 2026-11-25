@@ -16,8 +16,18 @@ let stopHook: (() => void) | null = null;
 
 export function startCircleInput(hooks: Hooks) {
   if (running) return true;
+  let removeListeners: (() => void) | null = null;
   try {
     const { uIOhook, UiohookKey } = require("uiohook-napi") as typeof import("uiohook-napi");
+    const events = ["keydown", "keyup", "mousedown", "wheel", "mousemove"] as const;
+    const previous = new Map(events.map((event) => [event, uIOhook.listeners(event)]));
+    removeListeners = () => {
+      for (const event of events) {
+        for (const listener of uIOhook.listeners(event)) {
+          if (!previous.get(event)?.includes(listener)) uIOhook.removeListener(event, listener as (...args: unknown[]) => void);
+        }
+      }
+    };
     const modifierKeys = new Set<number>([UiohookKey.Ctrl, UiohookKey.CtrlRight, UiohookKey.Alt, UiohookKey.AltRight]);
     let active: { displayId: number; bounds: Electron.Rectangle; points: AbsolutePoint[] } | null = null;
     let lastDrawn = 0;
@@ -57,10 +67,11 @@ export function startCircleInput(hooks: Hooks) {
       }
     });
     uIOhook.start();
-    stopHook = () => uIOhook.stop();
+    stopHook = () => { uIOhook.stop(); removeListeners?.(); };
     running = true;
     return true;
   } catch {
+    removeListeners?.();
     return false;
   }
 }

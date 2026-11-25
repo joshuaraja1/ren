@@ -96,13 +96,21 @@ export function App() {
     void (async () => {
       const status = window.ren ? await window.ren.permissionStatus() : readyStatus;
       setPermission(status);
-      if (!status.ready || !window.ren) await setExpanded(true);
+      if (!status.ready || status.microphone !== "granted" || !window.ren) await setExpanded(true);
       if (status.ready) await startAutomaticCapture();
     })();
   }, []);
 
   useEffect(() => {
-    if (!permission?.ready) return;
+    if (!window.ren || (permission?.ready && permission.interaction === "granted" && permission.microphone === "granted")) return;
+    const refresh = () => { void window.ren?.permissionStatus().then(setPermission).catch(() => {}); };
+    window.addEventListener("focus", refresh);
+    const timer = window.setInterval(refresh, 2500);
+    return () => { window.removeEventListener("focus", refresh); window.clearInterval(timer); };
+  }, [permission?.ready, permission?.interaction, permission?.microphone]);
+
+  useEffect(() => {
+    if (!permission?.ready || (window.ren && permission.microphone !== "granted")) return;
     let disposed = false;
     let media: MediaStream | null = null;
     let context: AudioContext | null = null;
@@ -213,7 +221,7 @@ export function App() {
       void window.ren?.wakeStop();
       void window.ren?.speechStop();
     };
-  }, [permission?.ready]);
+  }, [permission?.ready, permission?.microphone]);
 
   async function setExpanded(value: boolean) {
     expandedRef.current = value;
@@ -296,8 +304,44 @@ export function App() {
     try {
       const status = window.ren ? await window.ren.requestPermissions() : readyStatus;
       setPermission(status);
-      if (status.ready) { await startAutomaticCapture(); greet("All set. From now on, just say “Hey Ren.”"); }
+      if (status.ready) { await startAutomaticCapture(); greet(status.microphone === "granted" ? "All set. From now on, just say “Hey Ren.”" : "Screen access is ready. Type a question to begin."); }
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Permissions could not be completed."); }
+  }
+
+  async function openPermissionSettings() {
+    if (!window.ren) return;
+    try {
+      // A capture attempt registers Ren with macOS before opening the list.
+      const status = await window.ren.requestPermissions();
+      setPermission(status);
+      if (status.ready) { await startAutomaticCapture(); greet(status.microphone === "granted" ? "All set. From now on, just say “Hey Ren.”" : "Screen access is ready. Type a question to begin."); }
+      else await window.ren.openPermissionSettings();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Ren couldn’t request screen access."); }
+  }
+
+  async function enableMicrophone() {
+    if (!window.ren) return;
+    setError("");
+    try {
+      // Request the device from the focused renderer. On macOS this presents
+      // the TCC prompt for the signed app and also exercises the media path
+      // that the wake listener will use after permission is granted.
+      if (navigator.mediaDevices?.getUserMedia) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          stream.getTracks().forEach((track) => track.stop());
+        } catch {
+          // A previous denial is handled by the native status below.
+        }
+      }
+      let status = await window.ren.permissionStatus();
+      if (status.microphone === "not-determined") status = await window.ren.requestPermissions();
+      setPermission(status);
+      if (status.microphone !== "granted") {
+        await window.ren.openPermissionSettings("microphone");
+        setError("After enabling Ren in Microphone settings, quit and reopen Ren so macOS applies the grant.");
+      }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Ren couldn’t request microphone access."); }
   }
 
   async function enableCircle() {
@@ -305,7 +349,7 @@ export function App() {
     const status = await window.ren.enableCircleInput();
     setPermission(status);
     if (status.interaction !== "granted") setError(window.ren.platform === "darwin"
-      ? "Allow Ren in Accessibility and Input Monitoring in System Settings, then click Enable circle again."
+      ? "Allow Ren in Accessibility in System Settings, then return to Ren. If it is already on, remove the old Ren entry and add this signed Ren app."
       : "The global circle shortcut is unavailable on this desktop. You can still point and ask Ren.");
     else setError("");
   }
@@ -434,14 +478,14 @@ export function App() {
     finally { setImageRendering(false); }
   }
 
-  if (!expanded) return <button className={`ren-pebble state-${voiceState}`} onClick={() => void setExpanded(true)} aria-label={`Open Ren. ${voiceLabels[voiceState].title}`}><span className="pebble-mark"><Spark /></span><span className="pebble-copy"><strong>{voiceLabels[voiceState].title}</strong><small>{voiceLabels[voiceState].detail}</small></span><VoiceMeter active={voiceState !== "idle"} /><span className="privacy-dot" aria-hidden="true" /></button>;
+  if (!expanded) return <button className={`ren-pebble state-${voiceState}`} onClick={() => void setExpanded(true)} aria-label={`Open Ren. ${permission?.microphone === "granted" ? voiceLabels[voiceState].title : "Microphone setup needed"}`}><span className="pebble-mark"><Spark /></span><span className="pebble-copy"><strong>{permission?.microphone === "granted" ? voiceLabels[voiceState].title : "Microphone off"}</strong><small>{permission?.microphone === "granted" ? voiceLabels[voiceState].detail : "Open Ren to enable voice"}</small></span><VoiceMeter active={voiceState !== "idle"} /><span className="privacy-dot" aria-hidden="true" /></button>;
 
   return <main className="ambient-panel">
     <header className={`ambient-header state-${voiceState}`}><div className="companion-orb"><Spark /></div><div className="header-copy"><p><span className="state-dot" /> REN</p><h1>{voiceState === "processing" ? "Looking closely…" : voiceState === "listening" ? "I’m listening." : voiceState === "responding" ? "Let’s work through it." : "How can I help?"}</h1></div><VoiceMeter active={voiceState !== "idle"} /><button className="collapse-button" onClick={() => void setExpanded(false)} aria-label="Collapse Ren">⌃</button></header>
 
-    {!permission?.ready ? <section className="onboarding-card"><span className="step-kicker">ONE-TIME SETUP</span><h2>Give Ren permission once.</h2><p>Allow microphone, screen recording, and pointer access now. After that, Ren starts quietly with your computer and only captures the screen when you ask a question.</p><div className="permission-row"><span>Microphone</span><b>{permission?.microphone ?? "checking"}</b></div><div className="permission-row"><span>Screen recording</span><b>{permission?.screen ?? "checking"}</b></div><div className="permission-row"><span>Circle shortcut</span><b>{permission?.interaction ?? "checking"}</b></div><button className="allow-button" onClick={() => void requestOneTimePermissions()}>Allow and continue</button>{permission && !permission.ready && <button className="settings-link" onClick={() => void window.ren?.openPermissionSettings()}>Open system permission settings</button>}</section> : <>
+    {!permission?.ready ? <section className="onboarding-card"><span className="step-kicker">ONE-TIME SETUP</span><h2>Give Ren permission once.</h2><p>Allow microphone, screen recording, and pointer access now. After that, Ren starts quietly with your computer and only captures the screen when you ask a question.</p><div className="permission-row"><span>Microphone</span><b>{permission?.microphone ?? "checking"}</b></div><div className="permission-row"><span>Screen recording</span><b>{permission?.screen ?? "checking"}</b></div><div className="permission-row"><span>Circle shortcut</span><b>{permission?.interaction ?? "checking"}</b></div><button className="allow-button" onClick={() => void requestOneTimePermissions()}>Allow and continue</button>{permission && !permission.ready && <button className="settings-link" onClick={() => void openPermissionSettings()}>Request access and open system settings</button>}</section> : <>
       <div className="ambient-status"><span className="privacy-lock" aria-hidden="true">●</span><span>{vision.mode === "demo" ? "Demo · screen stays local" : vision.mode === "available" ? `Local model ready · connect once` : vision.mode === "local" ? `Local service · ${vision.model}` : `On-demand · ${vision.host}`}</span><em>·</em><span className="display-name">{source?.name ?? "connecting to display"}</span><button className="provider-chip" onClick={openVisionSettings}>{vision.mode === "demo" || vision.mode === "available" ? "Connect AI" : "AI settings"}</button></div>
-      {visionOpen ? <form className="vision-settings" onSubmit={(event) => void saveVision(event)}><span className="step-kicker">SCREEN-AWARE ANSWERS</span><h2>Connect a vision model</h2><p>{vision.mode === "available" ? `Ren found ${vision.model} on a local service at 127.0.0.1:11434. If you connect, that local process will receive screen snapshots only when you ask Ren a question. Check that you trust the local service before continuing.` : vision.mode === "local" ? `Ren uses ${vision.model} through the local service at 127.0.0.1:11434 when you ask a screen question. You can also configure a cloud provider below.` : <>Ren sends your question and a screen snapshot to <strong>{visionBase ? (() => { try { return new URL(visionBase).host; } catch { return "the provider"; } })() : "the provider"}</strong> only when you ask. The microphone stays local. Your provider may charge for requests.</>}</p>{vision.mode === "available" && <button type="button" className="allow-button" onClick={() => void connectLocal()}>Use local model · no API key</button>}<label>Provider URL<input aria-label="Provider URL" value={visionBase} onChange={(event) => setVisionBase(event.target.value)} spellCheck={false} /></label><label>Vision model<input aria-label="Vision model" value={visionModel} onChange={(event) => setVisionModel(event.target.value)} placeholder="Model name" spellCheck={false} /></label><label>API key<input aria-label="API key" type="password" value={visionKey} onChange={(event) => setVisionKey(event.target.value)} placeholder={vision.mode === "connected" ? "Leave blank to keep saved key" : "Paste your provider key"} autoComplete="off" /></label><div className="vision-actions"><button type="submit" className="allow-button">Save provider</button><button type="button" onClick={() => { visionOpenRef.current = false; setVisionOpen(false); setVisionKey(""); setError(""); }}>Back to Ren</button>{(vision.mode === "connected" || vision.mode === "local") && <button type="button" onClick={() => void clearVision()}>{vision.mode === "local" ? "Disconnect local model" : "Remove saved key"}</button>}</div><div className="hosted-settings"><span className="step-kicker">REALISTIC ON-SCREEN IMAGES</span><h2>Ren image service</h2><p>{hosted.mode === "demo" ? "Connect the Ren hosted image service once. Your validated lesson part names and connections go to this service when you approve an illustration; no screen screenshot is sent. The service uses your Ren illustration allowance." : `Connected to ${hosted.host}. Illustration requests use your Ren allowance; no screen screenshot is sent.`}</p><label>Ren image service URL<input aria-label="Ren image service URL" value={hostedUrl} onChange={(event) => setHostedUrl(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void saveHosted(); } }} placeholder="https://images.ren.example/v1" spellCheck={false} /></label><label>Ren access token<input aria-label="Ren access token" type="password" value={hostedToken} onChange={(event) => setHostedToken(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void saveHosted(); } }} placeholder={hosted.mode === "connected" ? "Leave blank to keep saved token" : "Enter your Ren access token"} autoComplete="off" /></label><div className="vision-actions"><button type="button" className="allow-button" onClick={() => void saveHosted()}>Save image service</button>{hosted.mode === "connected" && <button type="button" onClick={() => void clearHosted()}>Disconnect service</button>}</div></div></form> : <section className="ambient-conversation" aria-live="polite">{(vision.mode === "demo" || vision.mode === "available") && <button className="demo-notice" onClick={openVisionSettings}>{vision.mode === "available" ? "Local vision model found. Connect it once to answer questions about your screen." : "Demo answers cannot inspect your screen. Connect a vision model for specific guidance."}</button>}{messages.length === 0 && <div className="empty-conversation"><div className="cursor-cue"><Spark /><span /></div><p>Point at anything on your screen</p><strong>“Hey Ren, explain this.”</strong><small>I’ll look, talk it through, and draw when it helps.</small></div>}{messages.map((message, index) => <article key={message.id} className={message.role}><span>{message.role === "assistant" ? `REN${message.provider ? ` · ${message.provider.toUpperCase()}` : ""}` : "YOU"}</span><p>{message.content}</p>{index === messages.length - 1 && message.followUps?.length ? <div className="follow-ups" aria-label="Suggested follow-up questions">{message.followUps.map((prompt) => <button key={prompt} onClick={() => void askQuestion(prompt)} disabled={voiceState === "processing"}>{prompt}<b aria-hidden="true">↗</b></button>)}</div> : null}</article>)}</section>}
+      {visionOpen ? <form className="vision-settings" onSubmit={(event) => void saveVision(event)}><span className="step-kicker">SCREEN-AWARE ANSWERS</span><h2>Connect a vision model</h2><p>{vision.mode === "available" ? `Ren found ${vision.model} on a local service at 127.0.0.1:11434. If you connect, that local process will receive screen snapshots only when you ask Ren a question. Check that you trust the local service before continuing.` : vision.mode === "local" ? `Ren uses ${vision.model} through the local service at 127.0.0.1:11434 when you ask a screen question. You can also configure a cloud provider below.` : <>Ren sends your question and a screen snapshot to <strong>{visionBase ? (() => { try { return new URL(visionBase).host; } catch { return "the provider"; } })() : "the provider"}</strong> only when you ask. The microphone stays local. Your provider may charge for requests.</>}</p>{vision.mode === "available" && <button type="button" className="allow-button" onClick={() => void connectLocal()}>Use local model · no API key</button>}<label>Provider URL<input aria-label="Provider URL" value={visionBase} onChange={(event) => setVisionBase(event.target.value)} spellCheck={false} /></label><label>Vision model<input aria-label="Vision model" value={visionModel} onChange={(event) => setVisionModel(event.target.value)} placeholder="Model name" spellCheck={false} /></label><label>API key<input aria-label="API key" type="password" value={visionKey} onChange={(event) => setVisionKey(event.target.value)} placeholder={vision.mode === "connected" ? "Leave blank to keep saved key" : "Paste your provider key"} autoComplete="off" /></label><div className="vision-actions"><button type="submit" className="allow-button">Save provider</button><button type="button" onClick={() => { visionOpenRef.current = false; setVisionOpen(false); setVisionKey(""); setError(""); }}>Back to Ren</button>{(vision.mode === "connected" || vision.mode === "local") && <button type="button" onClick={() => void clearVision()}>{vision.mode === "local" ? "Disconnect local model" : "Remove saved key"}</button>}</div><div className="hosted-settings"><span className="step-kicker">REALISTIC ON-SCREEN IMAGES</span><h2>Ren image service</h2><p>{hosted.mode === "demo" ? "Connect the Ren hosted image service once. Your validated lesson part names and connections go to this service when you approve an illustration; no screen screenshot is sent. The service uses your Ren illustration allowance." : `Connected to ${hosted.host}. Illustration requests use your Ren allowance; no screen screenshot is sent.`}</p><label>Ren image service URL<input aria-label="Ren image service URL" value={hostedUrl} onChange={(event) => setHostedUrl(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void saveHosted(); } }} placeholder="https://images.ren.example/v1" spellCheck={false} /></label><label>Ren access token<input aria-label="Ren access token" type="password" value={hostedToken} onChange={(event) => setHostedToken(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void saveHosted(); } }} placeholder={hosted.mode === "connected" ? "Leave blank to keep saved token" : "Enter your Ren access token"} autoComplete="off" /></label><div className="vision-actions"><button type="button" className="allow-button" onClick={() => void saveHosted()}>Save image service</button>{hosted.mode === "connected" && <button type="button" onClick={() => void clearHosted()}>Disconnect service</button>}</div></div></form> : <section className="ambient-conversation" aria-live="polite">{permission?.microphone !== "granted" && window.ren && <button className="demo-notice" onClick={() => void enableMicrophone()}>Enable microphone to talk to Ren. I’ll open the macOS setting if needed.</button>}{(vision.mode === "demo" || vision.mode === "available") && <button className="demo-notice" onClick={openVisionSettings}>{vision.mode === "available" ? "Local vision model found. Connect it once to answer questions about your screen." : "Demo answers cannot inspect your screen. Connect a vision model for specific guidance."}</button>}{messages.length === 0 && <div className="empty-conversation"><div className="cursor-cue"><Spark /><span /></div><p>Point at anything on your screen</p><strong>“Hey Ren, explain this.”</strong><small>I’ll look, talk it through, and draw when it helps.</small></div>}{messages.map((message, index) => <article key={message.id} className={message.role}><span>{message.role === "assistant" ? `REN${message.provider ? ` · ${message.provider.toUpperCase()}` : ""}` : "YOU"}</span><p>{message.content}</p>{index === messages.length - 1 && message.followUps?.length ? <div className="follow-ups" aria-label="Suggested follow-up questions">{message.followUps.map((prompt) => <button key={prompt} onClick={() => void askQuestion(prompt)} disabled={voiceState === "processing"}>{prompt}<b aria-hidden="true">↗</b></button>)}</div> : null}</article>)}</section>}
       {error && <div className="ambient-error" role="alert">{error}</div>}
       {!visionOpen && <><form className="ambient-composer" onSubmit={submit}><button type="button" className={`listen-button state-${voiceState}`} onClick={() => { if (nativeSpeechRef.current) { if (dictationActiveRef.current) void finishNativeDictation(); else void startNativeDictation(); return; } if (!recognitionRef.current) { setError("Local speech recognition is unavailable. Type your question here."); questionRef.current?.focus(); return; } keepAwake(); try { recognitionRef.current.start(); setVoiceState("listening"); } catch { setError("Speech recognition could not start. Type your question instead."); questionRef.current?.focus(); } }} aria-label={dictationActiveRef.current ? "Finish speaking" : "Start listening"}><MicGlyph /></button><textarea ref={questionRef} aria-label="Ask Ren" value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askQuestion(question); } }} placeholder="Ask about what you’re pointing at…" rows={1} /><button type="submit" className="ask-button" disabled={!question.trim() || voiceState === "processing"} aria-label="Send question">↑</button></form><footer><span><i aria-hidden="true" /> Hold {window.ren?.platform === "darwin" ? "Control+Option" : "Control+Alt"} and circle to focus</span>{permission?.interaction !== "granted" && <button onClick={() => void enableCircle()}>Enable circle</button>}{imageAvailable && (hosted.mode !== "demo" || vision.host === "api.openai.com") && permission?.interaction === "granted" && <button onClick={() => void illustrate()} disabled={imageRendering}>{imageRendering ? "Rendering…" : hosted.mode !== "demo" ? "Illustrate on screen · Ren cloud" : "Illustrate on screen · OpenAI may charge"}</button>}<button onClick={() => { setImageAvailable(false); void window.ren?.clearAnnotations(); }}>Clear drawings</button></footer></>}
     </>}
