@@ -1,3 +1,5 @@
+import { validateSceneSpec, type SceneSpec } from "./scene-spec.js";
+
 export type VisualPart = {
   id: string;
   label: string;
@@ -14,8 +16,10 @@ export type VisualConnection = {
 
 export type VisualLesson = {
   version: 1;
+  dimension?: 2 | 3;
   layout?: "centered";
   scene?: "f35b-hover" | "conceptual-3d";
+  model?: SceneSpec;
   title: string;
   assumption?: string;
   placement: { x: number; y: number; width: number; height: number };
@@ -82,9 +86,13 @@ export function validateVisualLesson(value: unknown): VisualLesson | null {
   }
   if (reached.size !== parts.length) return null;
 
+  const model = raw.model ? validateSceneSpec(raw.model, ids) : null;
+
   return {
-    version: 1, title, assumption: clean(raw.assumption, 180) || undefined,
+    version: 1, ...(raw.dimension === 2 || raw.dimension === 3 ? { dimension: raw.dimension } : {}),
+    title, assumption: clean(raw.assumption, 180) || undefined,
     placement: { x: placement.x, y: placement.y, width: placement.width, height: placement.height },
     parts, connections,
+    ...(model ? { model } : {}),
   };
 }

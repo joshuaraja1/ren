@@ -1,7 +1,7 @@
 # Connected visual lessons
 
-Status: validated schema and first on-screen schematic implementation. An
-optional realistic image preview is in progress. Tracked in
+Status: subject-derived 2D diagrams and approximate rotatable 3D teaching models
+are implemented. Realistic arbitrary meshes remain future work. Tracked in
 [issue #35](https://github.com/joshuaraja1/ren/issues/35).
 
 ## Experience
@@ -19,12 +19,29 @@ the lesson when possible.
 There is one visual lesson system for every subject. A learner does not install
 or choose a diagram, aircraft, chemistry, or coding tool.
 
+An explicit 2D or flat request draws a 2D diagram. An explicit 3D object request
+uses the same validated lesson parts to plan bounded 3D primitives and anchors
+for that subject; the F-35 is no longer a special routing rule. The resulting
+model rotates with cursor movement. Parts remain connected to the geometry as
+it turns. Longer lessons page their callouts when the learner holds the cursor
+in a top corner, so orbiting alone does not replace labels. Geometry is an
+illustrative approximation; it cannot promise a faithful mesh of every object
+or exact internal engineering detail. A separate 3D asset provider would be
+needed for high-fidelity arbitrary meshes.
+
 ## Rendering contract
 
 The answer model returns a small versioned manifest: a title, any assumption,
 component IDs, names, short explanations, an on-screen placement rectangle,
 positions inside that rectangle, and labeled connections. Main validates this
 manifest before it reaches the overlay renderer.
+For 3D, a second bounded model plan specifies primitive kind, dimensions,
+rotation, color, and a 3D anchor for every lesson part. The renderer only
+constructs fixed Three.js shapes from the validated plan; it never executes
+model-supplied code or loads remote mesh URLs. A connected vector preview is
+shown while this plan is prepared. If planning or WebGL fails, Ren keeps a 2D
+part diagram visible. Dense 2D and 3D lessons retain every part and page the
+callouts according to display height.
 Unknown fields, unbounded text, missing endpoints, and disconnected graphs do
 not become executable or displayable geometry. The first implementation is
 [`visual-lesson.ts`](../electron/visual-lesson.ts).

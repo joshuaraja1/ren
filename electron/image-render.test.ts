@@ -19,6 +19,12 @@ describe("illustration adapter", () => {
     expect(imagePrompt(lesson)).toContain("physically plausible");
     expect(imagePrompt(lesson)).toContain("transparent margin");
   });
+  it("draws an explicitly flat 2D diagram without requesting an isometric model", () => {
+    const prompt = imagePrompt({ ...lesson, title: "Circuit current", dimension: 2 });
+    expect(prompt).toContain("flat 2D explanatory diagram");
+    expect(prompt).not.toContain("isometric 3D");
+    expect(prompt).not.toContain("three-quarter view");
+  });
   it("streams previews and accepts only a completed image", async () => {
     const preview = vi.fn();
     const fetcher = vi.fn(async (_url, init) => {

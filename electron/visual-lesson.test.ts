@@ -42,4 +42,10 @@ describe("visual lesson contract", () => {
     expect(result?.parts[0].label.length).toBe(60);
     expect(result?.parts[0].label).not.toContain("\n");
   });
+
+  it("preserves only explicit 2D or 3D dimensions", () => {
+    expect(validateVisualLesson({ ...valid(), dimension: 2 })?.dimension).toBe(2);
+    expect(validateVisualLesson({ ...valid(), dimension: 3 })?.dimension).toBe(3);
+    expect(validateVisualLesson({ ...valid(), dimension: 4 })?.dimension).toBeUndefined();
+  });
 });

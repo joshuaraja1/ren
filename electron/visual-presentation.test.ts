@@ -33,7 +33,7 @@ it("keeps the stage centered and within a smaller desktop display", () => {
   expect(centered.placement.y + centered.placement.height).toBeLessThanOrEqual(1);
 });
 
-it("fits a large connected lesson into a short display without dangling connections", () => {
+it("preserves a large connected lesson for paged viewing on a short display", () => {
   const crowded: VisualLesson = {
     ...lesson,
     parts: Array.from({ length: 12 }, (_, index) => ({
@@ -42,10 +42,10 @@ it("fits a large connected lesson into a short display without dangling connecti
     connections: Array.from({ length: 11 }, (_, index) => ({ from: `part${index}`, to: `part${index + 1}`, label: "drives" })),
   };
   const centered = centerRequestedLesson(crowded, 1280, 700);
-  expect(centered.parts).toHaveLength(3);
-  expect(centered.parts.every((part) => part.explanation.length <= 120)).toBe(true);
+  expect(centered.parts).toHaveLength(12);
+  expect(centered.parts.every((part) => part.explanation === crowded.parts[0].explanation)).toBe(true);
   const retained = new Set(centered.parts.map((part) => part.id));
-  expect(centered.connections).toHaveLength(2);
+  expect(centered.connections).toHaveLength(11);
   expect(centered.connections.every(({ from, to }) => retained.has(from) && retained.has(to))).toBe(true);
   expect(crowded.parts).toHaveLength(12);
 });
@@ -65,7 +65,24 @@ it.each([[800, 800], [800, 600]])("keeps a dense lesson legible on a narrow %i×
   expect(centered.layout).toBe("centered");
   expect(centered.placement.x + centered.placement.width / 2).toBeCloseTo(.5);
   expect(centered.placement.y + centered.placement.height / 2).toBeCloseTo(.5);
-  expect(centered.parts.length).toBeLessThanOrEqual(2);
+  expect(centered.parts).toHaveLength(12);
   const retained = new Set(centered.parts.map((part) => part.id));
   expect(centered.connections.every(({ from, to }) => retained.has(from) && retained.has(to))).toBe(true);
+});
+
+it("preserves every part of a 3D model while the overlay pages its callouts", () => {
+  const parts = Array.from({ length: 10 }, (_, index) => ({ id: `part${index}`, label: `Part ${index}`, explanation: `Function ${index}`, x: .5, y: .5 }));
+  const lessonWithModel: VisualLesson = {
+    ...lesson, parts,
+    connections: parts.slice(1).map((part, index) => ({ from: parts[index].id, to: part.id, label: "feeds" })),
+    model: {
+      version: 1, subject: "Turbine", fidelity: "conceptual",
+      primitives: parts.map((part, index) => ({ partId: part.id, kind: "box" as const, position: [index * .2, 0, 0], scale: [.2, .2, .2], rotation: [0, 0, 0], color: "#224466" })),
+      anchors: parts.map((part, index) => ({ partId: part.id, position: [index * .2, 0, 0] })),
+    },
+  };
+  const centered = centerRequestedLesson(lessonWithModel, 1600, 900);
+  expect(centered.parts).toHaveLength(10);
+  expect(centered.connections).toHaveLength(9);
+  expect(centered.model?.anchors).toHaveLength(10);
 });

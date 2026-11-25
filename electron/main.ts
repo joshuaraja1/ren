@@ -18,10 +18,11 @@ import { hasMeaningfulMotion } from "./frame-motion.js";
 import { isSameStableScreen } from "./screen-continuity.js";
 import { canPlaceSpatialVisual } from "./visual-safety.js";
 import { generateIllustration, imageManifest, imagePrompt } from "./image-render.js";
+import { generateSceneSpec } from "./scene-generation.js";
 import { generateHostedIllustration } from "./hosted-image-render.js";
 import { filterOpaquePositions, locateImageParts } from "./image-registration.js";
 import { validateVisualLesson } from "./visual-lesson.js";
-import { likelyVisualFollowUp, wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
+import { likelyVisualFollowUp, requestedVisualDimension, wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
 import { centerRequestedLesson } from "./visual-presentation.js";
 import { answerForInteractiveScene, interactiveSceneFor, tagRequestedInteractiveScene } from "./interactive-scene.js";
 import { CaptureSession } from "./capture-session.js";
@@ -44,6 +45,7 @@ let circleInputActive = false;
 const captureSession = new CaptureSession();
 let lastCaptureData: { token: string; generation: number; frames: string[]; pointer: { x: number; y: number }; focus?: { x: number; y: number; width: number; height: number }; firstSample: Uint8Array; secondSample: Uint8Array; dynamicContent: boolean; thumbnailSize: { width: number; height: number } } | null = null;
 let lastVisualLesson: { lesson: VisualLesson; displayId: number; createdAt: number; referenceImage?: string } | null = null;
+let pendingScenePreview: { lesson: VisualLesson; displayId: number; owner: string; generation: number } | null = null;
 let screenCaptureBusy = false;
 let pendingAnswerToken: string | null = null;
 let activeCaptureToken: string | null = null;
@@ -258,8 +260,8 @@ app.whenReady().then(() => {
   });
   let lastOrbitPointer = "";
   const orbitCursorTimer = setInterval(() => {
-    const visual = lastVisualLesson;
-    if (!visual || !interactiveSceneFor(visual.lesson) || !overlayWindow?.isVisible()) return;
+    const visual = pendingScenePreview?.generation === visualGeneration ? pendingScenePreview : lastVisualLesson;
+    if (!visual || visual.lesson.layout !== "centered" || !overlayWindow?.isVisible()) return;
     const display = screen.getAllDisplays().find((item) => item.id === visual.displayId);
     if (!display) return;
     const pointer = normalizeCursor(screen.getCursorScreenPoint(), display.bounds);
@@ -276,6 +278,7 @@ app.whenReady().then(() => {
     captureSession.invalidate();
     lastCaptureData = null;
     lastVisualLesson = null;
+    pendingScenePreview = null;
     overlayWindow.setBounds(display.bounds);
     overlayWindow.webContents.send("ren:visual-lesson", null);
     overlayWindow.webContents.send("ren:annotations", [{ id: "circle-focus", type: "path", points, color: "#327d87" }]);
@@ -291,6 +294,7 @@ app.whenReady().then(() => {
     captureSession.invalidate();
     lastCaptureData = null;
     lastVisualLesson = null;
+    pendingScenePreview = null;
     overlayWindow?.webContents.send("ren:annotations", []);
     overlayWindow?.webContents.send("ren:visual-lesson", null);
     overlayWindow?.webContents.send("ren:illustration", null);
@@ -567,8 +571,29 @@ app.whenReady().then(() => {
     if (!reuseVisual) { imageRenderAbort?.abort(); imageRenderAbort = null; }
     let lesson = reuseVisual ? priorVisualLesson! : display && (spatialAllowed || explicitVisual) ? validateVisualLesson(response.visualLesson) : null;
     if (lesson && explicitVisual && display) {
-      lesson = centerRequestedLesson(lesson, display.bounds.width, display.bounds.height);
+      const dimension = requestedVisualDimension(value.question);
+      lesson = { ...lesson, dimension };
       lesson = tagRequestedInteractiveScene(lesson, value.question);
+      if (dimension === 3 && !interactiveSceneFor(lesson) && credentials) {
+        // The subject and parts are already known. Show a vector preview now,
+        // while the separate geometry request builds the rotatable model.
+        const preview = centerRequestedLesson(lesson, display.bounds.width, display.bounds.height);
+        overlayWindow?.setBounds(display.bounds);
+        overlayWindow?.webContents.send("ren:annotations", []);
+        overlayWindow?.webContents.send("ren:illustration", null);
+        overlayWindow?.webContents.send("ren:visual-lesson", preview);
+        overlayWindow?.showInactive();
+        pendingScenePreview = { lesson: preview, displayId, owner: value.contextToken, generation: visualGeneration };
+        try {
+          const model = await generateSceneSpec(lesson, value.question, credentials, askController.signal);
+          lesson = { ...lesson, model };
+        } catch (error) {
+          if (askController.signal.aborted || voicePaused) throw error;
+          lesson = { ...lesson, dimension: 2 };
+          response.answer = `${response.answer} I couldn't build a rotatable model this time, so I'm drawing a flat explanation instead.`;
+        }
+      }
+      lesson = centerRequestedLesson(lesson, display.bounds.width, display.bounds.height);
     }
     let annotations = spatialAllowed && !explicitVisual && !reuseVisual ? response.annotations : [];
     if (spatialAllowed && focus && !explicitVisual && !reuseVisual) {
@@ -631,6 +656,7 @@ app.whenReady().then(() => {
       if (pendingVisualDecision && lastVisualLesson && capture.generation === visualGeneration) overlayWindow?.showInactive();
       throw error;
     } finally {
+      if (pendingScenePreview?.owner === value.contextToken) pendingScenePreview = null;
       if (activeAskController === askController) activeAskController = null;
       pendingVisualDecision = false;
       if (pendingAnswerToken === value.contextToken) pendingAnswerToken = null;
@@ -719,6 +745,7 @@ app.whenReady().then(() => {
     captureSession.invalidate();
     lastCaptureData = null;
     lastVisualLesson = null;
+    pendingScenePreview = null;
     overlayWindow?.webContents.send("ren:annotations", []);
     overlayWindow?.webContents.send("ren:visual-lesson", null);
     overlayWindow?.webContents.send("ren:illustration", null);

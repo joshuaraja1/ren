@@ -3,7 +3,8 @@ import React from "react";
 import { render } from "@testing-library/react";
 import { vi } from "vitest";
 import type { VisualLesson } from "../electron/visual-lesson";
-import { GenericScene, makeGenericScene, projectGenericAnchors } from "./generic-scene";
+import type { SceneSpec } from "../electron/scene-spec";
+import { GenericScene, makeGenericScene, makeSubjectScene, projectGenericAnchors } from "./generic-scene";
 
 const lesson: VisualLesson = {
   version: 1, title: "Camera signal path", placement: { x: 0, y: 0, width: 1, height: 1 },
@@ -44,6 +45,33 @@ it("keeps projected part anchors on screen as the camera orbits", () => {
       expect(point.y).toBeLessThanOrEqual(1);
     }
   }
+});
+
+it("renders subject geometry from the model spec and keeps labels tied to its real part anchors", () => {
+  const spec: SceneSpec = {
+    version: 1, subject: "Camera", fidelity: "conceptual",
+    primitives: [
+      { partId: "lens", kind: "cylinder", position: [-1, 0, 0], scale: [.7, .4, .7], rotation: [Math.PI / 2, 0, 0], color: "#777777" },
+      { partId: "sensor", kind: "box", position: [0, 0, 0], scale: [.8, .7, .2], rotation: [0, 0, 0], color: "#336699" },
+      { partId: "processor", kind: "box", position: [1, 0, 0], scale: [.5, .5, .2], rotation: [0, 0, 0], color: "#cc8844" },
+    ],
+    anchors: [
+      { partId: "lens", position: [-1, 0, .25] },
+      { partId: "sensor", position: [0, 0, .2] },
+      { partId: "processor", position: [1, 0, .2] },
+    ],
+  };
+  const { root, anchors } = makeSubjectScene(spec, lesson.connections);
+  expect(root.children.filter((object) => object instanceof THREE.Mesh && object.name === "lens")).toHaveLength(1);
+  expect(root.children.filter((object) => object.name.includes("→"))).toHaveLength(2);
+  expect(anchors.lens.x).toBe(-1);
+  const camera = new THREE.PerspectiveCamera(38, 1.6, .1, 100);
+  camera.position.set(2, 2, 8); camera.lookAt(0, 0, 0);
+  const front = projectGenericAnchors(anchors, root, camera);
+  camera.position.set(-2, 2, 8); camera.lookAt(0, 0, 0);
+  const otherSide = projectGenericAnchors(anchors, root, camera);
+  expect(Object.keys(front)).toEqual(["lens", "sensor", "processor"]);
+  expect(front.lens.x).not.toBe(otherSide.lens.x);
 });
 
 it("reports a missing WebGL context for the host to display its 2D fallback", () => {
