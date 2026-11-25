@@ -168,8 +168,7 @@ app.whenReady().then(() => {
   createMainWindow();
   createOverlayWindow();
   voiceShortcutActive = globalShortcut.register("CommandOrControl+Shift+Space", () => {
-    positionMainWindow(true);
-    mainWindow?.show();
+    if (!mainWindow?.isVisible()) mainWindow?.showInactive();
     mainWindow?.webContents.send("ren:activate-voice");
   });
   app.once("will-quit", () => globalShortcut.unregisterAll());

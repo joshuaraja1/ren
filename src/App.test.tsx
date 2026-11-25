@@ -32,7 +32,7 @@ describe("Ren ambient shell", () => {
     expect(screen.getByRole("heading", { name: /how can i help/i })).toBeVisible();
   });
 
-  it("opens and focuses the question box from the voice shortcut when dictation is unavailable", async () => {
+  it("keeps the question box closed from the voice shortcut when dictation is unavailable", async () => {
     let activate: (() => void) | undefined;
     window.ren = {
       platform: "darwin",
@@ -49,7 +49,10 @@ describe("Ren ambient shell", () => {
       render(<App />);
       await screen.findByRole("button", { name: /open ren/i });
       act(() => activate?.());
-      expect(await screen.findByRole("textbox", { name: /ask ren/i })).toHaveFocus();
+      expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible();
+      expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /open ren/i }));
+      expect(screen.getByRole("textbox", { name: /ask ren/i })).toBeVisible();
       expect(screen.getByText(/⌘⇧Space/)).toBeVisible();
     } finally { window.ren = undefined; }
   });
@@ -184,6 +187,8 @@ describe("Ren ambient shell", () => {
   });
 
   it("keeps diagram context for a spoken follow-up and starts listening after the answer", async () => {
+    let now = 10_000;
+    const dateNow = vi.spyOn(Date, "now").mockImplementation(() => now);
     let speechListener: ((data: { id: string; chunk?: string; done?: boolean }) => void) | undefined;
     let processor: { onaudioprocess: ((event: { inputBuffer: { getChannelData(index: number): Float32Array } }) => void) | null } | undefined;
     const originalAudioContext = globalThis.AudioContext;
@@ -231,38 +236,44 @@ describe("Ren ambient shell", () => {
       render(<App />);
       await waitFor(() => expect(processor?.onaudioprocess).toBeTypeOf("function"));
       const voiceFrame = { inputBuffer: { getChannelData: () => new Float32Array(2048).fill(.03) } };
+      const quietFollowUpFrame = { inputBuffer: { getChannelData: () => new Float32Array(2048).fill(.008) } };
+      const silentFrame = { inputBuffer: { getChannelData: () => new Float32Array(2048) } };
       act(() => processor?.onaudioprocess?.(voiceFrame));
       await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(1));
-      expect(screen.getByRole("textbox", { name: /ask ren/i })).toBeVisible();
-      fireEvent.click(screen.getByRole("button", { name: /finish speaking/i }));
+      expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible();
+      expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
+      now += 2_100;
+      act(() => processor?.onaudioprocess?.(silentFrame));
       await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
       expect(captureContext).toHaveBeenNthCalledWith(1, false, "Draw a diagram of the hover system");
-      expect(screen.getByRole("button", { name: /illustrate on screen/i })).toBeVisible();
-      await waitFor(() => expect(screen.getByRole("heading", { name: /i’m listening/i })).toBeVisible());
-      expect(screen.getByText(/ask a follow-up anytime · no wake phrase/i)).toBeVisible();
-      expect(screen.getByRole("button", { name: /stop listening/i })).toBeVisible();
+      await waitFor(() => expect(screen.getByText(/ask your next question/i)).toBeVisible());
+      expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
       expect(speechStart).toHaveBeenCalledTimes(1);
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      act(() => { for (let index = 0; index < 3; index += 1) processor?.onaudioprocess?.(voiceFrame); });
+      now += 400;
+      act(() => { for (let index = 0; index < 3; index += 1) processor?.onaudioprocess?.(quietFollowUpFrame); });
       await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(2));
       expect(wakeFeed).toHaveBeenCalledTimes(1);
-      fireEvent.click(screen.getByRole("button", { name: /finish speaking/i }));
+      now += 2_100;
+      act(() => processor?.onaudioprocess?.(silentFrame));
       await waitFor(() => expect(ask).toHaveBeenCalledTimes(2));
       expect(captureContext).toHaveBeenNthCalledWith(2, true, "Why does the fan help?");
       expect(ask).toHaveBeenLastCalledWith(expect.objectContaining({ question: "Why does the fan help?", history: expect.arrayContaining([expect.objectContaining({ role: "assistant", content: "The engine drives the fan." })]) }));
-      expect(screen.getByRole("button", { name: /illustrate on screen/i })).toBeVisible();
-      await waitFor(() => expect(screen.getByRole("heading", { name: /i’m listening/i })).toBeVisible());
+      await waitFor(() => expect(screen.getByText(/ask your next question/i)).toBeVisible());
       expect(speechStart).toHaveBeenCalledTimes(2);
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      now += 400;
       act(() => { for (let index = 0; index < 3; index += 1) processor?.onaudioprocess?.(voiceFrame); });
       await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(3));
-      fireEvent.click(screen.getByRole("button", { name: /finish speaking/i }));
-      await waitFor(() => expect(screen.getByRole("button", { name: /stop listening/i })).toBeVisible());
+      now += 2_100;
+      act(() => processor?.onaudioprocess?.(silentFrame));
+      await waitFor(() => expect(screen.getByText(/ask your next question/i)).toBeVisible());
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       expect(wakeFeed).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByRole("button", { name: /open ren/i }));
+      expect(screen.getByRole("button", { name: /illustrate on screen/i })).toBeVisible();
       fireEvent.click(screen.getByRole("button", { name: /stop listening/i }));
       expect(screen.getByRole("heading", { name: /how can i help/i })).toBeVisible();
     } finally {
+      dateNow.mockRestore();
       window.ren = undefined;
       globalThis.AudioContext = originalAudioContext;
       Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: originalMediaDevices });

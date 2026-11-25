@@ -76,7 +76,6 @@ export function App() {
   const conversationOpenRef = useRef(false);
   const awaitingFollowUpRef = useRef(false);
   const pendingAudioRef = useRef<number[][]>([]);
-  const expandedRef = useRef(false);
   const askingRef = useRef(false);
   const visionOpenRef = useRef(false);
 
@@ -105,11 +104,10 @@ export function App() {
     void askQuestion("Explain what is inside the area I circled on my screen. Start with the part I selected, and show me how it connects to what I'm doing.");
   }), []);
   useEffect(() => window.ren?.onActivateVoice?.(() => {
-    void setExpanded(true);
-    if (askingRef.current) { window.setTimeout(() => questionRef.current?.focus(), 0); return; }
+    if (askingRef.current) return;
     speechCancelRef.current?.();
     if (nativeSpeechRef.current) void startNativeDictation();
-    else window.setTimeout(() => questionRef.current?.focus(), 0);
+    else setError("Voice is unavailable. Open Ren manually to check the microphone and Deepgram settings.");
   }), []);
 
   useEffect(() => {
@@ -203,7 +201,7 @@ export function App() {
               recentAudio.push(samples);
               if (recentAudio.length > 24) recentAudio.shift();
               const level = Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
-              followUpVoiceFrames = level > 0.015 ? followUpVoiceFrames + 1 : 0;
+              followUpVoiceFrames = level > 0.006 ? followUpVoiceFrames + 1 : 0;
               if (followUpVoiceFrames >= 3) {
                 followUpVoiceFrames = 0;
                 awaitingFollowUpRef.current = false;
@@ -277,7 +275,6 @@ export function App() {
   }, [permission?.ready, permission?.microphone]);
 
   async function setExpanded(value: boolean) {
-    expandedRef.current = value;
     setExpandedState(value);
     if (!value) { conversationOpenRef.current = false; awaitingFollowUpRef.current = false; stopNativeDictation(); setVoiceState("idle"); visionOpenRef.current = false; setVisionOpen(false); setVisionKey(""); }
     await window.ren?.setExpanded(value);
@@ -297,7 +294,6 @@ export function App() {
     if (!window.ren || !nativeSpeechRef.current || dictationActiveRef.current) return;
     conversationOpenRef.current = true;
     awaitingFollowUpRef.current = false;
-    if (!expandedRef.current) void setExpanded(true);
     setError("");
     dictationActiveRef.current = true;
     setDictationActive(true);
@@ -349,7 +345,7 @@ export function App() {
       if (/^(?:stop listening|that(?:'|’)s all|goodbye|bye(?: ren)?|cancel)[.!\s]*$/i.test(transcript)) { await setExpanded(false); return; }
       if (transcript) await askQuestion(transcript);
       else {
-        if (conversationOpenRef.current && expandedRef.current) {
+        if (conversationOpenRef.current) {
           awaitingFollowUpRef.current = true;
           setVoiceState("listening");
         } else {
@@ -594,7 +590,7 @@ export function App() {
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: response.answer, provider: response.provider, followUps: response.followUps }]);
       setVoiceState("responding"); suppressSpeechUntilRef.current = Date.now() + Math.min(12_000, response.answer.length * 45);
       void speak(response.answer, () => {
-        if (nativeSpeechRef.current && conversationOpenRef.current && expandedRef.current && !visionOpenRef.current) {
+        if (nativeSpeechRef.current && conversationOpenRef.current && !visionOpenRef.current) {
           awaitingFollowUpRef.current = true;
           setVoiceState("listening");
         }
@@ -603,7 +599,7 @@ export function App() {
       if (response.autoIllustrate) void illustrate(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Ren couldn’t answer.");
-      if (conversationOpenRef.current && expandedRef.current && nativeSpeechRef.current) {
+      if (conversationOpenRef.current && nativeSpeechRef.current) {
         awaitingFollowUpRef.current = true;
         setVoiceState("listening");
       } else setVoiceState("idle");
@@ -623,7 +619,7 @@ export function App() {
     finally { imageRenderingRef.current = false; setImageRendering(false); }
   }
 
-  if (!expanded) return <button className={`ren-pebble state-${voiceState}`} onClick={() => void setExpanded(true)} aria-label={`Open Ren. ${error ? "Needs attention" : imageRendering ? "Rendering your illustration" : permission?.microphone === "granted" ? voiceLabels[voiceState].title : "Microphone setup needed"}`}><span className="pebble-mark"><Spark /></span><span className="pebble-copy"><strong>{error ? "Try again" : imageRendering ? "Rendering visual…" : permission?.microphone === "granted" ? voiceLabels[voiceState].title : "Microphone off"}</strong><small>{error ? /didn't catch/i.test(error) ? "I didn't catch that" : "Open Ren for details" : imageRendering ? "Drawing on your screen" : permission?.microphone === "granted" ? voiceLabels[voiceState].detail : "Open Ren to enable voice"}</small></span><VoiceMeter active={voiceState !== "idle" || imageRendering} /><span className="privacy-dot" aria-hidden="true" /></button>;
+  if (!expanded) return <button className={`ren-pebble state-${voiceState}`} onClick={() => void setExpanded(true)} aria-label={`Open Ren. ${error ? "Needs attention" : imageRendering ? "Rendering your illustration" : permission?.microphone === "granted" ? voiceLabels[voiceState].title : "Microphone setup needed"}`}><span className="pebble-mark"><Spark /></span><span className="pebble-copy"><strong>{error ? "Try again" : imageRendering ? "Rendering visual…" : permission?.microphone === "granted" ? voiceLabels[voiceState].title : "Microphone off"}</strong><small>{error ? /didn't catch/i.test(error) ? "I didn't catch that" : "Open Ren for details" : imageRendering ? "Drawing on your screen" : permission?.microphone === "granted" && conversationOpenRef.current && awaitingFollowUpRef.current ? "Ask your next question" : permission?.microphone === "granted" ? voiceLabels[voiceState].detail : "Open Ren to enable voice"}</small></span><VoiceMeter active={voiceState !== "idle" || imageRendering} /><span className="privacy-dot" aria-hidden="true" /></button>;
 
   return <main className="ambient-panel">
     <header className={`ambient-header state-${voiceState}`}><div className="companion-orb"><Spark /></div><div className="header-copy"><p><span className="state-dot" /> REN</p><h1>{voiceState === "processing" ? "Looking closely…" : imageRendering ? "Drawing on your screen…" : voiceState === "listening" ? "I’m listening." : voiceState === "responding" ? "Let’s work through it." : "How can I help?"}</h1></div><VoiceMeter active={voiceState !== "idle" || imageRendering} /><button className="collapse-button" onClick={() => void setExpanded(false)} aria-label="Collapse Ren">⌃</button></header>
