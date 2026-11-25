@@ -13,7 +13,6 @@ contextBridge.exposeInMainWorld("ren", {
   requestPermissions: () => ipcRenderer.invoke("ren:request-permissions"),
   openPermissionSettings: () => ipcRenderer.invoke("ren:open-permission-settings"),
   setExpanded: (expanded: boolean) => ipcRenderer.invoke("ren:set-expanded", expanded),
-  setCaptureHidden: (hidden: boolean) => ipcRenderer.invoke("ren:set-capture-hidden", hidden),
   captureContext: () => ipcRenderer.invoke("ren:capture-context"),
   wakeAvailable: () => ipcRenderer.invoke("ren:wake-available"),
   wakeStart: (sampleRate: number) => ipcRenderer.invoke("ren:wake-start", sampleRate),

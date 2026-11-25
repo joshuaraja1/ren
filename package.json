@@ -18,7 +18,7 @@
     "build:renderer": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "verify:assets": "node scripts/check-built-assets.mjs",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "typecheck": "tsc -b tsconfig.electron.json && tsc --noEmit",
     "test": "vitest run",
     "check": "npm run typecheck && npm test && npm run build",
     "pack": "npm run build && electron-builder --dir",

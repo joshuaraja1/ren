@@ -59,7 +59,6 @@ export type RenBridge = {
   requestPermissions(): Promise<AmbientStatus>;
   openPermissionSettings(): Promise<void>;
   setExpanded(expanded: boolean): Promise<void>;
-  setCaptureHidden(hidden: boolean): Promise<void>;
   captureContext(): Promise<ScreenContext>;
   wakeAvailable(): Promise<boolean>;
   wakeStart(sampleRate: number): Promise<boolean>;

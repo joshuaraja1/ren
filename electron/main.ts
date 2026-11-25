@@ -12,6 +12,7 @@ import type { FocusRegion } from "./circle-geometry.js";
 import { clearVisionSettings, saveVisionSettings, visionCredentials, visionStatus } from "./vision-settings.js";
 import { parseAskRequest } from "./request-validation.js";
 import { hasMeaningfulMotion } from "./frame-motion.js";
+import { isSameStableScreen } from "./screen-continuity.js";
 import { validateVisualLesson } from "./visual-lesson.js";
 import { CaptureSession } from "./capture-session.js";
 import type { VisualLesson } from "./visual-lesson.js";
@@ -22,8 +23,9 @@ let overlayWindow: BrowserWindow | null = null;
 let selectedFocus: { displayId: number; region: FocusRegion; createdAt: number } | null = null;
 let circleInputActive = false;
 const captureSession = new CaptureSession();
-let lastCaptureData: { token: string; frames: string[]; pointer: { x: number; y: number }; focus?: { x: number; y: number; width: number; height: number }; fingerprint: Uint8Array; thumbnailSize: { width: number; height: number } } | null = null;
+let lastCaptureData: { token: string; frames: string[]; pointer: { x: number; y: number }; focus?: { x: number; y: number; width: number; height: number }; firstSample: Uint8Array; secondSample: Uint8Array; thumbnailSize: { width: number; height: number } } | null = null;
 let lastVisualLesson: { lesson: VisualLesson; displayId: number; createdAt: number } | null = null;
+let screenCaptureBusy = false;
 
 const collapsedSize = { width: 236, height: 58 };
 const expandedSize = { width: 420, height: 560 };
@@ -229,7 +231,6 @@ app.whenReady().then(() => {
     if (process.platform === "darwin") await shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture");
   });
   ipcMain.handle("ren:set-expanded", (event, expanded: unknown) => { requireMainRenderer(event); positionMainWindow(expanded === true); });
-  ipcMain.handle("ren:set-capture-hidden", (event, hidden: unknown) => { requireMainRenderer(event); mainWindow?.setOpacity(hidden === true ? 0 : 1); });
 
   ipcMain.handle("ren:list-sources", async (event) => {
     requireMainRenderer(event);
@@ -246,6 +247,8 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("ren:capture-context", async (event) => {
     requireMainRenderer(event);
+    if (screenCaptureBusy) throw new Error("Ren is already capturing the screen. Try again.");
+    screenCaptureBusy = true;
     const { display, pointer } = cursorDisplayContext();
     const focus = selectedFocus && selectedFocus.displayId === display.id && Date.now() - selectedFocus.createdAt < 30_000 ? selectedFocus.region : null;
     selectedFocus = null;
@@ -284,7 +287,7 @@ app.whenReady().then(() => {
         }
       }
       if (!captureSession.isCurrent(contextToken)) throw new Error("The screen changed during capture. Ask again.");
-      lastCaptureData = { token: contextToken, frames, pointer, focus: focus?.bounds, fingerprint: motionSample(first), thumbnailSize };
+      lastCaptureData = { token: contextToken, frames, pointer, focus: focus?.bounds, firstSample: motionSample(first), secondSample: motionSample(second ?? first), thumbnailSize };
       setTimeout(() => {
         if (lastCaptureData?.token === contextToken) { lastCaptureData = null; captureSession.invalidate(); }
       }, 90_000).unref();
@@ -295,6 +298,7 @@ app.whenReady().then(() => {
       throw error;
     } finally {
       mainWindow?.setOpacity(1);
+      screenCaptureBusy = false;
     }
   });
 
@@ -318,15 +322,17 @@ app.whenReady().then(() => {
     }
     const lesson = validateVisualLesson(response.visualLesson);
     if (response.annotations.length || lesson) {
+      if (screenCaptureBusy) throw new Error("Ren is already capturing the screen. Ask again.");
+      screenCaptureBusy = true;
       mainWindow?.setOpacity(0);
       overlayWindow?.hide();
       try {
         await new Promise((resolve) => setTimeout(resolve, 60));
         const fresh = await captureDisplay(displayId, capture.thumbnailSize);
-        if (!fresh || hasMeaningfulMotion(capture.fingerprint, motionSample(fresh))) {
+        if (!fresh || !isSameStableScreen(capture.firstSample, capture.secondSample, motionSample(fresh))) {
           throw new Error("The screen changed while Ren was answering. Ask again.");
         }
-      } finally { mainWindow?.setOpacity(1); }
+      } finally { mainWindow?.setOpacity(1); screenCaptureBusy = false; }
       if (!captureSession.isCurrent(value.contextToken) || screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id !== displayId) {
         throw new Error("The screen changed while Ren was answering. Ask again.");
       }

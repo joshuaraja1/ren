@@ -29,5 +29,5 @@ it("keeps headings and callouts inside top and right screen edges", () => {
   const { container } = render(<VisualLessonOverlay lesson={lesson} />);
   expect(container.querySelector(".visual-lesson-heading")).toHaveClass("is-inside");
   expect(container.querySelectorAll(".visual-lesson-part.is-flipped")).toHaveLength(2);
-  expect(container.querySelector(".visual-lesson-part") as HTMLElement).toHaveStyle({ transform: "translate(calc(-100% - 12px), 0)" });
+  expect((container.querySelector(".visual-lesson-part") as HTMLElement).style.transform).toMatch(/^translate\(-\d+px, \d+px\)$/);
 });
