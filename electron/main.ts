@@ -23,6 +23,7 @@ import { filterOpaquePositions, locateImageParts } from "./image-registration.js
 import { validateVisualLesson } from "./visual-lesson.js";
 import { wantsVisualCreation } from "./visual-intent.js";
 import { centerRequestedLesson } from "./visual-presentation.js";
+import { answerForInteractiveScene, interactiveSceneFor } from "./interactive-scene.js";
 import { CaptureSession } from "./capture-session.js";
 import { requestMacScreenCaptureAccess } from "./mac-screen-permission.js";
 import type { VisualLesson } from "./visual-lesson.js";
@@ -163,6 +164,19 @@ app.whenReady().then(() => {
   if (permissionStatus().ready && app.isPackaged) app.setLoginItemSettings({ openAtLogin: true });
   createMainWindow();
   createOverlayWindow();
+  let lastOrbitPointer = "";
+  const orbitCursorTimer = setInterval(() => {
+    const visual = lastVisualLesson;
+    if (!visual || !interactiveSceneFor(visual.lesson) || !overlayWindow?.isVisible()) return;
+    const display = screen.getAllDisplays().find((item) => item.id === visual.displayId);
+    if (!display) return;
+    const pointer = normalizeCursor(screen.getCursorScreenPoint(), display.bounds);
+    const key = `${Math.round(pointer.x * 200)},${Math.round(pointer.y * 200)}`;
+    if (key === lastOrbitPointer) return;
+    lastOrbitPointer = key;
+    overlayWindow.webContents.send("ren:orbit-pointer", pointer);
+  }, 33);
+  app.once("before-quit", () => clearInterval(orbitCursorTimer));
   function showFocusPath(displayId: number, points: FocusRegion["points"]) {
     const display = screen.getAllDisplays().find((item) => item.id === displayId);
     if (!display || !overlayWindow) return;
@@ -462,7 +476,7 @@ app.whenReady().then(() => {
       }
     }
     lastVisualLesson = lesson ? { lesson, displayId, createdAt: Date.now(), referenceImage } : null;
-    return { ...response, annotations, visualLesson: lesson ?? undefined, autoIllustrate: Boolean(lesson && explicitVisual) };
+    return { ...response, answer: lesson ? answerForInteractiveScene(response.answer, lesson) : response.answer, annotations, visualLesson: lesson ?? undefined, autoIllustrate: Boolean(lesson && explicitVisual && !interactiveSceneFor(lesson)) };
     } finally {
       if (pendingAnswerToken === value.contextToken) pendingAnswerToken = null;
     }
@@ -510,6 +524,8 @@ app.whenReady().then(() => {
           const provider = credentials!;
           const image = await generateIllustration(visual.lesson, provider.apiKey, preview, controller.signal, fetch, visual.referenceImage);
           if (!current()) throw new Error("The screen changed while the illustration was rendering.");
+          // Show the completed render while part registration runs.
+          preview(image);
           const registration = await locateImageParts(visual.lesson, image, provider.apiKey, provider.model, controller.signal, fetch, provider.baseUrl).catch(() => null);
           return { image, registration };
         })();

@@ -1,10 +1,15 @@
 import type { VisualLesson } from "../electron/visual-lesson";
-import { useLayoutEffect, useRef, useState } from "react";
+import { lazy, Suspense, useLayoutEffect, useRef, useState } from "react";
 import { placeLessonCard } from "./lesson-placement";
 import type { Illustration } from "./contracts";
 import { imageBox } from "./image-geometry";
+import { interactiveSceneFor } from "../electron/interactive-scene";
+import type { JetAnchor, JetAnchors } from "./jet-scene";
+
+const JetScene = lazy(() => import("./jet-scene").then((module) => ({ default: module.JetScene })));
 
 export function VisualLessonOverlay({ lesson, illustration }: { lesson: VisualLesson; illustration?: Illustration | null }) {
+  if (lesson.layout === "centered" && interactiveSceneFor(lesson)) return <InteractiveJetLesson lesson={lesson} />;
   const box = illustration ? imageBox(lesson.placement.width * window.innerWidth, lesson.placement.height * window.innerHeight, illustration.width, illustration.height) : null;
   const displayParts = lesson.parts.map((part) => {
     const location = illustration?.registration?.[part.id];
@@ -62,6 +67,39 @@ export function VisualLessonOverlay({ lesson, illustration }: { lesson: VisualLe
   </section>;
 }
 
+function jetAnchor(label: string): JetAnchor | null {
+  const value = label.toLowerCase();
+  if (/lift fan/.test(value)) return "fan";
+  if (/roll post|wing outlet/.test(value)) return "posts";
+  if (/nozzle|exhaust/.test(value)) return "nozzle";
+  if (/engine|powerplant/.test(value)) return "engine";
+  if (/flight control/.test(value)) return "controls";
+  return null;
+}
+
+function InteractiveJetLesson({ lesson }: { lesson: VisualLesson }) {
+  const [anchors, setAnchors] = useState<JetAnchors>({});
+  const placement = {
+    left: `${lesson.placement.x * 100}%`, top: `${lesson.placement.y * 100}%`,
+    width: `${lesson.placement.width * 100}%`, height: `${lesson.placement.height * 100}%`,
+  };
+  const description = `${lesson.title}. Interactive three-dimensional model. Move the cursor to rotate it. ${lesson.parts.map((part) => `${part.label}: ${part.explanation}`).join(" ")}`;
+  const cards = lesson.parts.map((part) => {
+    const anchor = jetAnchor(part.label);
+    return anchor ? { part, anchor, side: anchor === "fan" || anchor === "posts" || anchor === "controls" ? "left" as const : "right" as const } : null;
+  }).filter((card): card is NonNullable<typeof card> => card !== null);
+  const slots: Record<JetAnchor, number> = { fan: .35, posts: .65, controls: .83, engine: .39, nozzle: .7 };
+  return <section className="visual-lesson interactive-jet-lesson centered-stage" style={placement} role="img" aria-label={description}>
+    <Suspense fallback={<div className="jet-scene" aria-hidden="true" />}><JetScene onAnchors={setAnchors} /></Suspense>
+    <div className="interactive-jet-heading" aria-hidden="true"><span>REN EXPLAINS</span><strong>{lesson.title}</strong><small>Move your cursor to rotate the model</small></div>
+    <svg className="visual-lesson-lines interactive-jet-lines" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+      {cards.map(({ part, anchor, side }) => anchors[anchor] && <g key={part.id}><line x1={side === "left" ? 180 : 820} y1={slots[anchor] * 1000} x2={anchors[anchor]!.x * 1000} y2={anchors[anchor]!.y * 1000} /><circle cx={anchors[anchor]!.x * 1000} cy={anchors[anchor]!.y * 1000} r="4" /></g>)}
+    </svg>
+    {cards.map(({ part, anchor, side }) => <div key={part.id} className={`visual-lesson-part illustrated-lesson-part ${side}`} style={{ left: side === "left" ? "0%" : "82%", top: `${slots[anchor] * 100}%` }} aria-hidden="true"><strong>{part.label}</strong><small>{part.explanation}</small></div>)}
+    <div className="interactive-jet-note" aria-hidden="true">Interactive teaching model · proportions simplified</div>
+  </section>;
+}
+
 function IllustratedLesson({ lesson, illustration, box }: { lesson: VisualLesson; illustration?: Illustration | null; box: ReturnType<typeof imageBox> | null }) {
   const placement = {
     left: `${lesson.placement.x * 100}%`, top: `${lesson.placement.y * 100}%`,
@@ -69,26 +107,33 @@ function IllustratedLesson({ lesson, illustration, box }: { lesson: VisualLesson
   };
   const description = `${lesson.title}. ${lesson.parts.map((part) => `${part.label}: ${part.explanation}`).join(" ")}`;
   const headingInside = lesson.placement.y * window.innerHeight < 110;
-  const left = lesson.parts.filter((_, index) => index % 2 === 0);
-  const right = lesson.parts.filter((_, index) => index % 2 === 1);
   const located = illustration && !illustration.preview ? illustration.registration ?? {} : {};
   const mapped = lesson.parts.map((part, index) => {
-    const side = index % 2 === 0 ? "left" : "right";
-    const sideIndex = Math.floor(index / 2);
-    const sideCount = side === "left" ? left.length : right.length;
-    const slot = .18 + .72 * (sideIndex + .5) / sideCount;
-    const anchor = Object.hasOwn(located, part.id) ? located[part.id] : undefined;
-    return { part, side, slot, anchor: anchor && box ? { x: box.x + box.width * anchor.x, y: box.y + box.height * anchor.y } : null };
+    const anchor = Object.hasOwn(located, part.id) && box ? { x: box.x + box.width * located[part.id].x, y: box.y + box.height * located[part.id].y } : null;
+    return { part, index, anchor, side: "left" as "left" | "right", slot: 0 };
   });
+  const maxSide = Math.ceil(mapped.length / 2);
+  let leftCount = 0;
+  let rightCount = 0;
+  for (const item of mapped) {
+    const wantsRight = item.anchor ? item.anchor.x >= .5 : item.index % 2 === 1;
+    item.side = (wantsRight && rightCount < maxSide) || leftCount >= maxSide ? "right" : "left";
+    if (item.side === "left") leftCount += 1;
+    else rightCount += 1;
+  }
+  for (const side of ["left", "right"] as const) {
+    const group = mapped.filter((item) => item.side === side).sort((a, b) => (a.anchor?.y ?? a.index / mapped.length) - (b.anchor?.y ?? b.index / mapped.length));
+    group.forEach((item, index) => { item.slot = .18 + .68 * (index + .5) / group.length; });
+  }
   const verified = mapped.filter((item) => item.anchor);
   return <section className={`visual-lesson illustrated-lesson${lesson.layout === "centered" ? " centered-stage" : ""}${illustration ? " has-illustration" : ""}${illustration?.preview ? " is-preview" : ""}`} style={placement} role="img" aria-label={description}>
     {illustration && box ? <div className="visual-lesson-illustration"><img src={illustration.image} alt="" style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%` }} /><span>{illustration.preview ? "GENERATING · UNVERIFIED" : verified.length ? "ILLUSTRATIVE · PARTS LOCATED" : "ILLUSTRATIVE · PARTS GUIDE"}</span></div> : <div className="visual-lesson-placeholder"><strong>Creating 3D illustration</strong><small>Ren is preparing the visual and its part labels.</small></div>}
     <div className={`visual-lesson-heading${headingInside ? " is-inside" : ""}`} aria-hidden="true"><span>REN EXPLAINS</span><strong>{lesson.title}</strong>{lesson.assumption && <small>{lesson.assumption}</small>}</div>
     <>
       <svg className="visual-lesson-lines illustrated-lesson-lines" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
-        {verified.map(({ part, side, slot, anchor }) => <g key={part.id}><line x1={side === "left" ? 220 : 780} y1={slot * 1000} x2={anchor!.x * 1000} y2={anchor!.y * 1000} /><circle cx={anchor!.x * 1000} cy={anchor!.y * 1000} r="6" /></g>)}
+        {verified.map(({ part, side, slot, anchor }) => <g key={part.id}><line x1={side === "left" ? 170 : 830} y1={slot * 1000} x2={anchor!.x * 1000} y2={anchor!.y * 1000} /><circle cx={anchor!.x * 1000} cy={anchor!.y * 1000} r="4" /></g>)}
       </svg>
-      {mapped.map(({ part, side, slot, anchor }, index) => <div key={part.id} className={`visual-lesson-part illustrated-lesson-part ${side}${anchor ? " is-located" : " is-unlocated"}`} aria-hidden="true" style={{ left: side === "left" ? "0%" : "78%", top: `${slot * 100}%`, animationDelay: `${index * 55}ms` }}><strong>{part.label}</strong><small>{part.explanation}</small>{illustration && !illustration.preview && !anchor && <em>Part guide · location unverified</em>}</div>)}
+      {mapped.map(({ part, side, slot, anchor }, index) => <div key={part.id} className={`visual-lesson-part illustrated-lesson-part ${side}${anchor ? " is-located" : " is-unlocated"}`} aria-hidden="true" style={{ left: side === "left" ? "0%" : "83%", top: `${slot * 100}%`, animationDelay: `${index * 55}ms` }}><strong>{part.label}</strong><small>{part.explanation}</small></div>)}
     </>
   </section>;
 }

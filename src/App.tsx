@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import type { AmbientStatus, AskResponse, ConversationTurn, DeepgramStatus, HostedImageStatus, ScreenContext, ScreenSource, VisionStatus } from "./contracts";
 import { PcmStreamPlayer } from "./pcm-player";
+import { interactiveSceneFor } from "../electron/interactive-scene";
 
 type VoiceState = "idle" | "listening" | "processing" | "responding";
 type Message = ConversationTurn & { id: string; provider?: AskResponse["provider"]; followUps?: string[] };
@@ -517,7 +518,7 @@ export function App() {
     try {
       const history = messagesRef.current.slice(-8).map(({ role, content }) => ({ role, content }));
       const response = window.ren ? await (async () => { const context = await captureBurst(); return window.ren!.ask({ question: clean, ...context, history }); })() : { answer: "I can see the interaction working in preview mode. The packaged desktop app will use your current screen and cursor as context.", annotations: [], provider: "demo" as const };
-      setImageAvailable(!!response.visualLesson);
+      setImageAvailable(!!response.visualLesson && !interactiveSceneFor(response.visualLesson));
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: response.answer, provider: response.provider, followUps: response.followUps }]);
       setVoiceState("responding"); suppressSpeechUntilRef.current = Date.now() + Math.min(12_000, response.answer.length * 45);
       void speak(response.answer, () => { if (nativeSpeechRef.current && expandedRef.current && !imageRenderingRef.current && !response.autoIllustrate) void startNativeDictation(); else { setVoiceState("idle"); keepAwake(); } });

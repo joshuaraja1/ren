@@ -20,8 +20,7 @@ describe("hosted image adapter", () => {
       expect(init?.redirect).toBe("error");
       expect(init?.headers).toEqual(expect.objectContaining({ authorization: "Bearer ren-access-token" }));
       const body = JSON.parse(String(init?.body));
-      expect(body.manifest.parts[0]).toEqual({ id: "wing", label: "Wing" });
-      expect(JSON.stringify(body)).not.toContain("Lift");
+      expect(body.manifest.parts[0]).toEqual({ id: "wing", label: "Wing", function: "Lift" });
       expect(JSON.stringify(body)).not.toContain("data:image");
       return new Response(event("preview", { image }) + event("complete", { image, registration }), { status: 200 });
     }) as unknown as typeof fetch;
@@ -37,5 +36,9 @@ describe("hosted image adapter", () => {
     const partial = { wing: registration.wing };
     const fetcher = vi.fn(async () => new Response(event("complete", { image, registration: partial }), { status: 200 })) as unknown as typeof fetch;
     await expect(generateHostedIllustration(lesson, credentials, () => {}, new AbortController().signal, fetcher)).resolves.toEqual({ image, registration: partial });
+  });
+  it("keeps the final image when the checker cannot locate parts", async () => {
+    const fetcher = vi.fn(async () => new Response(event("complete", { image, registration: null }), { status: 200 })) as unknown as typeof fetch;
+    await expect(generateHostedIllustration(lesson, credentials, () => {}, new AbortController().signal, fetcher)).resolves.toEqual({ image, registration: undefined });
   });
 });

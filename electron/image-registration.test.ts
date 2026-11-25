@@ -50,7 +50,7 @@ describe("generated image registration", () => {
   it("uses GPT-6 Sol's supported reasoning setting for image checks", async () => {
     const fetcher = vi.fn(async (_url, init) => {
       const body = JSON.parse(String(init?.body));
-      expect(body).toMatchObject({ model: "gpt-6-sol", reasoning_effort: "medium" });
+      expect(body).toMatchObject({ model: "gpt-6-sol", reasoning_effort: "low", max_completion_tokens: 1200 });
       expect(body.temperature).toBeUndefined();
       return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(valid) } }] }), { status: 200 });
     }) as unknown as typeof fetch;

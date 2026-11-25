@@ -9,7 +9,7 @@ export async function generateHostedIllustration(
   onPreview: (image: string) => void,
   signal: AbortSignal,
   fetcher: typeof fetch = fetch,
-): Promise<{ image: string; registration: ImageRegistration }> {
+): Promise<{ image: string; registration?: ImageRegistration }> {
   const response = await fetcher(`${credentials.baseUrl}/illustrations`, {
     method: "POST", redirect: "error", signal,
     headers: { authorization: `Bearer ${credentials.accessToken}`, "content-type": "application/json" },
@@ -20,7 +20,7 @@ export async function generateHostedIllustration(
   const decoder = new TextDecoder();
   let pending = "";
   let total = 0;
-  let completed: { image: string; registration: ImageRegistration } | null = null;
+  let completed: { image: string; registration?: ImageRegistration } | null = null;
   try {
     while (true) {
       const { value, done } = await reader.read();
@@ -42,9 +42,9 @@ export async function generateHostedIllustration(
         const image = decodeImage(payload.image.slice("data:image/png;base64,".length), "png");
         if (event === "preview") onPreview(image);
         else {
-          const registration = validatePartialRegisteredPositions(payload.registration, lesson);
-          if (!registration) throw new Error("Ren could not verify the image part locations.");
-          completed = { image, registration };
+          const registration = payload.registration == null ? null : validatePartialRegisteredPositions(payload.registration, lesson);
+          if (payload.registration != null && !registration) throw new Error("Ren image service returned invalid part locations.");
+          completed = { image, registration: registration ?? undefined };
         }
       }
     }

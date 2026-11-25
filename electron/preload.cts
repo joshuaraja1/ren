@@ -53,6 +53,11 @@ contextBridge.exposeInMainWorld("ren", {
     ipcRenderer.on("ren:visual-lesson", handler);
     return () => ipcRenderer.removeListener("ren:visual-lesson", handler);
   },
+  onOrbitPointer: (listener: (point: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, point: unknown) => listener(point);
+    ipcRenderer.on("ren:orbit-pointer", handler);
+    return () => ipcRenderer.removeListener("ren:orbit-pointer", handler);
+  },
   onFocusSelection: (listener: () => void) => {
     const handler = () => listener();
     ipcRenderer.on("ren:focus-selection", handler);

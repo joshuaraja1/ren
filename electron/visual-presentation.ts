@@ -4,8 +4,8 @@ import type { VisualLesson } from "./visual-lesson.js";
 export function centerRequestedLesson(lesson: VisualLesson, displayWidth: number, displayHeight: number): VisualLesson {
   const width = Math.min(displayWidth * .9, 1600) / displayWidth;
   const height = Math.min(displayHeight * .82, 860) / displayHeight;
-  const heightLimit = displayHeight < 600 ? 2 : displayHeight < 750 ? 4 : displayHeight < 1000 ? 6 : 8;
-  const widthLimit = displayWidth < 900 ? 2 : displayWidth < 1360 ? 4 : displayWidth < 1500 ? 6 : 8;
+  const heightLimit = displayHeight < 600 ? 2 : displayHeight < 750 ? 3 : displayHeight < 1000 ? 4 : 5;
+  const widthLimit = displayWidth < 900 ? 2 : displayWidth < 1360 ? 3 : 5;
   const maxParts = Math.min(heightLimit, widthLimit);
   const selected = new Set<string>();
   const queue = [lesson.parts[0].id];
@@ -20,8 +20,8 @@ export function centerRequestedLesson(lesson: VisualLesson, displayWidth: number
   }
   const parts = lesson.parts.filter((part) => selected.has(part.id)).map((part) => ({
     ...part,
-    label: part.label.slice(0, displayWidth < 1200 ? 36 : 48).trim(),
-    explanation: part.explanation.slice(0, displayWidth < 1200 ? 85 : 110).trim(),
+    label: part.label.slice(0, displayWidth < 1200 ? 28 : 36).trim(),
+    explanation: part.explanation.slice(0, displayWidth < 1200 ? 64 : 78).trim(),
   }));
   const connections = lesson.connections.filter(({ from, to }) => selected.has(from) && selected.has(to));
   return { ...lesson, layout: "centered", placement: { x: (1 - width) / 2, y: (1 - height) / 2, width, height }, parts, connections };

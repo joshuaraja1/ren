@@ -42,10 +42,10 @@ it("fits a large connected lesson into a short display without dangling connecti
     connections: Array.from({ length: 11 }, (_, index) => ({ from: `part${index}`, to: `part${index + 1}`, label: "drives" })),
   };
   const centered = centerRequestedLesson(crowded, 1280, 700);
-  expect(centered.parts).toHaveLength(4);
+  expect(centered.parts).toHaveLength(3);
   expect(centered.parts.every((part) => part.explanation.length <= 120)).toBe(true);
   const retained = new Set(centered.parts.map((part) => part.id));
-  expect(centered.connections).toHaveLength(3);
+  expect(centered.connections).toHaveLength(2);
   expect(centered.connections.every(({ from, to }) => retained.has(from) && retained.has(to))).toBe(true);
   expect(crowded.parts).toHaveLength(12);
 });

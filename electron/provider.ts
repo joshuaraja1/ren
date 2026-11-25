@@ -79,11 +79,14 @@ every annotation relative to that first image. Allowed forms:
 Use at most four purposeful visuals. If location is uncertain, prefer a diagram over a misplaced arrow.`;
 
 const REQUESTED_VISUAL_PROMPT = `The learner explicitly requested a diagram or rendered illustration. visualLesson is REQUIRED.
+For an F-35B hover explanation, Ren has a real interactive 3D teaching model: the learner can move
+the cursor to rotate it. Tell the learner this briefly when relevant; never say the view cannot rotate.
 If the named object is not visible on screen, make a conceptual lesson from the learner's
 request and set referenceRegion:null. Never say that lack of a visible reference prevents
-you from drawing it. Choose 4-8 essential parts, not decorative details. For each part,
+you from drawing it. Choose 4-5 essential visible parts, not decorative details. For each part,
 write a short, specific explanation (about 40-110 characters) of what it does and why
-it matters. Trace the causal chain in connections: energy or input, mechanism, output,
+it matters. Make the title 3-6 words about the mechanism, without words such as
+cutaway, schematic, oblique, or illustration. Trace the causal chain in connections: energy or input, mechanism, output,
 and control or stabilization where relevant. Use precise established facts; if a detail
 is uncertain, state the assumption instead of inventing a mechanism. In the spoken
 answer, explain the full cause-and-effect sequence in 4-6 clear sentences. The renderer
@@ -92,7 +95,7 @@ connected visualLesson object even if you cannot place annotations on the live s
 
 const RETRY_VISUAL_PROMPT = `Your response must contain a valid visualLesson object rather than null.
 Return the complete JSON answer again with version 1, valid placement, 4-8 unique
-parts with bounded coordinates, and connections linking every part. Do not omit the
+parts with bounded coordinates, and connections linking every part. Use no more than 5 parts. Do not omit the
 lesson merely because a screen reference is small, moving, or absent.`;
 
 const clamp = (value: unknown) => Math.min(1, Math.max(0, typeof value === "number" ? value : 0));

@@ -83,7 +83,7 @@ it("keeps the image and part explanations together when only one anchor is verif
   expect(container).toHaveTextContent("PARTS GUIDE");
 });
 
-it("keeps an eight-part technical lesson centered and spaced through preview and final image", () => {
+it("keeps five essential parts around a centered render through preview and final image", () => {
   const names = ["Engine", "Lift fan", "Rear nozzle", "Roll posts", "Flight controls", "Air inlet", "Fan doors", "Exhaust"];
   const source: VisualLesson = {
     version: 1, title: "How hover works", placement: { x: .75, y: .5, width: .22, height: .3 },
@@ -95,25 +95,26 @@ it("keeps an eight-part technical lesson centered and spaced through preview and
   const { container, rerender } = render(<VisualLessonOverlay lesson={lesson} />);
   expect(container.querySelector(".visual-lesson")).toHaveClass("centered-stage");
   expect(container).toHaveTextContent("Creating 3D illustration");
-  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(8);
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(5);
   const assertSpacing = () => {
     for (const side of ["left", "right"]) {
       const cards = Array.from(container.querySelectorAll<HTMLElement>(`.illustrated-lesson-part.${side}`));
-      expect(cards).toHaveLength(4);
+      expect(cards.length).toBeGreaterThanOrEqual(2);
+      expect(cards.length).toBeLessThanOrEqual(3);
       const slots = cards.map((card) => Number.parseFloat(card.style.top));
-      expect(slots.every((slot, index) => index === 0 || slot - slots[index - 1] >= 15)).toBe(true);
+      expect(slots.every((slot, index) => index === 0 || slot - slots[index - 1] >= 20)).toBe(true);
     }
   };
   assertSpacing();
   rerender(<VisualLessonOverlay lesson={lesson} illustration={{ image, preview: true, width: 1024, height: 1024 }} />);
   expect(container.querySelector(".visual-lesson-illustration img")).toHaveAttribute("src", image);
-  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(8);
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(5);
   assertSpacing();
   const registration = Object.fromEntries(names.map((_, index) => [`part${index}`, { x: index % 2 ? .7 : .3, y: .15 + index * .1 }]));
   rerender(<VisualLessonOverlay lesson={lesson} illustration={{ image, preview: false, width: 1024, height: 1024, registration }} />);
-  expect(container.querySelectorAll(".illustrated-lesson-lines line")).toHaveLength(8);
-  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(8);
+  expect(container.querySelectorAll(".illustrated-lesson-lines line")).toHaveLength(5);
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(5);
   expect(container.querySelector(".visual-lesson-illustration img")).toHaveAttribute("src", image);
-  names.forEach((name) => expect(container).toHaveTextContent(name));
+  lesson.parts.forEach((part) => expect(container).toHaveTextContent(part.label));
   assertSpacing();
 });

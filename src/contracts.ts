@@ -90,5 +90,6 @@ export type RenBridge = {
   onIllustration(listener: (image: Illustration | null) => void): () => void;
   onAnnotations(listener: (annotations: Annotation[]) => void): () => void;
   onVisualLesson(listener: (lesson: VisualLesson | null) => void): () => void;
+  onOrbitPointer(listener: (point: Point) => void): () => void;
   onFocusSelection(listener: () => void): () => void;
 };
