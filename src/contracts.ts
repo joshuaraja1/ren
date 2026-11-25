@@ -69,7 +69,7 @@ export type RenBridge = {
   requestPermissions(): Promise<AmbientStatus>;
   openPermissionSettings(kind?: "screen" | "microphone"): Promise<void>;
   setExpanded(expanded: boolean): Promise<void>;
-  captureContext(): Promise<ScreenContext>;
+  captureContext(preserveVisual?: boolean): Promise<ScreenContext>;
   wakeAvailable(): Promise<boolean>;
   wakeStart(sampleRate: number): Promise<boolean>;
   wakeFeed(samples: number[]): Promise<boolean>;
@@ -92,4 +92,5 @@ export type RenBridge = {
   onVisualLesson(listener: (lesson: VisualLesson | null) => void): () => void;
   onOrbitPointer(listener: (point: Point) => void): () => void;
   onFocusSelection(listener: () => void): () => void;
+  onActivateVoice(listener: () => void): () => void;
 };

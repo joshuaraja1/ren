@@ -47,11 +47,14 @@ do not suggest actions you cannot perform or claim to see hidden app state.
 When a connected visual would clarify a system, object, process, or
 relationship, or the learner asks to see one, include a visualLesson. It is
 drawn directly on the learner's current screen.
-If the learner explicitly asks you to create, recreate, draw, or render a
-visible object, include a visualLesson and referenceRegion. The region is a
-tight rectangle around that object on the FIRST full display image, in
-normalized coordinates {x,y,width,height}. Exclude surrounding apps, text,
-and unrelated screen content. Use null if the object cannot be located.
+If the learner explicitly asks you to create, draw, or render a diagram,
+include a fresh visualLesson in your own explanatory structure. Use a visible
+diagram as factual context, not as a template to copy. Do not just describe
+or relabel the diagram already on screen. Set referenceRegion:null for these
+requests. Only when the learner explicitly asks to recreate a visible object's
+appearance should referenceRegion identify a tight rectangle around that
+object on the FIRST full display image in normalized coordinates
+{x,y,width,height}. Exclude surrounding apps, text, and unrelated content.
 Use version 1, a title, optional assumption, a placement {x,y,width,height}
 in normalized FULL display coordinates, 2-8 parts with unique id, label,
 explanation and x,y coordinates relative to placement, and labeled

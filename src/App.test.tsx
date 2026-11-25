@@ -161,6 +161,71 @@ describe("Ren ambient shell", () => {
     } finally { window.ren = undefined; }
   });
 
+  it("keeps diagram context for a spoken follow-up and starts listening after the answer", async () => {
+    let speechListener: ((data: { id: string; chunk?: string; done?: boolean }) => void) | undefined;
+    let hotkey: (() => void) | undefined;
+    const originalAudioContext = globalThis.AudioContext;
+    const originalMediaDevices = navigator.mediaDevices;
+    class FakeAudioContext {
+      sampleRate = 48_000;
+      currentTime = 0;
+      state = "running";
+      destination = {};
+      createMediaStreamSource() { return { connect() {} }; }
+      createScriptProcessor() { return { connect() {}, disconnect() {}, onaudioprocess: null }; }
+      createBuffer() { return { duration: .05, getChannelData: () => new Float32Array(1) }; }
+      createBufferSource() {
+        return { buffer: null, onended: null as (() => void) | null, connect() {}, disconnect() {}, stop() {}, start(this: { onended: (() => void) | null }) { queueMicrotask(() => this.onended?.()); } };
+      }
+      async resume() {}
+      async close() {}
+    }
+    globalThis.AudioContext = FakeAudioContext as unknown as typeof AudioContext;
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } });
+    const speechStart = vi.fn(async () => true);
+    const captureContext = vi.fn(async () => ({ frames: [], pointer: { x: .5, y: .5 } }));
+    const ask = vi.fn(async ({ question }: { question: string }) => ({
+      answer: question.includes("Why") ? "The fan pushes air down." : "The engine drives the fan.",
+      annotations: [], provider: "vision" as const,
+      ...(question.includes("Why") ? {} : { visualLesson: { version: 1 as const, title: "Hover", layout: "centered" as const, placement: { x: .2, y: .2, width: .6, height: .6 }, parts: [
+        { id: "engine", label: "Engine", explanation: "Powers the fan", x: .2, y: .4 },
+        { id: "fan", label: "Lift fan", explanation: "Pushes air down", x: .7, y: .4 },
+      ], connections: [{ from: "engine", to: "fan", label: "drives" }] } }),
+    }));
+    window.ren = {
+      platform: "darwin", permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
+      primarySource: async () => ({ id: "screen", name: "Main display", thumbnail: "" }),
+      wakeAvailable: async () => true, wakeStart: async () => true, wakeStop: async () => {}, wakeFeed: async () => false,
+      speechAvailable: async () => true, speechStart, speechFeed: async () => true,
+      speechFinish: async () => "Why does the fan help?", speechStop: async () => {},
+      onSpeechData: (listener: typeof speechListener) => { speechListener = listener; return () => { speechListener = undefined; }; },
+      speak: async (id: string) => { queueMicrotask(() => { speechListener?.({ id, chunk: "AAA=", done: true }); }); return true; },
+      onFocusSelection: () => () => {}, onActivateVoice: (listener: () => void) => { hotkey = listener; return () => { hotkey = undefined; }; },
+      setExpanded: async () => {}, captureContext, ask,
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
+      const input = await screen.findByRole("textbox", { name: /ask ren/i });
+      fireEvent.change(input, { target: { value: "Draw a diagram of the hover system" } });
+      fireEvent.click(screen.getByRole("button", { name: /send question/i }));
+      await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(1));
+      expect(captureContext).toHaveBeenNthCalledWith(1, false);
+      fireEvent.click(screen.getByRole("button", { name: /finish speaking/i }));
+      await waitFor(() => expect(ask).toHaveBeenCalledTimes(2));
+      expect(captureContext).toHaveBeenNthCalledWith(2, true);
+      expect(ask).toHaveBeenLastCalledWith(expect.objectContaining({ question: "Why does the fan help?", history: expect.arrayContaining([expect.objectContaining({ role: "assistant", content: "The engine drives the fan." })]) }));
+      await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(2));
+      fireEvent.click(screen.getByRole("button", { name: /finish speaking/i }));
+      act(() => hotkey?.());
+      await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(3));
+    } finally {
+      window.ren = undefined;
+      globalThis.AudioContext = originalAudioContext;
+      Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: originalMediaDevices });
+    }
+  });
+
   it("automatically starts one illustration for an explicit diagram request", async () => {
     let completeRender: ((value: boolean) => void) | undefined;
     const generateIllustration = vi.fn(() => new Promise<boolean>((resolve) => { completeRender = resolve; }));

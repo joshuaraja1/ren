@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, nativeImage, screen, session, shell, systemPreferences } from "electron";
+import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, nativeImage, screen, session, shell, systemPreferences } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, writeFileSync } from "node:fs";
@@ -21,7 +21,7 @@ import { generateIllustration, imageManifest, imagePrompt } from "./image-render
 import { generateHostedIllustration } from "./hosted-image-render.js";
 import { filterOpaquePositions, locateImageParts } from "./image-registration.js";
 import { validateVisualLesson } from "./visual-lesson.js";
-import { wantsVisualCreation } from "./visual-intent.js";
+import { wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
 import { centerRequestedLesson } from "./visual-presentation.js";
 import { answerForInteractiveScene, interactiveSceneFor, tagRequestedInteractiveScene } from "./interactive-scene.js";
 import { CaptureSession } from "./capture-session.js";
@@ -164,6 +164,12 @@ app.whenReady().then(() => {
   if (permissionStatus().ready && app.isPackaged) app.setLoginItemSettings({ openAtLogin: true });
   createMainWindow();
   createOverlayWindow();
+  globalShortcut.register("CommandOrControl+Shift+Space", () => {
+    positionMainWindow(true);
+    mainWindow?.showInactive();
+    mainWindow?.webContents.send("ren:activate-voice");
+  });
+  app.once("will-quit", () => globalShortcut.unregisterAll());
   let lastOrbitPointer = "";
   const orbitCursorTimer = setInterval(() => {
     const visual = lastVisualLesson;
@@ -338,22 +344,24 @@ app.whenReady().then(() => {
     if (!source) throw new Error("No display source is available");
     return { id: source.id, name: source.name, thumbnail: source.thumbnail.toDataURL() };
   });
-  ipcMain.handle("ren:capture-context", async (event) => {
+  ipcMain.handle("ren:capture-context", async (event, keepVisual: unknown) => {
     requireMainRenderer(event);
     if (screenCaptureBusy) throw new Error("Ren is already capturing the screen. Try again.");
     screenCaptureBusy = true;
     const { display, pointer } = cursorDisplayContext();
+    const preservedVisual = keepVisual === true && lastVisualLesson?.displayId === display.id ? lastVisualLesson : null;
     const focus = selectedFocus && selectedFocus.displayId === display.id && Date.now() - selectedFocus.createdAt < 30_000 ? selectedFocus.region : null;
     selectedFocus = null;
     lastCaptureData = null;
-    imageRenderAbort?.abort();
-    imageRenderAbort = null;
+    if (!preservedVisual) { imageRenderAbort?.abort(); imageRenderAbort = null; }
     const contextToken = captureSession.issue(display.id);
     activeCaptureToken = contextToken;
     mainWindow?.setOpacity(0);
-    overlayWindow?.webContents.send("ren:annotations", []);
-    overlayWindow?.webContents.send("ren:visual-lesson", null);
-    overlayWindow?.webContents.send("ren:illustration", null);
+    if (!preservedVisual) {
+      overlayWindow?.webContents.send("ren:annotations", []);
+      overlayWindow?.webContents.send("ren:visual-lesson", null);
+      overlayWindow?.webContents.send("ren:illustration", null);
+    }
     overlayWindow?.hide();
     await new Promise((resolve) => setTimeout(resolve, 90));
     try {
@@ -395,6 +403,7 @@ app.whenReady().then(() => {
       throw error;
     } finally {
       mainWindow?.setOpacity(1);
+      if (preservedVisual && lastVisualLesson === preservedVisual) overlayWindow?.showInactive();
       if (activeCaptureToken === contextToken) activeCaptureToken = null;
       screenCaptureBusy = false;
     }
@@ -424,16 +433,17 @@ app.whenReady().then(() => {
     const spatialAllowed = Boolean(display && captureSession.isCurrent(value.contextToken)
       && screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id === displayId
       && canPlaceSpatialVisual(capture.dynamicContent, circleInputActive));
-    let lesson = display && (spatialAllowed || explicitVisual) ? validateVisualLesson(response.visualLesson) : null;
+    const reuseVisual = Boolean(priorVisualLesson && !explicitVisual && lastVisualLesson?.lesson === priorVisualLesson);
+    let lesson = reuseVisual ? priorVisualLesson! : display && (spatialAllowed || explicitVisual) ? validateVisualLesson(response.visualLesson) : null;
     if (lesson && explicitVisual && display) {
       lesson = centerRequestedLesson(lesson, display.bounds.width, display.bounds.height);
       lesson = tagRequestedInteractiveScene(lesson, value.question);
     }
-    let annotations = spatialAllowed && !explicitVisual ? response.annotations : [];
-    if (spatialAllowed && focus && !explicitVisual) {
+    let annotations = spatialAllowed && !explicitVisual && !reuseVisual ? response.annotations : [];
+    if (spatialAllowed && focus && !explicitVisual && !reuseVisual) {
       annotations = [{ id: "selected-area", type: "rectangle" as const, at: { x: focus.x, y: focus.y }, width: focus.width, height: focus.height, color: "#42c7d9", label: "Selected area" }, ...annotations.filter((item) => item.type !== "rectangle")].slice(0, 4);
     }
-    if (annotations.length || (lesson && lesson.layout !== "centered")) {
+    if (annotations.length || (lesson && lesson.layout !== "centered" && !reuseVisual)) {
       if (screenCaptureBusy) { lesson = null; annotations = []; }
       else {
         screenCaptureBusy = true;
@@ -452,13 +462,15 @@ app.whenReady().then(() => {
       }
     }
     if (display) overlayWindow?.setBounds(display.bounds);
-    overlayWindow?.webContents.send("ren:annotations", annotations);
-    overlayWindow?.webContents.send("ren:visual-lesson", lesson);
-    overlayWindow?.webContents.send("ren:illustration", null);
+    if (!reuseVisual) {
+      overlayWindow?.webContents.send("ren:annotations", annotations);
+      overlayWindow?.webContents.send("ren:visual-lesson", lesson);
+      overlayWindow?.webContents.send("ren:illustration", null);
+    }
     if (annotations.length || lesson) overlayWindow?.showInactive();
     else overlayWindow?.hide();
     let referenceImage: string | undefined;
-    if (lesson && explicitVisual) {
+    if (lesson && explicitVisual && wantsReferenceRecreation(value.question)) {
       const bounds = response.referenceRegion ?? focus;
       if (bounds) {
         const first = nativeImage.createFromDataURL(capture.frames[0]);
@@ -478,8 +490,9 @@ app.whenReady().then(() => {
         }
       }
     }
-    lastVisualLesson = lesson ? { lesson, displayId, createdAt: Date.now(), referenceImage } : null;
-    return { ...response, answer: lesson ? answerForInteractiveScene(response.answer, lesson) : response.answer, annotations, visualLesson: lesson ?? undefined, autoIllustrate: Boolean(lesson && explicitVisual && !interactiveSceneFor(lesson)) };
+    if (reuseVisual && lastVisualLesson) lastVisualLesson.createdAt = Date.now();
+    else lastVisualLesson = lesson ? { lesson, displayId, createdAt: Date.now(), referenceImage } : null;
+    return { ...response, answer: lesson ? answerForInteractiveScene(response.answer, lesson) : response.answer, annotations, visualLesson: reuseVisual ? undefined : lesson ?? undefined, autoIllustrate: Boolean(lesson && explicitVisual && !interactiveSceneFor(lesson)) };
     } finally {
       if (pendingAnswerToken === value.contextToken) pendingAnswerToken = null;
     }
@@ -488,7 +501,7 @@ app.whenReady().then(() => {
     requireMainRenderer(event);
     if (imageRequestBusy || imageRenderAbort) throw new Error("An illustration is already rendering.");
     const visual = lastVisualLesson;
-    if (!visual || !circleInputActive) throw new Error("A current visual lesson and pointer permission are required.");
+    if (!visual) throw new Error("A current visual lesson is required.");
     if (imageRequestedFor === visual.lesson) throw new Error("This lesson already requested an image. Ask a new question to create another.");
     imageRequestBusy = true;
     try {
@@ -502,7 +515,7 @@ app.whenReady().then(() => {
         const decision = await dialog.showMessageBox(mainWindow!, { type: "question", title: "Create a Ren illustration", message: "Generate an illustration for this lesson?", detail, buttons: ["Cancel", "Generate image"], defaultId: 0, cancelId: 0, noLink: true });
         if (decision.response !== 1) return false;
       }
-      if (lastVisualLesson !== visual || !circleInputActive) throw new Error("The lesson changed before image generation began.");
+      if (lastVisualLesson !== visual) throw new Error("The lesson changed before image generation began.");
       imageRequestedFor = visual.lesson;
       const controller = new AbortController();
       imageRenderAbort = controller;
@@ -519,7 +532,7 @@ app.whenReady().then(() => {
         const checked = decoded(preview);
         if (!checked) return;
         overlayWindow?.webContents.send("ren:illustration", { image: preview, preview: true, width: checked.size.width, height: checked.size.height });
-        overlayWindow?.showInactive();
+        if (!screenCaptureBusy) overlayWindow?.showInactive();
       };
       const result = hosted
         ? await generateHostedIllustration(visual.lesson, hosted, preview, controller.signal)

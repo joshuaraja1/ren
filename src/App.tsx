@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import type { AmbientStatus, AskResponse, ConversationTurn, DeepgramStatus, HostedImageStatus, ScreenContext, ScreenSource, VisionStatus } from "./contracts";
 import { PcmStreamPlayer } from "./pcm-player";
 import { interactiveSceneFor } from "../electron/interactive-scene";
+import { wantsVisualCreation } from "../electron/visual-intent";
 
 type VoiceState = "idle" | "listening" | "processing" | "responding";
 type Message = ConversationTurn & { id: string; provider?: AskResponse["provider"]; followUps?: string[] };
@@ -69,6 +70,7 @@ export function App() {
   const feedChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const queuedFeedsRef = useRef(0);
   const dictationSessionRef = useRef(0);
+  const automaticDictationRef = useRef(false);
   const pendingAudioRef = useRef<number[][]>([]);
   const expandedRef = useRef(false);
   const askingRef = useRef(false);
@@ -96,6 +98,13 @@ export function App() {
     setVisionOpen(false);
     setVisionKey("");
     void askQuestion("Explain what is inside the area I circled on my screen. Start with the part I selected, and show me how it connects to what I'm doing.");
+  }), []);
+  useEffect(() => window.ren?.onActivateVoice?.(() => {
+    void setExpanded(true);
+    if (askingRef.current) { questionRef.current?.focus(); return; }
+    speechCancelRef.current?.();
+    if (nativeSpeechRef.current) void startNativeDictation();
+    else questionRef.current?.focus();
   }), []);
 
   useEffect(() => {
@@ -136,7 +145,7 @@ export function App() {
           let pending = false;
           const recentAudio: number[][] = [];
           processor.onaudioprocess = (event) => {
-            if (disposed || visionOpenRef.current || imageRenderingRef.current) return;
+            if (disposed || visionOpenRef.current) return;
             const samples = Array.from(event.inputBuffer.getChannelData(0));
             if (dictationActiveRef.current) {
               const now = Date.now();
@@ -242,14 +251,16 @@ export function App() {
     dictationSessionRef.current += 1;
     dictationActiveRef.current = false;
     dictationReadyRef.current = false;
+    automaticDictationRef.current = false;
     pendingAudioRef.current = [];
     void window.ren?.speechStop();
   }
 
-  async function startNativeDictation(preRoll: number[][] = []) {
-    if (!window.ren || !nativeSpeechRef.current || dictationActiveRef.current || imageRenderingRef.current) return;
+  async function startNativeDictation(preRoll: number[][] = [], automatic = false) {
+    if (!window.ren || !nativeSpeechRef.current || dictationActiveRef.current) return;
     setError("");
     dictationActiveRef.current = true;
+    automaticDictationRef.current = automatic;
     const session = ++dictationSessionRef.current;
     dictationReadyRef.current = false;
     dictationStartedAtRef.current = Date.now();
@@ -282,6 +293,8 @@ export function App() {
   async function finishNativeDictation() {
     if (!dictationActiveRef.current || !window.ren) return;
     const session = dictationSessionRef.current;
+    const automatic = automaticDictationRef.current;
+    automaticDictationRef.current = false;
     dictationActiveRef.current = false;
     dictationReadyRef.current = false;
     setVoiceState("processing");
@@ -291,7 +304,11 @@ export function App() {
       const transcript = (await window.ren.speechFinish()).replace(/^(?:hey\s+)?(?:ren|run)\b[.,:;\s-]*/i, "").trim();
       if (session !== dictationSessionRef.current) return;
       if (transcript) await askQuestion(transcript);
-      else { setVoiceState("idle"); setError("I didn't catch that. Say “Hey Ren” and try again, or type your question."); }
+      else {
+        setVoiceState("idle");
+        if (!automatic || voicedFramesRef.current >= 2) setError("I didn't catch that. Say “Hey Ren” and try again, or type your question.");
+        keepAwake();
+      }
     } catch (reason) {
       if (session !== dictationSessionRef.current) return;
       setVoiceState("idle");
@@ -504,8 +521,8 @@ export function App() {
     else greet(nativeWakeRef.current ? "Hey, I'm here. Type your question about what you're pointing at." : undefined);
   }
 
-  async function captureBurst() {
-    return window.ren ? window.ren.captureContext() : { frames: [], pointer: { x: .5, y: .5 } } satisfies ScreenContext;
+  async function captureBurst(preserveVisual = false) {
+    return window.ren ? window.ren.captureContext(preserveVisual) : { frames: [], pointer: { x: .5, y: .5 } } satisfies ScreenContext;
   }
 
   async function askQuestion(rawQuestion: string) {
@@ -517,11 +534,14 @@ export function App() {
     setMessages((current) => [...current, { id: crypto.randomUUID(), role: "user", content: clean }]);
     try {
       const history = messagesRef.current.slice(-8).map(({ role, content }) => ({ role, content }));
-      const response = window.ren ? await (async () => { const context = await captureBurst(); return window.ren!.ask({ question: clean, ...context, history }); })() : { answer: "I can see the interaction working in preview mode. The packaged desktop app will use your current screen and cursor as context.", annotations: [], provider: "demo" as const };
+      const response = window.ren ? await (async () => { const context = await captureBurst(!wantsVisualCreation(clean)); return window.ren!.ask({ question: clean, ...context, history }); })() : { answer: "I can see the interaction working in preview mode. The packaged desktop app will use your current screen and cursor as context.", annotations: [], provider: "demo" as const };
       setImageAvailable(!!response.visualLesson && !interactiveSceneFor(response.visualLesson));
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: response.answer, provider: response.provider, followUps: response.followUps }]);
       setVoiceState("responding"); suppressSpeechUntilRef.current = Date.now() + Math.min(12_000, response.answer.length * 45);
-      void speak(response.answer, () => { if (nativeSpeechRef.current && expandedRef.current && !imageRenderingRef.current && !response.visualLesson && !response.autoIllustrate) void startNativeDictation(); else { setVoiceState("idle"); keepAwake(); } });
+      void speak(response.answer, () => {
+        if (nativeSpeechRef.current && expandedRef.current && !visionOpenRef.current) void startNativeDictation([], true);
+        else { setVoiceState("idle"); keepAwake(); }
+      });
       if (response.autoIllustrate) void illustrate(true);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Ren couldn’t answer."); setVoiceState("idle"); }
     finally { askingRef.current = false; }
@@ -548,7 +568,7 @@ export function App() {
       <div className="ambient-status"><span className="privacy-lock" aria-hidden="true">●</span><span>{vision.mode === "demo" ? "Connect OpenAI for screen answers" : `On-demand · OpenAI ${vision.model}`}</span><em>·</em><span className="display-name">{source?.name ?? "connecting to display"}</span><button className="provider-chip" onClick={openVisionSettings}>{vision.mode === "demo" || deepgram.mode === "demo" ? "Connect AI" : "AI settings"}</button></div>
       {visionOpen ? <form className="vision-settings" onSubmit={(event) => void saveVision(event)}><span className="step-kicker">CLOUD VOICE</span><h2>Connect Deepgram</h2><p>Ren keeps the small “Hey Ren” detector on your Mac. After it wakes, Ren streams your spoken question to Deepgram for transcription and sends reply text to Deepgram for speech. Deepgram may charge for usage.</p><label>Deepgram API key<input aria-label="Deepgram API key" type="password" value={deepgramInput} onChange={(event) => setDeepgramInput(event.target.value)} placeholder={deepgram.mode === "demo" ? "Enter your Deepgram key" : "Deepgram key saved"} autoComplete="off" /></label><div className="vision-actions"><button type="button" className="allow-button" onClick={() => void saveDeepgram()}>Save Deepgram key</button>{deepgram.mode === "connected" && <button type="button" onClick={() => void clearDeepgram()}>Remove Deepgram key</button>}</div><span className="step-kicker">SCREEN-AWARE ANSWERS</span><h2>Connect OpenAI</h2><p>When you ask about your screen, Ren sends your question and an on-demand screen snapshot to OpenAI. OpenAI may charge for requests.</p><label>Model<input aria-label="Vision model" value={visionModel} onChange={(event) => setVisionModel(event.target.value)} spellCheck={false} /></label><label>OpenAI API key<input aria-label="OpenAI API key" type="password" value={visionKey} onChange={(event) => setVisionKey(event.target.value)} placeholder={vision.mode === "connected" ? "Leave blank to keep saved key" : "Enter your OpenAI key"} autoComplete="off" /></label><div className="vision-actions"><button type="submit" className="allow-button">Save OpenAI key</button><button type="button" onClick={() => { visionOpenRef.current = false; setVisionOpen(false); setVisionKey(""); setDeepgramInput(""); setError(""); }}>Back to Ren</button>{vision.mode === "connected" && <button type="button" onClick={() => void clearVision()}>Remove OpenAI key</button>}</div><div className="hosted-settings"><span className="step-kicker">REALISTIC ON-SCREEN IMAGES</span><h2>Ren image service</h2><p>{hosted.mode === "demo" ? "Connect the Ren hosted image service once. Your validated lesson part names and connections go to this service when you approve an illustration; no screen screenshot is sent. The service uses your Ren illustration allowance." : `Connected to ${hosted.host}. Illustration requests use your Ren allowance; no screen screenshot is sent.`}</p><label>Ren image service URL<input aria-label="Ren image service URL" value={hostedUrl} onChange={(event) => setHostedUrl(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void saveHosted(); } }} placeholder="https://images.ren.example/v1" spellCheck={false} /></label><label>Ren access token<input aria-label="Ren access token" type="password" value={hostedToken} onChange={(event) => setHostedToken(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void saveHosted(); } }} placeholder={hosted.mode === "connected" ? "Leave blank to keep saved token" : "Enter your Ren access token"} autoComplete="off" /></label><div className="vision-actions"><button type="button" className="allow-button" onClick={() => void saveHosted()}>Save image service</button>{hosted.mode === "connected" && <button type="button" onClick={() => void clearHosted()}>Disconnect service</button>}</div></div></form> : <section className="ambient-conversation" aria-live="polite">{permission?.microphone !== "granted" && window.ren && <button className="demo-notice" onClick={() => void enableMicrophone()}>Enable microphone to talk to Ren. I’ll open the macOS setting if needed.</button>}{(vision.mode === "demo" || deepgram.mode === "demo") && <button className="demo-notice" onClick={openVisionSettings}>Connect your OpenAI and Deepgram keys to use screen answers and voice.</button>}{messages.length === 0 && <div className="empty-conversation"><div className="cursor-cue"><Spark /><span /></div><p>Point at anything on your screen</p><strong>“Hey Ren, explain this.”</strong><small>I’ll look, talk it through, and draw when it helps.</small></div>}{messages.map((message, index) => <article key={message.id} className={message.role}><span>{message.role === "assistant" ? `REN${message.provider ? ` · ${message.provider.toUpperCase()}` : ""}` : "YOU"}</span><p>{message.content}</p>{index === messages.length - 1 && message.followUps?.length ? <div className="follow-ups" aria-label="Suggested follow-up questions">{message.followUps.map((prompt) => <button key={prompt} onClick={() => void askQuestion(prompt)} disabled={voiceState === "processing"}>{prompt}<b aria-hidden="true">↗</b></button>)}</div> : null}</article>)}</section>}
       {error && <div className="ambient-error" role="alert">{error}</div>}
-      {!visionOpen && <><form className="ambient-composer" onSubmit={submit}><button type="button" className={`listen-button state-${voiceState}`} onClick={() => { if (nativeSpeechRef.current) { if (dictationActiveRef.current) void finishNativeDictation(); else void startNativeDictation(); return; } if (!recognitionRef.current) { setError("Connect Deepgram in AI settings to use voice."); questionRef.current?.focus(); return; } keepAwake(); try { recognitionRef.current.start(); setVoiceState("listening"); } catch { setError("Speech recognition could not start. Check Deepgram settings."); questionRef.current?.focus(); } }} aria-label={dictationActiveRef.current ? "Finish speaking" : "Start listening"}><MicGlyph /></button><textarea ref={questionRef} aria-label="Ask Ren" value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askQuestion(question); } }} placeholder="Ask about what you’re pointing at…" rows={1} /><button type="submit" className="ask-button" disabled={!question.trim() || voiceState === "processing"} aria-label="Send question">↑</button></form><footer><span><i aria-hidden="true" /> Hold {window.ren?.platform === "darwin" ? "Control+Option" : "Control+Alt"} and circle to focus</span>{permission?.interaction !== "granted" && <button onClick={() => void enableCircle()}>Enable circle</button>}{imageAvailable && (hosted.mode !== "demo" || vision.host === "api.openai.com") && permission?.interaction === "granted" && <button onClick={() => void illustrate()} disabled={imageRendering}>{imageRendering ? "Rendering…" : hosted.mode !== "demo" ? "Illustrate on screen · Ren cloud" : "Illustrate on screen · OpenAI may charge"}</button>}<button onClick={() => { setImageAvailable(false); void window.ren?.clearAnnotations(); }}>Clear drawings</button></footer></>}
+      {!visionOpen && <><form className="ambient-composer" onSubmit={submit}><button type="button" className={`listen-button state-${voiceState}`} onClick={() => { if (nativeSpeechRef.current) { if (dictationActiveRef.current) void finishNativeDictation(); else void startNativeDictation(); return; } if (!recognitionRef.current) { setError("Connect Deepgram in AI settings to use voice."); questionRef.current?.focus(); return; } keepAwake(); try { recognitionRef.current.start(); setVoiceState("listening"); } catch { setError("Speech recognition could not start. Check Deepgram settings."); questionRef.current?.focus(); } }} aria-label={dictationActiveRef.current ? "Finish speaking" : "Start listening"}><MicGlyph /></button><textarea ref={questionRef} aria-label="Ask Ren" value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askQuestion(question); } }} placeholder="Ask about what you’re pointing at…" rows={1} /><button type="submit" className="ask-button" disabled={!question.trim() || voiceState === "processing"} aria-label="Send question">↑</button></form><footer><span><i aria-hidden="true" /> Say “Hey Ren” or press {window.ren?.platform === "darwin" ? "⌘⇧Space" : "Ctrl+Shift+Space"} to talk</span>{permission?.interaction !== "granted" && <button onClick={() => void enableCircle()}>Enable circle</button>}{imageAvailable && (hosted.mode !== "demo" || vision.host === "api.openai.com") && <button onClick={() => void illustrate()} disabled={imageRendering}>{imageRendering ? "Rendering…" : hosted.mode !== "demo" ? "Illustrate on screen · Ren cloud" : "Illustrate on screen · OpenAI may charge"}</button>}<button onClick={() => { setImageAvailable(false); void window.ren?.clearAnnotations(); }}>Clear drawings</button></footer></>}
     </>}
   </main>;
 }

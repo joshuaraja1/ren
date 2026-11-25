@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld("ren", {
   requestPermissions: () => ipcRenderer.invoke("ren:request-permissions"),
   openPermissionSettings: (kind?: "screen" | "microphone") => ipcRenderer.invoke("ren:open-permission-settings", kind),
   setExpanded: (expanded: boolean) => ipcRenderer.invoke("ren:set-expanded", expanded),
-  captureContext: () => ipcRenderer.invoke("ren:capture-context"),
+  captureContext: (preserveVisual?: boolean) => ipcRenderer.invoke("ren:capture-context", preserveVisual === true),
   wakeAvailable: () => ipcRenderer.invoke("ren:wake-available"),
   wakeStart: (sampleRate: number) => ipcRenderer.invoke("ren:wake-start", sampleRate),
   wakeFeed: (samples: number[]) => ipcRenderer.invoke("ren:wake-feed", samples),
@@ -62,5 +62,10 @@ contextBridge.exposeInMainWorld("ren", {
     const handler = () => listener();
     ipcRenderer.on("ren:focus-selection", handler);
     return () => ipcRenderer.removeListener("ren:focus-selection", handler);
+  },
+  onActivateVoice: (listener: () => void) => {
+    const handler = () => listener();
+    ipcRenderer.on("ren:activate-voice", handler);
+    return () => ipcRenderer.removeListener("ren:activate-voice", handler);
   },
 });
