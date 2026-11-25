@@ -40,6 +40,11 @@ must be cancellable, bounded in bytes and time, and show partial previews when
 supported. The app discloses the image provider and any charge before the
 first generation.
 
+The image backend receives the validated manifest only by default. Sending a
+screen frame, crop, selected text, or app content to an image provider requires
+a separate, clear data disclosure and user consent for that provider. The
+same sensitive-app exclusions apply to answer and image requests.
+
 The visual is tied to a particular display and screen context. Ren clears or
 repositions it when scrolling, panning, changing displays, or switching tasks
 would make its callouts misleading. The user can hide it immediately. The
