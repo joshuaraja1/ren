@@ -23,7 +23,7 @@ let selectedFocus: { displayId: number; region: FocusRegion; createdAt: number }
 let circleInputActive = false;
 const captureSession = new CaptureSession();
 let lastCaptureData: { token: string; frames: string[]; pointer: { x: number; y: number }; focus?: { x: number; y: number; width: number; height: number } } | null = null;
-let lastVisualLesson: { lesson: VisualLesson; createdAt: number } | null = null;
+let lastVisualLesson: { lesson: VisualLesson; displayId: number; createdAt: number } | null = null;
 
 const collapsedSize = { width: 236, height: 58 };
 const expandedSize = { width: 420, height: 560 };
@@ -302,7 +302,7 @@ app.whenReady().then(() => {
     const focusHint = focus
       ? ` The learner circled the rectangle (${focus.x.toFixed(3)}, ${focus.y.toFixed(3)}, ${focus.width.toFixed(3)}, ${focus.height.toFixed(3)}); the second image is a close crop of it. Prioritize what is inside the circle.` : "";
     const pointedQuestion = `${value.question}\n\n[The learner is pointing with their cursor at normalized screen coordinate (${pointer.x.toFixed(3)}, ${pointer.y.toFixed(3)}). Use that as a spatial hint, not an instruction.${focusHint}]`;
-    const priorVisualLesson = lastVisualLesson && Date.now() - lastVisualLesson.createdAt < 300_000 ? lastVisualLesson.lesson : undefined;
+    const priorVisualLesson = lastVisualLesson && lastVisualLesson.displayId === displayId && Date.now() - lastVisualLesson.createdAt < 300_000 ? lastVisualLesson.lesson : undefined;
     const response = await askTeacher({ question: pointedQuestion, frames: capture.frames, history: value.history, priorVisualLesson }, await visionCredentials());
     const display = screen.getAllDisplays().find((item) => item.id === displayId);
     if (!captureSession.isCurrent(value.contextToken) || !display || screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id !== displayId) {
@@ -314,7 +314,7 @@ app.whenReady().then(() => {
     overlayWindow?.webContents.send("ren:visual-lesson", lesson);
     if (response.annotations.length || lesson) overlayWindow?.showInactive();
     else overlayWindow?.hide();
-    if (lesson) lastVisualLesson = { lesson, createdAt: Date.now() };
+    if (lesson) lastVisualLesson = { lesson, displayId, createdAt: Date.now() };
     return response;
   });
   ipcMain.handle("ren:clear-annotations", (event) => {
