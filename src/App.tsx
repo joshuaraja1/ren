@@ -49,6 +49,7 @@ export function App() {
   const [imageRendering, setImageRendering] = useState(false);
   const spokenAudioRef = useRef<HTMLAudioElement | null>(null);
   const speechEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const speechCancelRef = useRef<(() => void) | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const wakeEnabledRef = useRef(false);
   const awakeUntilRef = useRef(0);
@@ -400,32 +401,74 @@ export function App() {
   }
 
   async function speak(text: string, onEnd: () => void) {
-    if (!window.ren) { onEnd(); return; }
-    spokenAudioRef.current?.pause();
-    if (speechEndTimerRef.current) clearTimeout(speechEndTimerRef.current);
+    if (!window.ren?.onSpeechData || typeof MediaSource === "undefined" || !MediaSource.isTypeSupported("audio/mpeg")) {
+      setError("Streaming speech playback is unavailable on this system.");
+      onEnd(); return;
+    }
+    speechCancelRef.current?.();
     suppressSpeechUntilRef.current = Date.now() + 120_000;
+    const id = crypto.randomUUID();
+    const mediaSource = new MediaSource();
+    const url = URL.createObjectURL(mediaSource);
+    const audio = new Audio(url);
+    spokenAudioRef.current = audio;
+    const queue: Uint8Array[] = [];
+    let sourceBuffer: SourceBuffer | null = null;
+    let streamDone = false;
+    let started = false;
     let finished = false;
-    let url: string | null = null;
+    const cleanup = () => {
+      if (speechEndTimerRef.current) clearTimeout(speechEndTimerRef.current);
+      speechEndTimerRef.current = null;
+      unsubscribe();
+      audio.pause();
+      spokenAudioRef.current = null;
+      speechCancelRef.current = null;
+      URL.revokeObjectURL(url);
+    };
     const finish = () => {
       if (finished) return;
       finished = true;
-      if (speechEndTimerRef.current) clearTimeout(speechEndTimerRef.current);
-      speechEndTimerRef.current = null;
-      spokenAudioRef.current = null;
-      if (url) URL.revokeObjectURL(url);
+      cleanup();
       suppressSpeechUntilRef.current = Date.now() + 800;
       onEnd();
     };
+    const pump = () => {
+      if (!sourceBuffer || sourceBuffer.updating || finished) return;
+      if (queue.length) {
+        sourceBuffer.appendBuffer(Uint8Array.from(queue.shift()!));
+      } else if (streamDone && mediaSource.readyState === "open") {
+        mediaSource.endOfStream();
+      }
+    };
+    const unsubscribe = window.ren.onSpeechData((data) => {
+      if (data.id !== id || finished) return;
+      if (data.error) { setError(data.error); finish(); return; }
+      if (data.chunk) queue.push(Uint8Array.from(atob(data.chunk), (character) => character.charCodeAt(0)));
+      if (data.done) streamDone = true;
+      pump();
+    });
+    speechCancelRef.current = () => { if (!finished) { finished = true; cleanup(); } };
+    mediaSource.addEventListener("sourceopen", () => {
+      if (finished) return;
+      sourceBuffer = mediaSource.addSourceBuffer("audio/mpeg");
+      sourceBuffer.addEventListener("updateend", () => {
+        if (!started) {
+          started = true;
+          void audio.play().catch((reason: unknown) => {
+            setError(reason instanceof Error ? reason.message : "Deepgram speech could not play.");
+            finish();
+          });
+        }
+        pump();
+      });
+      pump();
+    });
+    audio.onended = finish;
+    audio.onerror = () => { setError("Deepgram speech could not play."); finish(); };
+    speechEndTimerRef.current = setTimeout(finish, Math.max(15_000, Math.min(90_000, text.length * 150)));
     try {
-      const base64 = await window.ren.speak(text);
-      const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
-      url = URL.createObjectURL(new Blob([bytes], { type: "audio/mpeg" }));
-      const audio = new Audio(url);
-      spokenAudioRef.current = audio;
-      audio.onended = finish;
-      audio.onerror = () => { setError("Deepgram speech could not play."); finish(); };
-      speechEndTimerRef.current = setTimeout(finish, Math.max(15_000, Math.min(90_000, text.length * 150)));
-      await audio.play();
+      await window.ren.speak(id, text);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Deepgram speech is unavailable.");
       finish();

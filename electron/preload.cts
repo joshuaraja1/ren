@@ -29,7 +29,12 @@ contextBridge.exposeInMainWorld("ren", {
   deepgramStatus: () => ipcRenderer.invoke("ren:deepgram-status"),
   saveDeepgramKey: (key: string) => ipcRenderer.invoke("ren:deepgram-save", key),
   clearDeepgramKey: () => ipcRenderer.invoke("ren:deepgram-clear"),
-  speak: (text: string) => ipcRenderer.invoke("ren:speak", text),
+  speak: (id: string, text: string) => ipcRenderer.invoke("ren:speak", id, text),
+  onSpeechData: (listener: (data: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: unknown) => listener(data);
+    ipcRenderer.on("ren:speech-data", handler);
+    return () => ipcRenderer.removeListener("ren:speech-data", handler);
+  },
   ask: (request: unknown) => ipcRenderer.invoke("ren:ask", request),
   clearAnnotations: () => ipcRenderer.invoke("ren:clear-annotations"),
   generateIllustration: () => ipcRenderer.invoke("ren:generate-illustration"),

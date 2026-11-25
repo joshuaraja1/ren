@@ -81,7 +81,8 @@ export type RenBridge = {
   deepgramStatus(): Promise<DeepgramStatus>;
   saveDeepgramKey(key: string): Promise<DeepgramStatus>;
   clearDeepgramKey(): Promise<DeepgramStatus>;
-  speak(text: string): Promise<string>;
+  speak(id: string, text: string): Promise<boolean>;
+  onSpeechData(listener: (data: { id: string; chunk?: string; done?: boolean; error?: string }) => void): () => void;
   ask(request: AskRequest): Promise<AskResponse>;
   clearAnnotations(): Promise<void>;
   generateIllustration(): Promise<boolean>;

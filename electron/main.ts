@@ -7,7 +7,7 @@ import { askTeacher } from "./provider.js";
 import { feedWake, startWake, stopWake, wakeAvailable } from "./wake.js";
 import { feedSpeech, finishSpeech, speechAvailable, startSpeech, stopSpeech } from "./speech.js";
 import { clearDeepgramKey, deepgramStatus, saveDeepgramKey } from "./deepgram-settings.js";
-import { speakWithDeepgram } from "./deepgram-tts.js";
+import { streamWithDeepgram } from "./deepgram-tts.js";
 import { normalizeCursor } from "./display-geometry.js";
 import { startCircleInput, stopCircleInput } from "./circle-input.js";
 import type { FocusRegion } from "./circle-geometry.js";
@@ -254,7 +254,19 @@ app.whenReady().then(() => {
   ipcMain.handle("ren:deepgram-status", (event) => { requireMainRenderer(event); return deepgramStatus(); });
   ipcMain.handle("ren:deepgram-save", (event, value: unknown) => { requireMainRenderer(event); return saveDeepgramKey(value); });
   ipcMain.handle("ren:deepgram-clear", (event) => { requireMainRenderer(event); return clearDeepgramKey(); });
-  ipcMain.handle("ren:speak", (event, value: unknown) => { requireMainRenderer(event); return speakWithDeepgram(value); });
+  ipcMain.handle("ren:speak", (event, id: unknown, value: unknown) => {
+    requireMainRenderer(event);
+    if (typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Invalid speech request.");
+    const sender = event.sender;
+    void streamWithDeepgram(value, (chunk) => {
+      if (!sender.isDestroyed()) sender.send("ren:speech-data", { id, chunk: Buffer.from(chunk).toString("base64") });
+    }).then(() => {
+      if (!sender.isDestroyed()) sender.send("ren:speech-data", { id, done: true });
+    }).catch((reason: unknown) => {
+      if (!sender.isDestroyed()) sender.send("ren:speech-data", { id, error: reason instanceof Error ? reason.message : "Deepgram speech failed." });
+    });
+    return true;
+  });
   ipcMain.handle("ren:request-permissions", (event) => {
     requireMainRenderer(event);
     if (permissionRequest) return permissionRequest;
