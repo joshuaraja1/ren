@@ -29,8 +29,10 @@ platform's secret manager:
 Set `PORT` and `REN_BIND_HOST` for the deployment. Put the container behind
 HTTPS and use the public base URL ending in `/v1`, such as
 `https://images.example.org/v1`. `REN_IMAGE_STAGING_ONLY=1` is required so this version cannot be launched as
-an unreviewed public service. Set a provider-level project spending cap, then
-set `REN_PROVIDER_SPEND_CAP_CONFIRMED=1` to start the staging service. Optional
+an unreviewed public service. In the OpenAI project's Limits settings, set a
+monthly spend limit and enable **Enforce a hard limit**; a spend alert alone does
+not stop requests. Enforcement can lag slightly. Then set
+`REN_PROVIDER_SPEND_CAP_CONFIRMED=1` to start the staging service. Optional
 bounds are
 `REN_IMAGE_DAILY_LIMIT` (default 100), `REN_IMAGE_PER_TOKEN_DAILY_LIMIT`
 (default 10), and `REN_IMAGE_MAX_CONCURRENT` (default 2). The service rejects
