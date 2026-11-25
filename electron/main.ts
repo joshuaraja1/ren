@@ -26,6 +26,7 @@ const captureSession = new CaptureSession();
 let lastCaptureData: { token: string; frames: string[]; pointer: { x: number; y: number }; focus?: { x: number; y: number; width: number; height: number }; firstSample: Uint8Array; secondSample: Uint8Array; thumbnailSize: { width: number; height: number } } | null = null;
 let lastVisualLesson: { lesson: VisualLesson; displayId: number; createdAt: number } | null = null;
 let screenCaptureBusy = false;
+let pendingAnswerToken: string | null = null;
 
 const collapsedSize = { width: 236, height: 58 };
 const expandedSize = { width: 420, height: 560 };
@@ -179,6 +180,11 @@ app.whenReady().then(() => {
       },
       onCancel: invalidateSpatialContext,
       onScroll: invalidateSpatialContext,
+      onInteraction: () => {
+        // Switching tabs or apps normally requires a click or key. Cancel any
+        // answer that was grounded before that interaction, including video.
+        if (pendingAnswerToken && captureSession.isCurrent(pendingAnswerToken)) captureSession.invalidate();
+      },
     });
     return circleInputActive;
   }
@@ -309,13 +315,20 @@ app.whenReady().then(() => {
     if (!value.contextToken || !capture || capture.token !== value.contextToken) throw new Error("Screen context expired. Ask again.");
     const displayId = captureSession.consume(value.contextToken);
     lastCaptureData = null;
+    pendingAnswerToken = value.contextToken;
     const pointer = capture.pointer;
     const focus = capture.focus;
     const focusHint = focus
       ? ` The learner circled the rectangle (${focus.x.toFixed(3)}, ${focus.y.toFixed(3)}, ${focus.width.toFixed(3)}, ${focus.height.toFixed(3)}); the second image is a close crop of it. Prioritize what is inside the circle.` : "";
     const pointedQuestion = `${value.question}\n\n[The learner is pointing with their cursor at normalized screen coordinate (${pointer.x.toFixed(3)}, ${pointer.y.toFixed(3)}). Use that as a spatial hint, not an instruction.${focusHint}]`;
     const priorVisualLesson = lastVisualLesson && lastVisualLesson.displayId === displayId && Date.now() - lastVisualLesson.createdAt < 300_000 ? lastVisualLesson.lesson : undefined;
-    const response = await askTeacher({ question: pointedQuestion, frames: capture.frames, history: value.history, priorVisualLesson }, await visionCredentials());
+    let response: Awaited<ReturnType<typeof askTeacher>>;
+    try {
+      response = await askTeacher({ question: pointedQuestion, frames: capture.frames, history: value.history, priorVisualLesson }, await visionCredentials());
+    } catch (error) {
+      if (pendingAnswerToken === value.contextToken) pendingAnswerToken = null;
+      throw error;
+    }
     const display = screen.getAllDisplays().find((item) => item.id === displayId);
     if (!captureSession.isCurrent(value.contextToken) || !display || screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id !== displayId) {
       throw new Error("The screen changed while Ren was answering. Ask again.");
@@ -343,6 +356,7 @@ app.whenReady().then(() => {
     if (response.annotations.length || lesson) overlayWindow?.showInactive();
     else overlayWindow?.hide();
     if (lesson) lastVisualLesson = { lesson, displayId, createdAt: Date.now() };
+    if (pendingAnswerToken === value.contextToken) pendingAnswerToken = null;
     return response;
   });
   ipcMain.handle("ren:clear-annotations", (event) => {

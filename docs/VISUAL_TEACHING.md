@@ -51,6 +51,14 @@ would make its callouts misleading. The user can hide it immediately. The
 overlay stays click-through so the underlying app remains operable; pointing
 and voice are the default ways to refer to its parts.
 
+The first renderer uses still pixels from a short capture burst as a screen
+anchor, so an ordinary playing video does not cancel the lesson. A click or
+key during an in-flight answer cancels the answer, covering normal tab and app
+switches. This is not proof of browser tab identity: automatic navigation or
+two visually similar dynamic views can evade that check. Ren rejects a drawing
+when too few still pixels remain to anchor it. A future browser-aware context
+adapter and physical video/tab-switch QA are release follow-ups.
+
 Generated imagery is marked as illustrative. Ren checks it against the
 manifest before using it as an explanation, and overlays labels from the
 validated manifest rather than relying on image-embedded text. If the object
