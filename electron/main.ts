@@ -3,7 +3,7 @@ import { app, BrowserWindow, desktopCapturer, ipcMain, screen, session, shell, s
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, writeFileSync } from "node:fs";
-import { askTeacher, validateAnnotations } from "./provider.js";
+import { askTeacher } from "./provider.js";
 import { feedWake, startWake, stopWake, wakeAvailable } from "./wake.js";
 import { feedSpeech, finishSpeech, speechAvailable, startSpeech, stopSpeech } from "./speech.js";
 import { normalizeCursor } from "./display-geometry.js";
@@ -13,12 +13,17 @@ import { clearVisionSettings, saveVisionSettings, visionCredentials, visionStatu
 import { parseAskRequest } from "./request-validation.js";
 import { hasMeaningfulMotion } from "./frame-motion.js";
 import { validateVisualLesson } from "./visual-lesson.js";
+import { CaptureSession } from "./capture-session.js";
+import type { VisualLesson } from "./visual-lesson.js";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 let mainWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
 let selectedFocus: { displayId: number; region: FocusRegion; createdAt: number } | null = null;
 let circleInputActive = false;
+const captureSession = new CaptureSession();
+let lastCaptureData: { token: string; frames: string[]; pointer: { x: number; y: number }; focus?: { x: number; y: number; width: number; height: number } } | null = null;
+let lastVisualLesson: { lesson: VisualLesson; createdAt: number } | null = null;
 
 const collapsedSize = { width: 236, height: 58 };
 const expandedSize = { width: 420, height: 560 };
@@ -129,6 +134,9 @@ app.whenReady().then(() => {
   function showFocusPath(displayId: number, points: FocusRegion["points"]) {
     const display = screen.getAllDisplays().find((item) => item.id === displayId);
     if (!display || !overlayWindow) return;
+    captureSession.invalidate();
+    lastCaptureData = null;
+    lastVisualLesson = null;
     overlayWindow.setBounds(display.bounds);
     overlayWindow.webContents.send("ren:visual-lesson", null);
     overlayWindow.webContents.send("ren:annotations", [{ id: "circle-focus", type: "path", points, color: "#327d87" }]);
@@ -136,6 +144,9 @@ app.whenReady().then(() => {
   }
   function invalidateSpatialContext() {
     selectedFocus = null;
+    captureSession.invalidate();
+    lastCaptureData = null;
+    lastVisualLesson = null;
     overlayWindow?.webContents.send("ren:annotations", []);
     overlayWindow?.webContents.send("ren:visual-lesson", null);
     overlayWindow?.hide();
@@ -266,8 +277,13 @@ app.whenReady().then(() => {
           if (third && hasMeaningfulMotion(motionSample(second), motionSample(third))) frames.push(encodeMotion(third));
         }
       }
+      const contextToken = captureSession.issue(display.id);
+      lastCaptureData = { token: contextToken, frames, pointer, focus: focus?.bounds };
+      setTimeout(() => {
+        if (lastCaptureData?.token === contextToken) { lastCaptureData = null; captureSession.invalidate(); }
+      }, 90_000).unref();
       overlayWindow?.setBounds(display.bounds);
-      return { frames, pointer, focus: focus?.bounds };
+      return { frames: [], pointer, focus: focus?.bounds, contextToken };
     } finally {
       mainWindow?.setOpacity(1);
       if (overlayWasVisible) overlayWindow?.showInactive();
@@ -277,26 +293,29 @@ app.whenReady().then(() => {
   ipcMain.handle("ren:ask", async (event, request: unknown) => {
     requireMainRenderer(event);
     const value = parseAskRequest(request);
-    const { pointer: currentPointer } = cursorDisplayContext();
-    const pointer = value.pointer ?? currentPointer;
-    const focusHint = value.focus
-      ? ` The learner circled the rectangle (${value.focus.x.toFixed(3)}, ${value.focus.y.toFixed(3)}, ${value.focus.width.toFixed(3)}, ${value.focus.height.toFixed(3)}); the second image is a close crop of it. Prioritize what is inside the circle.` : "";
+    const capture = lastCaptureData;
+    if (!value.contextToken || !capture || capture.token !== value.contextToken) throw new Error("Screen context expired. Ask again.");
+    const displayId = captureSession.consume(value.contextToken);
+    lastCaptureData = null;
+    const pointer = capture.pointer;
+    const focus = capture.focus;
+    const focusHint = focus
+      ? ` The learner circled the rectangle (${focus.x.toFixed(3)}, ${focus.y.toFixed(3)}, ${focus.width.toFixed(3)}, ${focus.height.toFixed(3)}); the second image is a close crop of it. Prioritize what is inside the circle.` : "";
     const pointedQuestion = `${value.question}\n\n[The learner is pointing with their cursor at normalized screen coordinate (${pointer.x.toFixed(3)}, ${pointer.y.toFixed(3)}). Use that as a spatial hint, not an instruction.${focusHint}]`;
-    return askTeacher({ question: pointedQuestion, frames: value.frames, history: value.history }, await visionCredentials());
-  });
-
-  ipcMain.handle("ren:show-annotations", (event, annotations: unknown) => {
-    requireMainRenderer(event);
-    const safe = validateAnnotations(annotations);
-    overlayWindow?.webContents.send("ren:annotations", safe);
-    overlayWindow?.showInactive();
-  });
-  ipcMain.handle("ren:show-visual-lesson", (event, candidate: unknown) => {
-    requireMainRenderer(event);
-    const lesson = validateVisualLesson(candidate);
-    if (!lesson) throw new Error("Invalid visual lesson");
+    const priorVisualLesson = lastVisualLesson && Date.now() - lastVisualLesson.createdAt < 300_000 ? lastVisualLesson.lesson : undefined;
+    const response = await askTeacher({ question: pointedQuestion, frames: capture.frames, history: value.history, priorVisualLesson }, await visionCredentials());
+    const display = screen.getAllDisplays().find((item) => item.id === displayId);
+    if (!captureSession.isCurrent(value.contextToken) || !display || screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id !== displayId) {
+      throw new Error("The screen changed while Ren was answering. Ask again.");
+    }
+    const lesson = validateVisualLesson(response.visualLesson);
+    overlayWindow?.setBounds(display.bounds);
+    overlayWindow?.webContents.send("ren:annotations", response.annotations);
     overlayWindow?.webContents.send("ren:visual-lesson", lesson);
-    overlayWindow?.showInactive();
+    if (response.annotations.length || lesson) overlayWindow?.showInactive();
+    else overlayWindow?.hide();
+    if (lesson) lastVisualLesson = { lesson, createdAt: Date.now() };
+    return response;
   });
   ipcMain.handle("ren:clear-annotations", (event) => {
     requireMainRenderer(event);

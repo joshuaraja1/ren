@@ -23,10 +23,11 @@ export type AskRequest = {
   frames: string[];
   history: ConversationTurn[];
   pointer?: Point;
+  contextToken?: string;
 };
 
 export type FocusBounds = { x: number; y: number; width: number; height: number };
-export type ScreenContext = { frames: string[]; pointer: Point; focus?: FocusBounds };
+export type ScreenContext = { frames: string[]; pointer: Point; focus?: FocusBounds; contextToken?: string };
 
 export type AmbientStatus = {
   ready: boolean;
@@ -38,7 +39,6 @@ export type AmbientStatus = {
 export type AskResponse = {
   answer: string;
   annotations: Annotation[];
-  visualLesson?: VisualLesson;
   followUps?: string[];
   provider: "demo" | "vision";
 };
@@ -71,11 +71,8 @@ export type RenBridge = {
   speechFinish(): Promise<string>;
   speechStop(): Promise<void>;
   ask(request: AskRequest): Promise<AskResponse>;
-  showAnnotations(annotations: Annotation[]): Promise<void>;
-  showVisualLesson(lesson: VisualLesson): Promise<void>;
   clearAnnotations(): Promise<void>;
   onAnnotations(listener: (annotations: Annotation[]) => void): () => void;
   onVisualLesson(listener: (lesson: VisualLesson | null) => void): () => void;
   onFocusSelection(listener: () => void): () => void;
 };
-

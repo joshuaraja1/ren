@@ -8,6 +8,7 @@ export type ValidAskRequest = {
   history: Turn[];
   pointer?: Point;
   focus?: Focus;
+  contextToken?: string;
 };
 
 const unit = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
@@ -34,5 +35,6 @@ export function parseAskRequest(value: unknown): ValidAskRequest {
     focus: focus && unit(focus.x) && unit(focus.y) && unit(focus.width) && unit(focus.height)
       && focus.width > 0 && focus.height > 0 && focus.x + focus.width <= 1 && focus.y + focus.height <= 1
       ? { x: focus.x, y: focus.y, width: focus.width, height: focus.height } : undefined,
+    contextToken: typeof raw.contextToken === "string" && /^[0-9a-f-]{36}$/i.test(raw.contextToken) ? raw.contextToken : undefined,
   };
 }

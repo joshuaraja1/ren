@@ -32,12 +32,16 @@ the preload bridge.
 3. On a question, main hides Ren's windows and captures a lossless image from the
    display containing the learner's cursor. It adds a circled crop and up to
    two compressed short-interval frames only when screen motion is detected.
-4. Main validates the payload and delegates to the configured provider.
+4. Main keeps captured frames in memory and gives the renderer a one-use
+   context token. It validates the question, consumes that token, and sends the
+   captured frames to the configured provider without round-tripping them
+   through renderer IPC.
 5. The provider returns prose plus normalized overlay commands and, for a
    requested visual explanation, a bounded connected-parts lesson.
 6. Main validates and forwards commands and lesson geometry to the transparent
    click-through overlay window on the captured display.
-7. The renderer discards the frame and shows the answer.
+7. Main rejects a late visual if its captured display or context changed. The
+   renderer shows the answer and has no IPC method for forging draw commands.
 
 The cursor's normalized position is added as a pointing hint. It is never
 treated as permission to click, type, or control the underlying application.

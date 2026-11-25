@@ -25,8 +25,6 @@ contextBridge.exposeInMainWorld("ren", {
   speechFinish: () => ipcRenderer.invoke("ren:speech-finish"),
   speechStop: () => ipcRenderer.invoke("ren:speech-stop"),
   ask: (request: unknown) => ipcRenderer.invoke("ren:ask", request),
-  showAnnotations: (annotations: unknown[]) => ipcRenderer.invoke("ren:show-annotations", annotations),
-  showVisualLesson: (lesson: unknown) => ipcRenderer.invoke("ren:show-visual-lesson", lesson),
   clearAnnotations: () => ipcRenderer.invoke("ren:clear-annotations"),
   onAnnotations: (listener: (annotations: unknown[]) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, annotations: unknown[]) => listener(annotations);

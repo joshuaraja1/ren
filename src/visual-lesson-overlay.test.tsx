@@ -17,3 +17,17 @@ it("draws a connected lesson directly in a normalized screen rectangle", () => {
   expect(container.querySelectorAll(".visual-lesson-part")).toHaveLength(2);
   expect(container.querySelector(".visual-lesson-lines line")).toHaveAttribute("marker-end", "url(#lesson-arrowhead)");
 });
+
+it("keeps headings and callouts inside top and right screen edges", () => {
+  const lesson = {
+    version: 1 as const, title: "Edge", placement: { x: 0.75, y: 0, width: 0.25, height: 0.3 },
+    parts: [
+      { id: "a", label: "A", explanation: "First.", x: 0.8, y: 0 },
+      { id: "b", label: "B", explanation: "Second.", x: 0.9, y: 1 },
+    ], connections: [{ from: "a", to: "b", label: "leads to" }],
+  };
+  const { container } = render(<VisualLessonOverlay lesson={lesson} />);
+  expect(container.querySelector(".visual-lesson-heading")).toHaveClass("is-inside");
+  expect(container.querySelectorAll(".visual-lesson-part.is-flipped")).toHaveLength(2);
+  expect(container.querySelector(".visual-lesson-part") as HTMLElement).toHaveStyle({ transform: "translate(calc(-100% - 12px), 0)" });
+});

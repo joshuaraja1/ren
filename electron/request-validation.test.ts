@@ -6,7 +6,7 @@ const valid = { question: " Explain this ", frames: ["data:image/png;base64,dGVz
 describe("IPC question validation", () => {
   it("accepts a bounded question and spatial context", () => {
     expect(parseAskRequest({ ...valid, pointer: { x: 0.4, y: 0.5 }, focus: { x: 0.2, y: 0.3, width: 0.5, height: 0.4 } })).toEqual({
-      ...valid, question: "Explain this", pointer: { x: 0.4, y: 0.5 }, focus: { x: 0.2, y: 0.3, width: 0.5, height: 0.4 },
+      ...valid, question: "Explain this", pointer: { x: 0.4, y: 0.5 }, focus: { x: 0.2, y: 0.3, width: 0.5, height: 0.4 }, contextToken: undefined,
     });
   });
 
@@ -18,5 +18,6 @@ describe("IPC question validation", () => {
 
   it("discards impossible spatial hints", () => {
     expect(parseAskRequest({ ...valid, pointer: { x: Number.NaN, y: 0 }, focus: { x: 0.9, y: 0.9, width: 0.2, height: 0.2 } })).toMatchObject({ pointer: undefined, focus: undefined });
+    expect(parseAskRequest({ ...valid, contextToken: "not-a-token" }).contextToken).toBeUndefined();
   });
 });
