@@ -27,8 +27,9 @@ the macOS Hardened Runtime.
 If macOS shows Accessibility or Microphone enabled while Ren still reports it
 missing after switching from an unsigned build, remove the old Ren entry in
 System Settings → Privacy & Security, launch the signed build, and grant its
-fresh request. Ren checks permissions again and starts the circle and voice
-listeners when macOS grants them.
+fresh request. Ren checks Accessibility again and starts the circle listener
+when macOS grants it. If Microphone was previously denied, quit and relaunch
+Ren after enabling it in System Settings so macOS applies the new grant.
 
 Local smoke package (signs automatically when a Developer ID certificate is
 available):

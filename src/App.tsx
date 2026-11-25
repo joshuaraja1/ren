@@ -325,7 +325,10 @@ export function App() {
     try {
       const status = await window.ren.requestPermissions();
       setPermission(status);
-      if (status.microphone !== "granted") await window.ren.openPermissionSettings("microphone");
+      if (status.microphone !== "granted") {
+        await window.ren.openPermissionSettings("microphone");
+        setError("After enabling Ren in Microphone settings, quit and reopen Ren so macOS applies the grant.");
+      }
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Ren couldn’t request microphone access."); }
   }
 
