@@ -1,8 +1,9 @@
 import type { VisualLesson } from "../electron/visual-lesson";
 import { useLayoutEffect, useRef, useState } from "react";
 import { placeLessonCard } from "./lesson-placement";
+import type { Illustration } from "./contracts";
 
-export function VisualLessonOverlay({ lesson }: { lesson: VisualLesson }) {
+export function VisualLessonOverlay({ lesson, illustration }: { lesson: VisualLesson; illustration?: Illustration | null }) {
   const cards = useRef(new Map<string, HTMLDivElement>());
   const [positions, setPositions] = useState<Record<string, { x: number; y: number; right: boolean }>>({});
   useLayoutEffect(() => {
@@ -29,6 +30,7 @@ export function VisualLessonOverlay({ lesson }: { lesson: VisualLesson }) {
   const description = `${lesson.title}. ${lesson.parts.map((part) => `${part.label}: ${part.explanation}`).join(" ")}`;
   const headingInside = lesson.placement.y * window.innerHeight < 110;
   return <section className="visual-lesson" style={placement} role="img" aria-label={description}>
+    {illustration && <div className="visual-lesson-illustration"><img src={illustration.image} alt="" /><span>{illustration.preview ? "GENERATING · " : ""}AI ILLUSTRATION · VERIFY DETAILS</span></div>}
     <div className={`visual-lesson-heading${headingInside ? " is-inside" : ""}`} aria-hidden="true"><span>REN EXPLAINS</span><strong>{lesson.title}</strong>{lesson.assumption && <small>{lesson.assumption}</small>}</div>
     <svg className="visual-lesson-lines" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
       <defs><marker id="lesson-arrowhead" markerWidth="11" markerHeight="11" refX="9" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" /></marker></defs>

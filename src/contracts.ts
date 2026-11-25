@@ -41,7 +41,9 @@ export type AskResponse = {
   annotations: Annotation[];
   followUps?: string[];
   provider: "demo" | "vision";
+  visualLesson?: VisualLesson;
 };
+export type Illustration = { image: string; preview: boolean };
 
 export type VisionStatus = { mode: "connected" | "environment" | "demo"; model: string; host: string; baseUrl: string };
 export type VisionSettingsInput = { apiKey: string; model: string; baseUrl: string };
@@ -71,6 +73,8 @@ export type RenBridge = {
   speechStop(): Promise<void>;
   ask(request: AskRequest): Promise<AskResponse>;
   clearAnnotations(): Promise<void>;
+  generateIllustration(): Promise<boolean>;
+  onIllustration(listener: (image: Illustration | null) => void): () => void;
   onAnnotations(listener: (annotations: Annotation[]) => void): () => void;
   onVisualLesson(listener: (lesson: VisualLesson | null) => void): () => void;
   onFocusSelection(listener: () => void): () => void;

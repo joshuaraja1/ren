@@ -1,8 +1,8 @@
 # Connected visual lessons
 
-Status: validated schema and first on-screen schematic implementation. Tracked in
-[issue #35](https://github.com/joshuaraja1/ren/issues/35). Ren does not yet
-generate realistic teaching images.
+Status: validated schema and first on-screen schematic implementation. An
+optional realistic image preview is in progress. Tracked in
+[issue #35](https://github.com/joshuaraja1/ren/issues/35).
 
 ## Experience
 
@@ -39,6 +39,13 @@ unsupported providers leave the on-screen diagram usable. Image generation
 must be cancellable, bounded in bytes and time, and show partial previews when
 supported. The app discloses the image provider and any charge before the
 first generation.
+
+The first image adapter uses the OpenAI Image API with a fast, medium-quality
+render and partial previews after the learner presses a control that discloses
+possible provider charges. It sends the validated manifest only. The image is
+composed into the same transparent overlay and marked as an illustration.
+It is a preview until an independent image-to-manifest check is implemented.
+Voice-only image requests, other image providers, and physical QA remain open.
 
 The image backend receives the validated manifest only by default. Sending a
 screen frame, crop, selected text, or app content to an image provider requires

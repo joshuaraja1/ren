@@ -31,3 +31,14 @@ it("keeps headings and callouts inside top and right screen edges", () => {
   expect(container.querySelectorAll(".visual-lesson-part.is-flipped")).toHaveLength(2);
   expect((container.querySelector(".visual-lesson-part") as HTMLElement).style.transform).toMatch(/^translate\(-\d+px, \d+px\)$/);
 });
+
+it("composes a clearly marked image preview into the same overlay", () => {
+  const lesson = {
+    version: 1 as const, title: "Wing", placement: { x: .2, y: .2, width: .5, height: .5 },
+    parts: [{ id: "a", label: "Air", explanation: "Flows past.", x: .2, y: .2 }, { id: "b", label: "Wing", explanation: "Deflects air.", x: .8, y: .8 }],
+    connections: [{ from: "a", to: "b", label: "passes" }],
+  };
+  const { container } = render(<VisualLessonOverlay lesson={lesson} illustration={{ image: "data:image/png;base64,dGVzdA==", preview: true }} />);
+  expect(container.querySelector(".visual-lesson-illustration img")).toHaveAttribute("src", "data:image/png;base64,dGVzdA==");
+  expect(container).toHaveTextContent("AI ILLUSTRATION · VERIFY DETAILS");
+});

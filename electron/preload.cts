@@ -25,6 +25,12 @@ contextBridge.exposeInMainWorld("ren", {
   speechStop: () => ipcRenderer.invoke("ren:speech-stop"),
   ask: (request: unknown) => ipcRenderer.invoke("ren:ask", request),
   clearAnnotations: () => ipcRenderer.invoke("ren:clear-annotations"),
+  generateIllustration: () => ipcRenderer.invoke("ren:generate-illustration"),
+  onIllustration: (listener: (image: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, image: unknown) => listener(image);
+    ipcRenderer.on("ren:illustration", handler);
+    return () => ipcRenderer.removeListener("ren:illustration", handler);
+  },
   onAnnotations: (listener: (annotations: unknown[]) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, annotations: unknown[]) => listener(annotations);
     ipcRenderer.on("ren:annotations", handler);
