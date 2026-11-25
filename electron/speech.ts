@@ -43,7 +43,7 @@ export async function startSpeech(sampleRate: number) {
     try {
       const message = JSON.parse(String(data)) as { type?: string; event?: string; transcript?: string };
       if (message.type === "TurnInfo" && typeof message.transcript === "string") {
-        current.transcript = message.transcript;
+        if (message.transcript.trim()) current.transcript = message.transcript;
         if (message.event === "EndOfTurn" && current.finish) closeSpeech(current);
       }
     } catch { /* Ignore malformed provider events. */ }

@@ -83,7 +83,7 @@ describe("vision provider settings", () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ models: [{ name: "qwen3.5:2b", capabilities: ["vision"] }] }))) as typeof fetch;
     try {
-      expect(await visionStatus()).toEqual({ mode: "demo", model: "gpt-6.2-sol", host: "", baseUrl: "https://api.openai.com/v1" });
+      expect(await visionStatus()).toEqual({ mode: "demo", model: "gpt-6-sol", host: "", baseUrl: "https://api.openai.com/v1" });
       expect(globalThis.fetch).not.toHaveBeenCalled();
       await expect(saveVisionSettings({ apiKey: "ollama", model: "qwen3.5:2b", baseUrl: "http://127.0.0.1:11434/v1" })).rejects.toThrow(/OpenAI API/);
       expect(await visionCredentials()).toBeNull();
@@ -99,8 +99,10 @@ describe("vision provider settings", () => {
     process.env.REN_TEST_SETTINGS_DIR = directory;
     try {
       await saveVisionSettings({ apiKey: "secret-test-key", model: "gpt-5.4-mini", baseUrl: "https://api.openai.com/v1" });
-      expect(await visionStatus()).toEqual({ mode: "connected", model: "gpt-6.2-sol", host: "api.openai.com", baseUrl: "https://api.openai.com/v1" });
-      expect(await visionCredentials()).toEqual({ apiKey: "secret-test-key", model: "gpt-6.2-sol", baseUrl: "https://api.openai.com/v1" });
+      expect(await visionStatus()).toEqual({ mode: "connected", model: "gpt-6-sol", host: "api.openai.com", baseUrl: "https://api.openai.com/v1" });
+      expect(await visionCredentials()).toEqual({ apiKey: "secret-test-key", model: "gpt-6-sol", baseUrl: "https://api.openai.com/v1" });
+      await saveVisionSettings({ apiKey: "secret-test-key", model: "gpt-6.2-sol", baseUrl: "https://api.openai.com/v1" });
+      expect((await visionCredentials())?.model).toBe("gpt-6-sol");
       expect(await readFile(join(directory, "vision-provider.json"), "utf8")).not.toContain("secret-test-key");
     } finally {
       delete process.env.REN_TEST_SETTINGS_DIR;

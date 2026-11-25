@@ -36,6 +36,15 @@ describe("Deepgram dictation", () => {
     socket.emit("message", JSON.stringify({ type: "TurnInfo", event: "EndOfTurn", transcript: "Explain my screen" }));
     await expect(result).resolves.toBe("Explain my screen");
   });
+  it("keeps the last recognized words when Flux sends an empty update", async () => {
+    expect(await startSpeech(48000)).toBe(true);
+    const socket = state.sockets[0];
+    socket.emit("message", JSON.stringify({ type: "TurnInfo", event: "Update", transcript: "Explain this chart" }));
+    socket.emit("message", JSON.stringify({ type: "TurnInfo", event: "Update", transcript: "" }));
+    const result = finishSpeech();
+    socket.emit("message", JSON.stringify({ type: "TurnInfo", event: "EndOfTurn", transcript: "" }));
+    await expect(result).resolves.toBe("Explain this chart");
+  });
   it("stays unavailable without a key", async () => {
     state.key = "";
     expect(await speechAvailable()).toBe(false);

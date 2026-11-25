@@ -142,7 +142,7 @@ export async function askTeacher(request: AskRequest, credentials: VisionCredent
     body: JSON.stringify({
       model,
       max_completion_tokens: 3500,
-      ...(model.startsWith("gpt-6") ? { reasoning_effort: "low" } : {}),
+      ...(model === "gpt-6-sol" ? { reasoning_effort: "medium" } : {}),
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: TEACHER_PROMPT },

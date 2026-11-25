@@ -41,7 +41,7 @@ export function App() {
   const [deepgramInput, setDeepgramInput] = useState("");
   const [visionOpen, setVisionOpen] = useState(false);
   const [visionKey, setVisionKey] = useState("");
-  const [visionModel, setVisionModel] = useState("gpt-6.2-sol");
+  const [visionModel, setVisionModel] = useState("gpt-6-sol");
   const [visionBase, setVisionBase] = useState(demoVision.baseUrl);
   const [hosted, setHosted] = useState<HostedImageStatus>(demoHosted);
   const [hostedUrl, setHostedUrl] = useState("");
@@ -137,17 +137,19 @@ export function App() {
             if (disposed || visionOpenRef.current) return;
             const samples = Array.from(event.inputBuffer.getChannelData(0));
             if (dictationActiveRef.current) {
-              if (!dictationReadyRef.current) {
-                if (pendingAudioRef.current.length < 36) pendingAudioRef.current.push(samples);
-                return;
-              }
               const now = Date.now();
               const level = Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
               if (level > 0.012) {
                 voicedFramesRef.current += 1;
                 lastVoiceAtRef.current = now;
               }
-              if (queuedFeedsRef.current >= 8) {
+              if (!dictationReadyRef.current) {
+                // Keep the question spoken while the cloud socket connects.
+                if (pendingAudioRef.current.length >= 180) pendingAudioRef.current.shift();
+                pendingAudioRef.current.push(samples);
+                return;
+              }
+              if (queuedFeedsRef.current >= 24) {
                 setError("Deepgram audio stream could not keep up. Try again.");
                 stopNativeDictation();
                 return;
@@ -162,7 +164,7 @@ export function App() {
                 setError("Deepgram dictation stopped. Check your network and key.");
                 stopNativeDictation();
               }).finally(() => { if (session === dictationSessionRef.current) queuedFeedsRef.current -= 1; });
-              if ((voicedFramesRef.current >= 2 && now - lastVoiceAtRef.current > 1500) || now - dictationStartedAtRef.current > (voicedFramesRef.current ? 28_000 : 8_000)) void finishNativeDictation();
+              if ((voicedFramesRef.current >= 2 && now - lastVoiceAtRef.current > 2000) || now - dictationStartedAtRef.current > (voicedFramesRef.current ? 30_000 : 10_000)) void finishNativeDictation();
               return;
             }
             if (pending || Date.now() < suppressSpeechUntilRef.current) return;
@@ -171,7 +173,7 @@ export function App() {
             pending = true;
             void window.ren!.wakeFeed(samples).then((woke) => {
               if (woke && !disposed) {
-                if (nativeSpeechRef.current) void startNativeDictation(true, recentAudio.slice());
+                if (nativeSpeechRef.current) void startNativeDictation(recentAudio.slice());
                 else handleAmbientTranscript("Hey Ren");
               }
             }).catch(() => setError("Local wake engine stopped. Click Ren to ask.")).finally(() => { pending = false; });
@@ -242,8 +244,9 @@ export function App() {
     void window.ren?.speechStop();
   }
 
-  async function startNativeDictation(_greeting = false, preRoll: number[][] = []) {
+  async function startNativeDictation(preRoll: number[][] = []) {
     if (!window.ren || !nativeSpeechRef.current || dictationActiveRef.current) return;
+    setError("");
     dictationActiveRef.current = true;
     const session = ++dictationSessionRef.current;
     dictationReadyRef.current = false;
@@ -258,6 +261,7 @@ export function App() {
     try {
       if (!await window.ren.speechStart(sampleRateRef.current)) throw new Error("Deepgram dictation could not start");
       if (session !== dictationSessionRef.current) return;
+      dictationStartedAtRef.current = Date.now();
       for (const samples of pendingAudioRef.current.splice(0)) {
         feedChainRef.current = feedChainRef.current.then(async () => {
           if (session !== dictationSessionRef.current) return;
@@ -494,7 +498,7 @@ export function App() {
     keepAwake(); setVoiceState("listening");
     const remainder = wakeMatch ? transcript.slice((wakeMatch.index ?? 0) + wakeMatch[0].length).replace(/^[,.:;\s-]+/, "") : transcript;
     if (remainder) void askQuestion(remainder);
-    else if (nativeWakeRef.current && nativeSpeechRef.current) void startNativeDictation(true);
+    else if (nativeWakeRef.current && nativeSpeechRef.current) void startNativeDictation();
     else greet(nativeWakeRef.current ? "Hey, I'm here. Type your question about what you're pointing at." : undefined);
   }
 
@@ -531,7 +535,7 @@ export function App() {
     finally { setImageRendering(false); }
   }
 
-  if (!expanded) return <button className={`ren-pebble state-${voiceState}`} onClick={() => void setExpanded(true)} aria-label={`Open Ren. ${permission?.microphone === "granted" ? voiceLabels[voiceState].title : "Microphone setup needed"}`}><span className="pebble-mark"><Spark /></span><span className="pebble-copy"><strong>{permission?.microphone === "granted" ? voiceLabels[voiceState].title : "Microphone off"}</strong><small>{permission?.microphone === "granted" ? voiceLabels[voiceState].detail : "Open Ren to enable voice"}</small></span><VoiceMeter active={voiceState !== "idle"} /><span className="privacy-dot" aria-hidden="true" /></button>;
+  if (!expanded) return <button className={`ren-pebble state-${voiceState}`} onClick={() => void setExpanded(true)} aria-label={`Open Ren. ${error ? "Needs attention" : permission?.microphone === "granted" ? voiceLabels[voiceState].title : "Microphone setup needed"}`}><span className="pebble-mark"><Spark /></span><span className="pebble-copy"><strong>{error ? "Try again" : permission?.microphone === "granted" ? voiceLabels[voiceState].title : "Microphone off"}</strong><small>{error ? /didn't catch/i.test(error) ? "I didn't catch that" : "Open Ren for details" : permission?.microphone === "granted" ? voiceLabels[voiceState].detail : "Open Ren to enable voice"}</small></span><VoiceMeter active={voiceState !== "idle"} /><span className="privacy-dot" aria-hidden="true" /></button>;
 
   return <main className="ambient-panel">
     <header className={`ambient-header state-${voiceState}`}><div className="companion-orb"><Spark /></div><div className="header-copy"><p><span className="state-dot" /> REN</p><h1>{voiceState === "processing" ? "Looking closely…" : voiceState === "listening" ? "I’m listening." : voiceState === "responding" ? "Let’s work through it." : "How can I help?"}</h1></div><VoiceMeter active={voiceState !== "idle"} /><button className="collapse-button" onClick={() => void setExpanded(false)} aria-label="Collapse Ren">⌃</button></header>

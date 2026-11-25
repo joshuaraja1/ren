@@ -37,7 +37,7 @@ describe("Ren ambient shell", () => {
     fireEvent.click(await screen.findByRole("button", { name: /connect ai/i }));
     expect(screen.getByText(/sends your question and an on-demand screen snapshot to openai/i)).toBeVisible();
     expect(screen.getByText(/streams your spoken question to Deepgram/i)).toBeVisible();
-    expect(screen.getByRole("textbox", { name: /vision model/i })).toHaveValue("gpt-6.2-sol");
+    expect(screen.getByRole("textbox", { name: /vision model/i })).toHaveValue("gpt-6-sol");
     expect(screen.getByLabelText(/openai api key/i)).toHaveAttribute("type", "password");
     expect(screen.getByLabelText(/deepgram api key/i)).toHaveAttribute("type", "password");
     expect(screen.getByRole("heading", { name: /ren image service/i })).toBeVisible();

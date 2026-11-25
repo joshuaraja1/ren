@@ -43,6 +43,19 @@ describe("provider privacy boundary", () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
+  it("uses medium reasoning for GPT-6 Sol", async () => {
+    let body: { model?: string; reasoning_effort?: string } = {};
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {
+      body = JSON.parse(String(options.body));
+      return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "**The selected area** is a chart." }) } }] }) };
+    }));
+    try {
+      const result = await askTeacher({ question: "Explain this", frames: [], history: [] }, { apiKey: "test-key", model: "gpt-6-sol", baseUrl: "https://api.openai.com/v1" });
+      expect(body).toMatchObject({ model: "gpt-6-sol", reasoning_effort: "medium" });
+      expect(result.answer).toBe("The selected area is a chart.");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("accepts only a validated on-screen visual lesson from the provider", async () => {
     const lesson = {
       version: 1, title: "Lift", placement: { x: 0.2, y: 0.2, width: 0.5, height: 0.5 },
