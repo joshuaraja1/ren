@@ -15,6 +15,7 @@ import { hasMeaningfulMotion } from "./frame-motion.js";
 import { isSameStableScreen } from "./screen-continuity.js";
 import { canPlaceSpatialVisual } from "./visual-safety.js";
 import { generateIllustration, imagePrompt } from "./image-render.js";
+import { locateImageParts, positionsOnOpaquePixels } from "./image-registration.js";
 import { validateVisualLesson } from "./visual-lesson.js";
 import { CaptureSession } from "./capture-session.js";
 import type { VisualLesson } from "./visual-lesson.js";
@@ -383,7 +384,7 @@ app.whenReady().then(() => {
     if (imageRequestedFor === visual.lesson) throw new Error("This lesson already requested an image. Ask a new question to create another.");
     imageRequestBusy = true;
     try {
-      const detail = `Ren will send this screen-derived lesson text to OpenAI:\n\n${imagePrompt(visual.lesson)}\n\nNo screenshot is sent to the image generator. OpenAI may charge for this request.`;
+      const detail = `Ren will send this screen-derived lesson text to OpenAI:\n\n${imagePrompt(visual.lesson)}\n\nThe generated image is sent to your configured vision model to check part locations. No screen screenshot is sent to the image generator. Both requests may incur provider charges.`;
       const decision = await dialog.showMessageBox(mainWindow!, { type: "question", title: "Create a Ren illustration", message: "Generate an illustration for this lesson?", detail, buttons: ["Cancel", "Generate image"], defaultId: 0, cancelId: 0, noLink: true });
       if (decision.response !== 1) return false;
       if (lastVisualLesson !== visual || !circleInputActive) throw new Error("The lesson changed before image generation began.");
@@ -393,22 +394,29 @@ app.whenReady().then(() => {
       imageRequestedFor = visual.lesson;
       const controller = new AbortController();
       imageRenderAbort = controller;
-      const timeout = setTimeout(() => controller.abort(), 90_000);
+      const timeout = setTimeout(() => controller.abort(), 150_000);
       const current = () => lastVisualLesson === visual && screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id === visual.displayId && !controller.signal.aborted;
-      const decodes = (dataUrl: string) => {
+      const decoded = (dataUrl: string) => {
         const image = nativeImage.createFromDataURL(dataUrl);
         const size = image.getSize();
-        return !image.isEmpty() && size.width > 0 && size.height > 0 && size.width <= 2048 && size.height <= 2048;
+        return !image.isEmpty() && size.width > 0 && size.height > 0 && size.width <= 2048 && size.height <= 2048 ? { image, size } : null;
       };
       try {
       const image = await generateIllustration(visual.lesson, credentials.apiKey, (preview) => {
         if (!current()) { controller.abort(); return; }
-        if (!decodes(preview)) return;
-        overlayWindow?.webContents.send("ren:illustration", { image: preview, preview: true });
+        const checked = decoded(preview);
+        if (!checked) return;
+        overlayWindow?.webContents.send("ren:illustration", { image: preview, preview: true, width: checked.size.width, height: checked.size.height });
       }, controller.signal);
       if (!current()) throw new Error("The screen changed while the illustration was rendering.");
-      if (!decodes(image)) throw new Error("Image provider returned an unreadable image.");
-      overlayWindow?.webContents.send("ren:illustration", { image, preview: false });
+      const checked = decoded(image);
+      if (!checked) throw new Error("Image provider returned an unreadable image.");
+      const registration = await locateImageParts(visual.lesson, image, credentials.apiKey, credentials.model, controller.signal);
+      if (!current()) throw new Error("The screen changed while the illustration was being checked.");
+      if (!registration || !positionsOnOpaquePixels(checked.image.toBitmap(), checked.size.width, checked.size.height, registration)) {
+        throw new Error("The illustration could not be matched to every lesson part. Keeping the schematic.");
+      }
+      overlayWindow?.webContents.send("ren:illustration", { image, preview: false, width: checked.size.width, height: checked.size.height, registration });
       return true;
       } catch (error) {
         overlayWindow?.webContents.send("ren:illustration", null);

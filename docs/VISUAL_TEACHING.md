@@ -46,9 +46,12 @@ a native dialog showing the exact screen-derived text sent and possible
 provider charges. One image request is allowed per lesson. It sends only a
 reduced, validated manifest with title, part names, and connections. The image
 is composed into the same transparent overlay and marked as an illustration.
-The schematic callouts are hidden while the unverified image is visible, so
-they cannot appear to identify the wrong pixels.
-It is a preview until an independent image-to-manifest check is implemented.
+The schematic callouts are hidden during partial previews. After generation,
+Ren sends the generated image to the configured vision model to locate every
+manifest part independently. It accepts a complete, confident, distinct set of
+coordinates on opaque pixels; then the callouts and connections are registered
+to the contained image. Missing or ambiguous parts return to the schematic.
+This is a conservative placement check, not proof of engineering accuracy.
 Voice-only image requests, other image providers, and physical QA remain open.
 
 The image backend receives the validated manifest only by default. Sending a
@@ -88,7 +91,7 @@ not a manufacturing drawing, dimensional specification, or proof of operation.
 3. **Realistic on-screen image:** optional cutout image adapter, progressive
    previews, overlay composition, cancellation, resource bounds, provider
    disclosure, fallback, and security tests.
-4. **Verification:** image-to-manifest review, cross-domain evaluation set,
+4. **Verification:** image-to-manifest placement implemented; cross-domain evaluation set,
    latency and accuracy measurements, physical packaged QA, and human review.
 
 Benchmarks must record time to first useful diagram, first realistic preview,

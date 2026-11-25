@@ -1,4 +1,5 @@
 import type { VisualLesson } from "../electron/visual-lesson";
+import type { ImageRegistration } from "../electron/image-registration";
 
 export type Point = { x: number; y: number };
 
@@ -43,7 +44,7 @@ export type AskResponse = {
   provider: "demo" | "vision";
   visualLesson?: VisualLesson;
 };
-export type Illustration = { image: string; preview: boolean };
+export type Illustration = { image: string; preview: boolean; width: number; height: number; registration?: ImageRegistration };
 
 export type VisionStatus = { mode: "connected" | "environment" | "demo"; model: string; host: string; baseUrl: string };
 export type VisionSettingsInput = { apiKey: string; model: string; baseUrl: string };
