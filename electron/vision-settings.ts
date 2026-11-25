@@ -5,7 +5,8 @@ import { join } from "node:path";
 export type VisionCredentials = { apiKey: string; model: string; baseUrl: string };
 export type VisionStatus = { mode: "connected" | "environment" | "demo"; model: string; host: string; baseUrl: string };
 const OPENAI_BASE = "https://api.openai.com/v1";
-const DEFAULT_MODEL = "gpt-5.4-mini";
+const DEFAULT_MODEL = "gpt-6.2-sol";
+const PREVIOUS_DEFAULT_MODEL = "gpt-5.4-mini";
 
 type StoredVision =
   | { version: 1; model: string; baseUrl: string; encryptedKey: string }
@@ -66,7 +67,7 @@ async function readCredentials(): Promise<VisionCredentials | null> {
   try {
     if (stored.version === 1) {
       const apiKey = (await safeStorage.decryptStringAsync(Buffer.from(stored.encryptedKey, "base64"))).result;
-      const credentials = { apiKey, model: validateModel(stored.model), baseUrl: openAIEndpoint(stored.baseUrl) };
+      const credentials = { apiKey, model: validateModel(stored.model) === PREVIOUS_DEFAULT_MODEL ? DEFAULT_MODEL : validateModel(stored.model), baseUrl: openAIEndpoint(stored.baseUrl) };
       await encryptCredentials(credentials);
       return credentials;
     }
@@ -74,6 +75,10 @@ async function readCredentials(): Promise<VisionCredentials | null> {
     const raw = JSON.parse(decrypted) as Partial<VisionCredentials>;
     if (typeof raw.apiKey !== "string" || !raw.apiKey || typeof raw.model !== "string" || typeof raw.baseUrl !== "string") throw new Error("Invalid provider credentials");
     const credentials = { apiKey: raw.apiKey, model: validateModel(raw.model), baseUrl: openAIEndpoint(raw.baseUrl) };
+    if (credentials.model === PREVIOUS_DEFAULT_MODEL) {
+      credentials.model = DEFAULT_MODEL;
+      await encryptCredentials(credentials);
+    }
     return credentials;
   } catch {
     throw new Error("Could not unlock the saved vision provider. Open AI settings to reconnect it.");

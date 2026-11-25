@@ -37,7 +37,7 @@ describe("Ren ambient shell", () => {
     fireEvent.click(await screen.findByRole("button", { name: /connect ai/i }));
     expect(screen.getByText(/sends your question and an on-demand screen snapshot to openai/i)).toBeVisible();
     expect(screen.getByText(/streams your spoken question to Deepgram/i)).toBeVisible();
-    expect(screen.getByRole("textbox", { name: /vision model/i })).toHaveValue("gpt-5.4-mini");
+    expect(screen.getByRole("textbox", { name: /vision model/i })).toHaveValue("gpt-6.2-sol");
     expect(screen.getByLabelText(/openai api key/i)).toHaveAttribute("type", "password");
     expect(screen.getByLabelText(/deepgram api key/i)).toHaveAttribute("type", "password");
     expect(screen.getByRole("heading", { name: /ren image service/i })).toBeVisible();
@@ -110,6 +110,29 @@ describe("Ren ambient shell", () => {
     } finally {
       window.ren = undefined;
     }
+  });
+
+  it("keeps a circle question in the compact pill", async () => {
+    let selected: (() => void) | undefined;
+    const ask = vi.fn(async () => ({ answer: "This is the selected region.", annotations: [], provider: "vision" as const }));
+    window.ren = {
+      permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
+      primarySource: async () => ({ id: "screen", name: "Main display", thumbnail: "" }),
+      wakeAvailable: async () => false,
+      onFocusSelection: (listener: () => void) => { selected = listener; return () => { selected = undefined; }; },
+      setExpanded: async () => {},
+      speechStop: async () => {},
+      captureContext: async () => ({ frames: [], pointer: { x: 0.5, y: 0.5 } }),
+      ask,
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      await screen.findByRole("button", { name: /open ren/i });
+      act(() => selected?.());
+      await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+      expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible();
+      expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
+    } finally { window.ren = undefined; }
   });
 
   it("asks a suggested follow-up with a fresh screen context", async () => {

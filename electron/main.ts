@@ -196,7 +196,7 @@ app.whenReady().then(() => {
       onComplete: (displayId, region) => {
         selectedFocus = { displayId, region, createdAt: Date.now() };
         showFocusPath(displayId, region.points);
-        positionMainWindow(true, displayId);
+        positionMainWindow(mainWindow?.getBounds().width === expandedSize.width, displayId);
         mainWindow?.showInactive();
         mainWindow?.webContents.send("ren:focus-selection");
       },
@@ -404,6 +404,9 @@ app.whenReady().then(() => {
       && canPlaceSpatialVisual(capture.dynamicContent, circleInputActive));
     let lesson = spatialAllowed ? validateVisualLesson(response.visualLesson) : null;
     let annotations = spatialAllowed ? response.annotations : [];
+    if (spatialAllowed && focus) {
+      annotations = [{ id: "selected-area", type: "rectangle" as const, at: { x: focus.x, y: focus.y }, width: focus.width, height: focus.height, color: "#42c7d9", label: "Selected area" }, ...annotations.filter((item) => item.type !== "rectangle")].slice(0, 4);
+    }
     if (annotations.length || lesson) {
       if (screenCaptureBusy) { lesson = null; annotations = []; }
       else {

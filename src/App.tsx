@@ -41,7 +41,7 @@ export function App() {
   const [deepgramInput, setDeepgramInput] = useState("");
   const [visionOpen, setVisionOpen] = useState(false);
   const [visionKey, setVisionKey] = useState("");
-  const [visionModel, setVisionModel] = useState("gpt-5.4-mini");
+  const [visionModel, setVisionModel] = useState("gpt-6.2-sol");
   const [visionBase, setVisionBase] = useState(demoVision.baseUrl);
   const [hosted, setHosted] = useState<HostedImageStatus>(demoHosted);
   const [hostedUrl, setHostedUrl] = useState("");
@@ -93,7 +93,6 @@ export function App() {
     visionOpenRef.current = false;
     setVisionOpen(false);
     setVisionKey("");
-    void setExpanded(true);
     void askQuestion("Explain what is inside the area I circled on my screen. Start with the part I selected, and show me how it connects to what I'm doing.");
   }), []);
 
@@ -243,7 +242,7 @@ export function App() {
     void window.ren?.speechStop();
   }
 
-  async function startNativeDictation(greeting = false, preRoll: number[][] = []) {
+  async function startNativeDictation(_greeting = false, preRoll: number[][] = []) {
     if (!window.ren || !nativeSpeechRef.current || dictationActiveRef.current) return;
     dictationActiveRef.current = true;
     const session = ++dictationSessionRef.current;
@@ -254,10 +253,8 @@ export function App() {
     feedChainRef.current = Promise.resolve();
     queuedFeedsRef.current = 0;
     pendingAudioRef.current = preRoll;
-    await setExpanded(true);
     if (session !== dictationSessionRef.current) return;
     setVoiceState("listening"); keepAwake();
-    if (greeting) setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: "Hey, I'm here. Ask me about what you're pointing at." }]);
     try {
       if (!await window.ren.speechStart(sampleRateRef.current)) throw new Error("Deepgram dictation could not start");
       if (session !== dictationSessionRef.current) return;
@@ -494,7 +491,7 @@ export function App() {
     const wakeMatch = transcript.match(/\b(?:hey\s+(?:ren|run)|ren)\b/i);
     const alreadyAwake = Date.now() < awakeUntilRef.current;
     if (!wakeMatch && !alreadyAwake) return;
-    void setExpanded(true); keepAwake(); setVoiceState("listening");
+    keepAwake(); setVoiceState("listening");
     const remainder = wakeMatch ? transcript.slice((wakeMatch.index ?? 0) + wakeMatch[0].length).replace(/^[,.:;\s-]+/, "") : transcript;
     if (remainder) void askQuestion(remainder);
     else if (nativeWakeRef.current && nativeSpeechRef.current) void startNativeDictation(true);
