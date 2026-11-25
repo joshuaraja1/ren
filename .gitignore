@@ -3,6 +3,7 @@ dist/
 dist-electron/
 dist-server/
 release/
+release-permission-test/
 coverage/
 playwright-report/
 test-results/

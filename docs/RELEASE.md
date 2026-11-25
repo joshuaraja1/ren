@@ -12,11 +12,21 @@ Every merge to `main` packages unsigned macOS, Windows, and Linux artifacts on
 native GitHub runners. Artifacts are retained for 14 days and are for internal
 testing only. They are not a public release and operating systems may warn about
 their missing signature.
-On macOS, unsigned rebuilds can appear as different apps to Keychain, so
-stored provider keys may prompt again until Ren is signed with a stable
-identity. See [Electron safeStorage](https://www.electronjs.org/docs/latest/api/safe-storage).
+On macOS, unsigned rebuilds do not have a stable identity for Screen Recording
+and Keychain permission testing. Use a locally signed `npm run pack` build with
+a Developer ID certificate for those checks. Verify that `codesign -dv
+release/mac-arm64/Ren.app` reports `Identifier=ai.ren.teacher` and the expected
+Developer ID authority before testing permission onboarding. See
+[Apple's code signing identity guidance](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements)
+and [Electron safeStorage](https://www.electronjs.org/docs/latest/api/safe-storage).
+If macOS shows Accessibility enabled while Ren still reports it missing after
+switching from an unsigned build, remove the old Ren entry in System Settings →
+Privacy & Security → Accessibility, launch the signed build, and grant its fresh
+request. Ren checks the permission again and starts the circle listener when
+macOS grants it.
 
-Local smoke package:
+Local smoke package (signs automatically when a Developer ID certificate is
+available):
 
 ```bash
 npm run pack

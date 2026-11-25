@@ -20,6 +20,7 @@ import { generateHostedIllustration } from "./hosted-image-render.js";
 import { locateImageParts, positionsOnOpaquePixels } from "./image-registration.js";
 import { validateVisualLesson } from "./visual-lesson.js";
 import { CaptureSession } from "./capture-session.js";
+import { requestMacScreenCaptureAccess } from "./mac-screen-permission.js";
 import type { VisualLesson } from "./visual-lesson.js";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
@@ -36,6 +37,7 @@ let activeCaptureToken: string | null = null;
 let imageRenderAbort: AbortController | null = null;
 let imageRequestBusy = false;
 let imageRequestedFor: VisualLesson | null = null;
+let permissionRequest: Promise<ReturnType<typeof permissionStatus>> | null = null;
 
 const collapsedSize = { width: 236, height: 58 };
 const expandedSize = { width: 420, height: 560 };
@@ -50,7 +52,7 @@ function permissionStatus() {
   const microphone = systemPreferences.getMediaAccessStatus("microphone");
   const screenAccess = systemPreferences.getMediaAccessStatus("screen");
   const accessibility = systemPreferences.isTrustedAccessibilityClient(false);
-  return { ready: hasCompletedOnboarding() && microphone === "granted" && screenAccess === "granted", microphone, screen: screenAccess, interaction: circleInputActive ? "granted" : accessibility ? "unavailable" : "not-granted" };
+  return { ready: screenAccess === "granted", microphone, screen: screenAccess, interaction: circleInputActive ? "granted" : accessibility ? "unavailable" : "not-granted" };
 }
 
 function positionMainWindow(expanded: boolean, displayId?: number) {
@@ -207,7 +209,11 @@ app.whenReady().then(() => {
     callback(permission === "media" && webContents === mainWindow?.webContents);
   });
 
-  ipcMain.handle("ren:permission-status", permissionStatus);
+  ipcMain.handle("ren:permission-status", (event) => {
+    requireMainRenderer(event);
+    if (!permissionRequest && !circleInputActive && (process.platform !== "darwin" || systemPreferences.isTrustedAccessibilityClient(false))) enableCircleInput();
+    return permissionStatus();
+  });
   ipcMain.handle("ren:vision-status", (event) => event.sender === mainWindow?.webContents ? visionStatus() : null);
   ipcMain.handle("ren:vision-save", (event, value: unknown) => {
     if (event.sender !== mainWindow?.webContents) throw new Error("Not allowed");
@@ -241,19 +247,32 @@ app.whenReady().then(() => {
   ipcMain.handle("ren:speech-feed", (event, samples: unknown) => event.sender === mainWindow?.webContents && feedSpeech(samples));
   ipcMain.handle("ren:speech-finish", (event) => event.sender === mainWindow?.webContents ? finishSpeech() : "");
   ipcMain.handle("ren:speech-stop", (event) => event.sender === mainWindow?.webContents ? stopSpeech() : undefined);
-  ipcMain.handle("ren:request-permissions", async (event) => {
+  ipcMain.handle("ren:request-permissions", (event) => {
     requireMainRenderer(event);
-    if (process.platform === "darwin") await systemPreferences.askForMediaAccess("microphone");
-    if (process.platform === "darwin") systemPreferences.isTrustedAccessibilityClient(true);
-    await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 1, height: 1 } });
-    const access = permissionStatus();
-    const canComplete = process.platform !== "darwin" || (access.microphone === "granted" && access.screen === "granted");
-    if (canComplete) writeFileSync(onboardingMarkerPath(), new Date().toISOString(), { encoding: "utf8", mode: 0o600 });
-    if (permissionStatus().ready) {
-      if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: true });
-      enableCircleInput();
-    }
-    return permissionStatus();
+    if (permissionRequest) return permissionRequest;
+    permissionRequest = (async () => {
+      const wasOnTop = mainWindow?.isAlwaysOnTop() ?? false;
+      if (wasOnTop) mainWindow?.setAlwaysOnTop(false);
+      try {
+        // Enumerating sources alone does not register the app in macOS privacy
+        // settings. Explicitly request access from Ren's signed main process.
+        if (process.platform === "darwin" && !await requestMacScreenCaptureAccess()) return permissionStatus();
+        await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 320, height: 180 } });
+        if (process.platform === "darwin") await systemPreferences.askForMediaAccess("microphone");
+        if (process.platform === "darwin") systemPreferences.isTrustedAccessibilityClient(true);
+        const access = permissionStatus();
+        const canComplete = process.platform !== "darwin" || access.screen === "granted";
+        if (canComplete) writeFileSync(onboardingMarkerPath(), new Date().toISOString(), { encoding: "utf8", mode: 0o600 });
+        if (permissionStatus().ready) {
+          if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: true });
+          enableCircleInput();
+        }
+        return permissionStatus();
+      } finally {
+        if (wasOnTop) mainWindow?.setAlwaysOnTop(true, "floating");
+      }
+    })().finally(() => { permissionRequest = null; });
+    return permissionRequest;
   });
   ipcMain.handle("ren:open-permission-settings", async (event) => {
     requireMainRenderer(event);
