@@ -27,6 +27,25 @@ describe("Ren voice interface", () => {
     } finally { window.ren = undefined; }
   });
 
+  it("answers an ordinary question without taking a screen capture", async () => {
+    const captureContext = vi.fn(async () => { throw new Error("Screen Recording is unavailable"); });
+    const ask = vi.fn(async () => ({ answer: "Pedaling turns the wheel.", annotations: [], provider: "demo" as const }));
+    window.ren = {
+      platform: "darwin", permissionStatus: async () => ({ ready: false, microphone: "granted", screen: "denied", interaction: "not-granted" }),
+      wakeAvailable: async () => false, onFocusSelection: () => () => {},
+      setExpanded: async () => {}, setCompanionVisible: async () => {}, speechStop: async () => {},
+      captureContext, ask,
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
+      fireEvent.change(screen.getByRole("textbox", { name: /ask ren/i }), { target: { value: "How do bicycle gears work?" } });
+      fireEvent.click(screen.getByRole("button", { name: /send ren prompt/i }));
+      await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({ question: "How do bicycle gears work?", frames: [], contextToken: expect.any(String) })));
+      expect(captureContext).not.toHaveBeenCalled();
+    } finally { window.ren = undefined; }
+  });
+
   it("keeps Chat visible for a typed follow-up and routes Agent mode to a job", async () => {
     const setExpanded = vi.fn(async () => {});
     const ask = vi.fn(async () => ({ answer: "Here is the answer.", annotations: [], provider: "demo" as const }));
@@ -118,7 +137,7 @@ describe("Ren voice interface", () => {
     } finally { window.ren = undefined; }
   });
 
-  it("keeps the notch compact for a global voice shortcut", async () => {
+  it("shows a visible voice error when a global shortcut has no microphone input", async () => {
     let activate: (() => void) | undefined;
     window.ren = {
       platform: "darwin",
@@ -134,11 +153,12 @@ describe("Ren voice interface", () => {
       await screen.findByRole("button", { name: /open ren/i });
       act(() => activate?.());
       expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible();
-      expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
+      expect(await screen.findByRole("textbox", { name: /ask ren/i })).toBeVisible();
+      expect(screen.getByRole("alert")).toHaveTextContent(/voice|wake phrase/i);
     } finally { window.ren = undefined; }
   });
 
-  it("keeps voice on the notch and opens settings on right-click", async () => {
+  it("opens Home on unavailable voice and settings on right-click", async () => {
     let activate: (() => void) | undefined;
     const setExpanded = vi.fn(async () => {});
     window.ren = {
@@ -157,8 +177,8 @@ describe("Ren voice interface", () => {
       expect(setExpanded).not.toHaveBeenCalledWith(true, expect.anything());
       act(() => activate?.());
       expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible();
-      expect(setExpanded).not.toHaveBeenCalledWith(true, expect.anything());
-      fireEvent.contextMenu(strip);
+      await waitFor(() => expect(setExpanded).toHaveBeenCalledWith(true, true));
+      fireEvent.click(screen.getByRole("button", { name: /open ren settings/i }));
       await waitFor(() => expect(setExpanded).toHaveBeenCalledWith(true, true));
       expect(screen.getByLabelText(/openai api key/i)).toHaveAttribute("type", "password");
       expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
@@ -202,6 +222,59 @@ describe("Ren voice interface", () => {
       expect(screen.queryByRole("main")).not.toBeInTheDocument();
       fireEvent.click(strip);
       await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({ question: "Explain this component" })));
+    } finally {
+      window.ren = undefined;
+      globalThis.AudioContext = originalAudioContext;
+      Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: originalMediaDevices });
+    }
+  });
+
+  it("captures microphone audio and answers a provider-ended turn when wake-word startup fails", async () => {
+    let activate: (() => void) | undefined;
+    let input: ((value: { transcript?: string; error?: string }) => void) | undefined;
+    let processAudio: ((event: { inputBuffer: { getChannelData(channel: number): Float32Array } }) => void) | null = null;
+    const originalAudioContext = globalThis.AudioContext;
+    const originalMediaDevices = navigator.mediaDevices;
+    const resume = vi.fn(async () => {});
+    class FakeAudioContext {
+      sampleRate = 48_000;
+      state = "suspended";
+      destination = {};
+      createMediaStreamSource() { return { connect() {} }; }
+      createScriptProcessor() { return { connect() {}, disconnect() {}, set onaudioprocess(listener: typeof processAudio) { processAudio = listener; } }; }
+      async resume() { await resume(); this.state = "running"; }
+      async close() {}
+    }
+    globalThis.AudioContext = FakeAudioContext as unknown as typeof AudioContext;
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } });
+    const speechStart = vi.fn(async () => true);
+    const speechFeed = vi.fn(async () => true);
+    const ask = vi.fn(async () => new Promise<never>(() => {}));
+    window.ren = {
+      platform: "darwin",
+      permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
+      primarySource: async () => ({ id: "screen", name: "Main display", thumbnail: "" }),
+      wakeAvailable: async () => true, wakeStart: async () => false, wakeStop: async () => {},
+      speechAvailable: async () => true, speechStart, speechFeed, speechStop: async () => {}, speechFinish: async () => "How does this work?",
+      onActivateVoice: (listener: () => void) => { activate = listener; return () => { activate = undefined; }; },
+      onFocusSelection: () => () => {},
+      onSpeechInput: (listener: typeof input) => { input = listener; return () => { input = undefined; }; },
+      setExpanded: async () => {}, setCompanionVisible: async () => {}, captureContext: async () => ({ frames: [], pointer: { x: .5, y: .5 } }), ask,
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      await waitFor(() => expect(processAudio).toBeTypeOf("function"));
+      act(() => activate?.());
+      await waitFor(() => expect(speechStart).toHaveBeenCalledOnce());
+      expect(resume).toHaveBeenCalledOnce();
+      act(() => processAudio?.({ inputBuffer: { getChannelData: () => new Float32Array(2048).fill(.05) } }));
+      await waitFor(() => expect(speechFeed).toHaveBeenCalledOnce());
+      act(() => input?.({ transcript: "How does this work?" }));
+      await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({ question: "How does this work?" })));
+      speechStart.mockResolvedValueOnce(false);
+      act(() => activate?.());
+      await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Deepgram dictation could not start"));
+      expect(screen.getByRole("main")).toBeVisible();
     } finally {
       window.ren = undefined;
       globalThis.AudioContext = originalAudioContext;

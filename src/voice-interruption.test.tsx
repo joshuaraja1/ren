@@ -1,4 +1,4 @@
-import { act, render, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { AskResponse, RenBridge, VoiceMode } from "./contracts";
@@ -122,6 +122,32 @@ afterEach(() => {
 });
 
 describe("voice interruption and follow-ups", () => {
+  it("leaves Speaking and exposes an error if Deepgram never sends audio", async () => {
+    let now = 8_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const idleCallbacks: Array<() => void> = [];
+    const realSetTimeout = globalThis.setTimeout;
+    vi.spyOn(globalThis, "setTimeout").mockImplementation((handler, timeout, ...args) => {
+      if (timeout === 20_000 && typeof handler === "function") {
+        idleCallbacks.push(() => (handler as (...values: unknown[]) => void)(...args));
+        return 0 as ReturnType<typeof setTimeout>;
+      }
+      return realSetTimeout(handler, timeout, ...args);
+    });
+    const harness = makeHarness(["Explain bicycles"], vi.fn(async () => response("The pedals turn a chain.")) as RenBridge["ask"]);
+    harness.renderApp();
+    await waitFor(() => expect(harness.processAudio).toBeTypeOf("function"));
+    harness.activate();
+    await waitFor(() => expect(harness.speechStart).toHaveBeenCalledOnce());
+    await finishUtterance(harness, () => { now += 2_100; });
+    await waitFor(() => expect(harness.speak).toHaveBeenCalledOnce());
+    const [speechID] = harness.speak.mock.calls[0];
+    expect(idleCallbacks.length).toBeGreaterThan(0);
+    act(() => idleCallbacks.at(-1)?.());
+    await waitFor(() => expect(harness.cancelSpeech).toHaveBeenCalledWith(speechID));
+    expect(screen.getByRole("alert")).toHaveTextContent("voice stopped responding");
+  });
+
   it("keeps a newly started recording when the initial voice-mode status arrives", async () => {
     const status = deferred<VoiceMode>();
     const harness = makeHarness([], vi.fn(async () => response("unused")) as RenBridge["ask"]);
@@ -189,7 +215,7 @@ describe("voice interruption and follow-ups", () => {
     await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
 
     harness.feedFrames(5);
-    await waitFor(() => expect(harness.cancelAsk).toHaveBeenCalledExactlyOnceWith("test-context"));
+    await waitFor(() => expect(harness.cancelAsk).toHaveBeenCalledExactlyOnceWith(expect.any(String)));
     await waitFor(() => expect(harness.speechStart).toHaveBeenCalledTimes(2));
     await act(async () => { firstAnswer.resolve(response("A stale answer that must never speak.")); });
     expect(harness.speak).not.toHaveBeenCalled();

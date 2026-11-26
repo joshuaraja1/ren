@@ -3,6 +3,7 @@ import type { AmbientStatus, AskResponse, ConversationTurn, DeepgramStatus, Host
 import { PcmStreamPlayer } from "./pcm-player";
 import { interactiveSceneFor } from "../electron/interactive-scene";
 import { wantsVisualCreation } from "../electron/visual-intent";
+import { wantsCurrentScreen } from "../electron/screen-intent";
 import { detectAgentJobIntent } from "../electron/agent-job-intent";
 import type { AgentJobSnapshot } from "../electron/agent-jobs";
 
@@ -26,7 +27,7 @@ const demoHosted: HostedImageStatus = { mode: "demo", baseUrl: "", host: "" };
 const voiceLabels: Record<VoiceState, { title: string; detail: string }> = {
   idle: { title: "Ready", detail: "Say “Hey Ren”" },
   listening: { title: "Listening", detail: "Follow up without saying Hey Ren" },
-  processing: { title: "Thinking", detail: "Reading your screen" },
+  processing: { title: "Thinking", detail: "Working on your request" },
   responding: { title: "Speaking", detail: "Working it through" },
 };
 const Spark = () => <svg aria-hidden="true" viewBox="0 0 32 32" className="spark"><path d="M16 2c.8 8.6 5.4 13.2 14 14-8.6.8-13.2 5.4-14 14-.8-8.6-5.4-13.2-14-14 8.6-.8 13.2-5.4 14-14Z" /></svg>;
@@ -46,6 +47,7 @@ export function App() {
   const [error, setError] = useState("");
   const [vision, setVision] = useState<VisionStatus>(demoVision);
   const [deepgram, setDeepgram] = useState<DeepgramStatus>({ mode: "demo" });
+  const [microphoneRevision, setMicrophoneRevision] = useState(0);
   const [deepgramInput, setDeepgramInput] = useState("");
   const [visionOpen, setVisionOpen] = useState(false);
   const [visionKey, setVisionKey] = useState("");
@@ -75,6 +77,7 @@ export function App() {
   const messagesRef = useRef<Message[]>([]);
   const nativeWakeRef = useRef(false);
   const nativeSpeechRef = useRef(false);
+  const microphoneContextRef = useRef<AudioContext | null>(null);
   const sampleRateRef = useRef(16_000);
   const dictationActiveRef = useRef(false);
   const dictationReadyRef = useRef(false);
@@ -129,20 +132,12 @@ export function App() {
     setVisionOpen(false);
     setVisionKey("");
     if (nativeSpeechRef.current) void startNativeDictation();
-    else {
-      setError("Voice is unavailable. Open Ren to check microphone and Deepgram settings, then circle again.");
-      showCompanion();
-      hideCompanionSoon();
-    }
+    else showVoiceError("Voice is unavailable. Check microphone and Deepgram settings, then circle again.");
   }), []);
   useEffect(() => window.ren?.onActivateVoice?.(() => {
     if (voicePausedRef.current) return;
     if (nativeSpeechRef.current) void startNativeDictation();
-    else {
-      setError("Voice is unavailable. Open Ren manually to check the microphone and Deepgram settings.");
-      showCompanion();
-      hideCompanionSoon();
-    }
+    else showVoiceError("Voice is unavailable. Check the microphone and Deepgram settings.");
   }), []);
   useEffect(() => window.ren?.onOpenPanel?.(() => { openVisionSettings(); }), []);
   useEffect(() => window.ren?.onOpenHome?.(() => {
@@ -153,6 +148,15 @@ export function App() {
     void setExpanded(true);
   }), []);
   useEffect(() => window.ren?.onAgentJobUpdate?.(handleAgentJobUpdate), []);
+  useEffect(() => window.ren?.onSpeechInput?.((input) => {
+    if (!dictationActiveRef.current) return;
+    if (input.error) {
+      stopNativeDictation();
+      conversationOpenRef.current = false;
+      awaitingFollowUpRef.current = false;
+      showVoiceError(input.error);
+    } else if (input.transcript?.trim()) void finishNativeDictation();
+  }), []);
 
   useEffect(() => {
     void (async () => {
@@ -177,15 +181,16 @@ export function App() {
     let context: AudioContext | null = null;
     let processor: ScriptProcessorNode | null = null;
     void (async () => {
-      if (window.ren && await window.ren.wakeAvailable()) {
+      const wakeAvailable = await window.ren?.wakeAvailable?.().catch(() => false);
+      const speechAvailable = await window.ren?.speechAvailable?.().catch(() => { setError("Ren could not unlock Deepgram. Reconnect the key in settings."); return false; });
+      if (window.ren && speechAvailable) {
         try {
-          nativeSpeechRef.current = await window.ren.speechAvailable();
           media = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
           if (disposed) { media.getTracks().forEach((track) => track.stop()); return; }
           context = new AudioContext();
+          microphoneContextRef.current = context;
           sampleRateRef.current = context.sampleRate;
-          if (!await window.ren.wakeStart(context.sampleRate)) throw new Error("Local wake engine could not start");
-          nativeWakeRef.current = true;
+          nativeWakeRef.current = Boolean(wakeAvailable && await window.ren.wakeStart(context.sampleRate).catch(() => false));
           const source = context.createMediaStreamSource(media);
           processor = context.createScriptProcessor(2048, 1, 1);
           let pending = false;
@@ -193,7 +198,7 @@ export function App() {
           let wasAwaitingFollowUp = false;
           let followUpVoiceFrames = 0;
           processor.onaudioprocess = (event) => {
-            if (disposed || visionOpenRef.current || voicePausedRef.current) return;
+            if (disposed || voicePausedRef.current || (visionOpenRef.current && !dictationActiveRef.current)) return;
             const samples = Array.from(event.inputBuffer.getChannelData(0));
             if (dictationActiveRef.current) {
               wasAwaitingFollowUp = false;
@@ -211,12 +216,10 @@ export function App() {
                 return;
               }
               if (queuedFeedsRef.current >= 24) {
-                setError("Deepgram audio stream could not keep up. Try again.");
                 conversationOpenRef.current = false;
                 awaitingFollowUpRef.current = false;
                 stopNativeDictation();
-                setVoiceState("idle");
-                hideCompanionSoon();
+                showVoiceError("Deepgram audio stream could not keep up. Try again.");
                 return;
               }
               const session = dictationSessionRef.current;
@@ -226,12 +229,10 @@ export function App() {
                 if (!await window.ren!.speechFeed(samples)) throw new Error("Deepgram audio stream stopped");
               }).catch(() => {
                 if (session !== dictationSessionRef.current) return;
-                setError("Deepgram dictation stopped. Check your network and key.");
                 conversationOpenRef.current = false;
                 awaitingFollowUpRef.current = false;
                 stopNativeDictation();
-                setVoiceState("idle");
-                hideCompanionSoon();
+                showVoiceError("Deepgram dictation stopped. Check your network and key.");
               }).finally(() => { if (session === dictationSessionRef.current) queuedFeedsRef.current -= 1; });
               if ((voicedFramesRef.current >= 2 && now - lastVoiceAtRef.current > 2000) || now - dictationStartedAtRef.current > (voicedFramesRef.current ? 30_000 : 10_000)) void finishNativeDictation();
               return;
@@ -256,7 +257,7 @@ export function App() {
               return;
             }
             wasAwaitingFollowUp = false;
-            if (pending || Date.now() < suppressSpeechUntilRef.current) return;
+            if (!nativeWakeRef.current || pending || Date.now() < suppressSpeechUntilRef.current) return;
             recentAudio.push(samples);
             if (recentAudio.length > 24) recentAudio.shift();
             pending = true;
@@ -269,8 +270,13 @@ export function App() {
           };
           source.connect(processor);
           processor.connect(context.destination);
+          nativeSpeechRef.current = true;
           return;
         } catch {
+          nativeSpeechRef.current = false;
+          nativeWakeRef.current = false;
+          if (microphoneContextRef.current === context) microphoneContextRef.current = null;
+          setError("Microphone input could not start. Check Ren's macOS Microphone permission and reopen the app.");
           media?.getTracks().forEach((track) => track.stop());
           void context?.close();
           await window.ren.wakeStop();
@@ -309,6 +315,7 @@ export function App() {
       disposed = true;
       nativeWakeRef.current = false;
       nativeSpeechRef.current = false;
+      microphoneContextRef.current = null;
       dictationActiveRef.current = false;
       dictationReadyRef.current = false;
       conversationOpenRef.current = alwaysOnRef.current && !voicePausedRef.current;
@@ -322,7 +329,7 @@ export function App() {
       void window.ren?.wakeStop();
       void window.ren?.speechStop();
     };
-  }, [permission?.ready, permission?.microphone, voiceMode.paused]);
+  }, [permission?.ready, permission?.microphone, voiceMode.paused, deepgram.mode, microphoneRevision]);
 
   function applyVoiceMode(mode: VoiceMode) {
     if (!mode || typeof mode.paused !== "boolean" || typeof mode.alwaysOn !== "boolean") return;
@@ -419,6 +426,18 @@ export function App() {
     void window.ren?.speechStop();
   }
 
+  function showVoiceError(message: string) {
+    setVoiceState("idle");
+    setError(message);
+    visionOpenRef.current = false;
+    setVisionOpen(false);
+    setPanelTab("home");
+    if (collapseTimerRef.current) clearTimeout(collapseTimerRef.current);
+    collapseTimerRef.current = null;
+    showCompanion();
+    void setExpanded(true);
+  }
+
   function interruptCurrentResponse() {
     const wasAsking = askingRef.current;
     const oldAskToken = activeAskTokenRef.current;
@@ -434,12 +453,13 @@ export function App() {
       void window.ren?.cancelAgentJob?.(currentJob);
     }
     speechCancelRef.current?.();
-    void window.ren?.setResponseCaption?.(null);
     suppressSpeechUntilRef.current = 0;
   }
 
   async function startNativeDictation(preRoll: number[][] = [], automatic = false) {
     if (!window.ren || !nativeSpeechRef.current || dictationActiveRef.current) return;
+    const inputContext = microphoneContextRef.current;
+    if (!inputContext || inputContext.state === "closed") { showVoiceError("Microphone input is not ready. Reopen Ren and try again."); return; }
     interruptCurrentResponse();
     conversationOpenRef.current = true;
     awaitingFollowUpRef.current = false;
@@ -460,6 +480,7 @@ export function App() {
     if (session !== dictationSessionRef.current) return;
     setVoiceState("listening"); keepAwake();
     try {
+      if (inputContext.state === "suspended") await inputContext.resume();
       if (!await window.ren.speechStart(sampleRateRef.current)) throw new Error("Deepgram dictation could not start");
       if (session !== dictationSessionRef.current) return;
       // Opening the speech stream can overlap a visibility update from the
@@ -477,9 +498,7 @@ export function App() {
       if (session !== dictationSessionRef.current) return;
       stopNativeDictation();
       conversationOpenRef.current = false;
-      setVoiceState("idle");
-      setError(reason instanceof Error ? reason.message : "Deepgram is unavailable. Check your key and network in AI settings.");
-      hideCompanionSoon();
+      showVoiceError(reason instanceof Error ? reason.message : "Deepgram is unavailable. Check your key and network in AI settings.");
     }
   }
 
@@ -513,12 +532,10 @@ export function App() {
       }
     } catch (reason) {
       if (session !== dictationSessionRef.current) return;
-      setVoiceState("idle");
-      setError(reason instanceof Error ? reason.message : "Deepgram could not finish dictation. Try again.");
       conversationOpenRef.current = false;
       awaitingFollowUpRef.current = false;
       stopNativeDictation();
-      hideCompanionSoon();
+      showVoiceError(reason instanceof Error ? reason.message : "Deepgram could not finish dictation. Try again.");
     }
   }
 
@@ -609,7 +626,7 @@ export function App() {
     try {
       setDeepgram(await window.ren.saveDeepgramKey(deepgramInput));
       setDeepgramInput("");
-      nativeSpeechRef.current = true;
+      setMicrophoneRevision((current) => current + 1);
       setError("");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not save the Deepgram key."); }
   }
@@ -618,7 +635,7 @@ export function App() {
     if (!window.ren) return;
     try {
       setDeepgram(await window.ren.clearDeepgramKey());
-      nativeSpeechRef.current = await window.ren.speechAvailable();
+      setMicrophoneRevision((current) => current + 1);
       setDeepgramInput("");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not remove the Deepgram key."); }
   }
@@ -635,25 +652,40 @@ export function App() {
     let finished = false;
     let unsubscribe = () => {};
     let startTimer: ReturnType<typeof setTimeout> | null = null;
+    let progressTimer: ReturnType<typeof setTimeout> | null = null;
     let player: PcmStreamPlayer | null = null;
     const finish = (reason?: string, notify = true) => {
       if (finished) return;
       finished = true;
       if (startTimer) clearTimeout(startTimer);
+      if (progressTimer) clearTimeout(progressTimer);
       unsubscribe();
       player?.dispose();
       speechCancelRef.current = null;
-      if (reason) setError(reason);
+      if (reason) { setError(reason); void setExpanded(true); }
       suppressSpeechUntilRef.current = Date.now() + 300;
       if (notify) onEnd();
+    };
+    const expectProgressWithin = (ms: number) => {
+      if (progressTimer) clearTimeout(progressTimer);
+      progressTimer = setTimeout(() => {
+        void window.ren?.cancelSpeech?.(id);
+        finish("Ren's voice stopped responding. Please try again.");
+      }, ms);
     };
     player = new PcmStreamPlayer(context, () => finish());
     unsubscribe = window.ren.onSpeechData((data) => {
       if (data.id !== id || finished) return;
       if (data.error) { finish(data.error); return; }
       try {
-        if (data.chunk) player?.push(Uint8Array.from(atob(data.chunk), (character) => character.charCodeAt(0)));
-        if (data.done) player?.complete();
+        if (data.chunk) {
+          player?.push(Uint8Array.from(atob(data.chunk), (character) => character.charCodeAt(0)));
+          expectProgressWithin(20_000);
+        }
+        if (data.done) {
+          player?.complete();
+          if (!finished) expectProgressWithin(10_000 + (player?.remainingPlaybackMs ?? 0));
+        }
       } catch (reason) { finish(reason instanceof Error ? reason.message : "Deepgram speech could not play."); }
     });
     speechCancelRef.current = () => {
@@ -663,6 +695,7 @@ export function App() {
     startTimer = setTimeout(() => {
       if (context.state !== "running") finish("Audio playback did not start. Click Ren’s microphone button and try again.");
     }, 10_000);
+    expectProgressWithin(20_000);
     void context.resume().catch(() => finish("Audio playback could not start."));
     try {
       await window.ren.speak(id, text);
@@ -776,11 +809,20 @@ export function App() {
         setVoiceState("processing");
         return;
       }
-      const response = window.ren ? await (async () => { const context = await captureBurst(clean); if (generation !== askGenerationRef.current) return null; activeAskTokenRef.current = context.contextToken ?? null; return window.ren!.ask({ question: clean, ...context, history }); })() : { answer: "I can see the interaction working in preview mode. The packaged desktop app will use your current screen and cursor as context.", annotations: [], provider: "demo" as const };
+      const response = window.ren ? await (async () => {
+        if (!wantsCurrentScreen(clean, history)) {
+          const contextToken = crypto.randomUUID();
+          activeAskTokenRef.current = contextToken;
+          return window.ren!.ask({ question: clean, frames: [], contextToken, history });
+        }
+        const context = await captureBurst(clean);
+        if (generation !== askGenerationRef.current) return null;
+        activeAskTokenRef.current = context.contextToken ?? null;
+        return window.ren!.ask({ question: clean, ...context, history });
+      })() : { answer: "I can see the interaction working in preview mode. The packaged desktop app will use your current screen and cursor as context.", annotations: [], provider: "demo" as const };
       if (!response || generation !== askGenerationRef.current) return;
       if (!response.reusedVisual) setImageAvailable(!!response.visualLesson && !interactiveSceneFor(response.visualLesson));
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: response.answer, provider: response.provider, followUps: response.followUps }]);
-      void window.ren?.setResponseCaption?.(response.answer);
       setVoiceState("responding"); suppressSpeechUntilRef.current = Date.now() + Math.min(12_000, response.answer.length * 45);
       void speak(response.answer, () => {
         if (generation !== askGenerationRef.current) return;
@@ -830,10 +872,10 @@ export function App() {
       else void startNativeDictation();
       return;
     }
-    if (!recognitionRef.current) { setError("Connect Deepgram in AI settings to use voice."); return; }
+    if (!recognitionRef.current) { showVoiceError("Connect Deepgram in AI settings to use voice."); return; }
     keepAwake();
     try { recognitionRef.current.start(); setVoiceState("listening"); }
-    catch { setError("Speech recognition could not start. Check Deepgram settings."); }
+    catch { showVoiceError("Speech recognition could not start. Check Deepgram settings."); }
   }
 
   const stripStatus = voiceMode.paused ? "Paused"

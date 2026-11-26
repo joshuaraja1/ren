@@ -27,6 +27,11 @@ contextBridge.exposeInMainWorld("ren", {
   speechFeed: (samples: number[]) => ipcRenderer.invoke("ren:speech-feed", samples),
   speechFinish: () => ipcRenderer.invoke("ren:speech-finish"),
   speechStop: () => ipcRenderer.invoke("ren:speech-stop"),
+  onSpeechInput: (listener: (input: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, input: unknown) => listener(input);
+    ipcRenderer.on("ren:speech-input", handler);
+    return () => ipcRenderer.removeListener("ren:speech-input", handler);
+  },
   deepgramStatus: () => ipcRenderer.invoke("ren:deepgram-status"),
   saveDeepgramKey: (key: string) => ipcRenderer.invoke("ren:deepgram-save", key),
   clearDeepgramKey: () => ipcRenderer.invoke("ren:deepgram-clear"),
@@ -40,12 +45,6 @@ contextBridge.exposeInMainWorld("ren", {
   ask: (request: unknown) => ipcRenderer.invoke("ren:ask", request),
   cancelAsk: (contextToken?: string) => ipcRenderer.invoke("ren:ask-cancel", contextToken),
   clearAnnotations: () => ipcRenderer.invoke("ren:clear-annotations"),
-  setResponseCaption: (text: string | null) => ipcRenderer.invoke("ren:response-caption", text),
-  onResponseCaption: (listener: (caption: unknown) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, caption: unknown) => listener(caption);
-    ipcRenderer.on("ren:response-caption", handler);
-    return () => ipcRenderer.removeListener("ren:response-caption", handler);
-  },
   generateIllustration: (automatic?: boolean) => ipcRenderer.invoke("ren:generate-illustration", automatic === true),
   onIllustration: (listener: (image: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, image: unknown) => listener(image);

@@ -11,9 +11,7 @@ function Overlay() {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [visualLesson, setVisualLesson] = useState<VisualLesson | null>(null);
   const [illustration, setIllustration] = useState<Illustration | null>(null);
-  const [responseCaption, setResponseCaption] = useState<{ text: string; point: Point } | null>(null);
   useEffect(() => window.ren?.onAnnotations(setAnnotations), []);
-  useEffect(() => window.ren?.onResponseCaption?.(setResponseCaption), []);
   useEffect(() => window.ren?.onVisualLesson((next) => {
     // Clear the preceding lesson's image in the same React update. A new
     // pending lesson must never briefly reveal the previous subject's image.
@@ -46,7 +44,6 @@ function Overlay() {
         return label ? <div key={`${item.id}-label`} className="text-mark" style={style}>{label}</div> : null;
       })}
       {visualLesson && <VisualLessonOverlay lesson={visualLesson} illustration={illustration} />}
-      {responseCaption && <div className="response-caption" style={{ left: `clamp(170px, ${responseCaption.point.x * 100}%, calc(100% - 170px))`, top: `clamp(24px, ${responseCaption.point.y * 100}%, calc(100% - 150px))` }}><span>REN</span><p>{responseCaption.text}</p></div>}
     </div>
   );
 }

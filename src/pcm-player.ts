@@ -9,6 +9,10 @@ export class PcmStreamPlayer {
 
   constructor(private readonly context: AudioContext, private readonly onEnded: () => void) {}
 
+  get remainingPlaybackMs() {
+    return Math.max(0, Math.ceil((this.nextStart - this.context.currentTime) * 1000));
+  }
+
   push(chunk: Uint8Array) {
     if (this.disposed || this.done || !chunk.length) return;
     const merged = new Uint8Array(this.pending.length + chunk.length);

@@ -45,6 +45,21 @@ describe("Deepgram dictation", () => {
     socket.emit("message", JSON.stringify({ type: "TurnInfo", event: "EndOfTurn", transcript: "" }));
     await expect(result).resolves.toBe("Explain this chart");
   });
+  it("finishes a spoken turn when Flux detects its end without waiting for a local silence timer", async () => {
+    const turns: string[] = [];
+    expect(await startSpeech(48000, (event) => { if (event.transcript) turns.push(event.transcript); })).toBe(true);
+    const socket = state.sockets[0];
+    socket.emit("message", JSON.stringify({ type: "TurnInfo", event: "EndOfTurn", transcript: "What is on my screen?" }));
+    expect(turns).toEqual(["What is on my screen?"]);
+    await expect(finishSpeech()).resolves.toBe("What is on my screen?");
+    expect(socket.sent).toEqual([]);
+  });
+  it("reports a voice stream that disconnects after opening", async () => {
+    const errors: string[] = [];
+    expect(await startSpeech(48000, (event) => { if (event.error) errors.push(event.error); })).toBe(true);
+    state.sockets[0].close();
+    expect(errors).toEqual(["Deepgram disconnected during dictation."]);
+  });
   it("stays unavailable without a key", async () => {
     state.key = "";
     expect(await speechAvailable()).toBe(false);

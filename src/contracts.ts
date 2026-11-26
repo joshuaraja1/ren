@@ -86,6 +86,7 @@ export type RenBridge = {
   speechFeed(samples: number[]): Promise<boolean>;
   speechFinish(): Promise<string>;
   speechStop(): Promise<void>;
+  onSpeechInput(listener: (input: { transcript?: string; error?: string }) => void): () => void;
   deepgramStatus(): Promise<DeepgramStatus>;
   saveDeepgramKey(key: string): Promise<DeepgramStatus>;
   clearDeepgramKey(): Promise<DeepgramStatus>;
@@ -95,10 +96,8 @@ export type RenBridge = {
   ask(request: AskRequest): Promise<AskResponse>;
   cancelAsk(contextToken?: string): Promise<boolean>;
   clearAnnotations(): Promise<void>;
-  setResponseCaption(text: string | null): Promise<void>;
   generateIllustration(automatic?: boolean): Promise<boolean>;
   onIllustration(listener: (image: Illustration | null) => void): () => void;
-  onResponseCaption(listener: (caption: { text: string; point: Point } | null) => void): () => void;
   onAnnotations(listener: (annotations: Annotation[]) => void): () => void;
   onVisualLesson(listener: (lesson: VisualLesson | null) => void): () => void;
   onOrbitPointer(listener: (point: Point) => void): () => void;

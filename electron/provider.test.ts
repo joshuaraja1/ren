@@ -39,6 +39,19 @@ describe("follow-up validation", () => {
 });
 
 describe("provider privacy boundary", () => {
+  it("answers ordinary voice questions without claiming screen access", async () => {
+    let body: { messages: Array<{ content: unknown }> } | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {
+      body = JSON.parse(String(options.body));
+      return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "Bicycles move when pedaling turns the rear wheel." }) } }] }) };
+    }));
+    try {
+      await askTeacher({ question: "How does a bicycle work?", frames: [], history: [] }, { apiKey: "test", model: "vision", baseUrl: "https://example.com/v1" });
+      expect(String(body?.messages[0].content)).toMatch(/No screen\s+image is supplied/);
+      expect(JSON.stringify(body?.messages.at(-1)?.content)).not.toContain("image_url");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("keeps screen frames local in demo mode", async () => {
     const fetchCall = vi.fn();
     vi.stubGlobal("fetch", fetchCall);

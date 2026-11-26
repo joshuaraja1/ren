@@ -48,9 +48,9 @@ plainly and explain the next step the learner can take.
 Offer two or three short, relevant follow-up questions the learner might ask next.
 Each follow-up should deepen understanding of what is visible or check a step;
 do not suggest actions you cannot perform or claim to see hidden app state.
-When a connected visual would clarify a system, object, process, or
-relationship, or the learner asks to see one, include a visualLesson. It is
-drawn directly on the learner's current screen.
+Only include a visualLesson when the learner explicitly asks for a drawing,
+diagram, or rendered model. Otherwise set visualLesson:null. Do not place
+text boxes or other visuals on screen for an ordinary spoken answer.
 If the learner explicitly asks you to create, draw, or render a diagram,
 include a fresh visualLesson in your own explanatory structure. Use a visible
 diagram as factual context, not as a template to copy. Do not just describe
@@ -89,6 +89,19 @@ every annotation relative to that first image. Allowed forms:
 {"id":"a5","type":"path","points":[{"x":0.1,"y":0.2},{"x":0.2,"y":0.3}],"label":"..."}
 {"id":"a6","type":"diagram","at":{"x":0.65,"y":0.1},"title":"...","lines":["...","..."]}
 Use at most four purposeful visuals. If location is uncertain, prefer a diagram over a misplaced arrow.`;
+
+const GENERAL_PROMPT = `You are Ren, a concise conversational voice assistant.
+Respond to the user's spoken request and relevant conversation history. No screen
+image is supplied; do not claim to see the screen, cursor, app, or any visual detail.
+Return ONLY JSON with this shape:
+{"answer":"...","annotations":[],"followUps":["...","..."],"visualLesson":null,"referenceRegion":null,"retainVisual":false}
+Keep the answer brief and natural for speech, usually 2-4 sentences, without
+Markdown. Offer one or two relevant follow-up questions. Never add on-screen
+visuals for an ordinary voice response.`;
+
+const NO_SCREEN_VISUAL_NOTE = `No screen image is supplied. Do not claim to see
+the screen or cursor. If a diagram was requested, derive it from the user's
+words and explain any assumptions.`;
 
 const REQUESTED_VISUAL_PROMPT = `The learner explicitly requested a diagram or rendered illustration. visualLesson is REQUIRED.
 Set retainVisual:false; this is a new drawing request.
@@ -180,6 +193,12 @@ function demoAnswer(question: string): ProviderResponse {
     annotations: [],
     followUps: [],
   };
+  if (!wantsVisualCreation(question) && !/\b(?:screen|screenshot|display|cursor|pointer|window|image|picture|photo|this|that|here)\b/i.test(question)) return {
+    provider: "demo",
+    answer: "Ren needs an AI provider to answer questions. Open Settings and connect one, then ask me again.",
+    annotations: [],
+    followUps: [],
+  };
   return {
     provider: "demo",
     answer: "I can't inspect your screen in demo mode, so I can't identify the part you're asking about or draw on it accurately. Connect a vision model for a screen-specific explanation, or describe the problem in words and I can help you reason through it.",
@@ -210,7 +229,7 @@ export async function askTeacher(request: AskRequest, credentials: VisionCredent
         ...(model === "gpt-6-sol" ? { reasoning_effort: "medium" } : {}),
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: `${TEACHER_PROMPT}${request.transformPriorVisual ? `\n${TRANSFORM_PRIOR_VISUAL_PROMPT}` : ""}${requestedVisual ? `\n${REQUESTED_VISUAL_PROMPT}\nThe requested visual is ${visualDimension}D. ${visualDimension === 3 ? "Plan real spatial components for a subject-specific rotatable teaching model. Do not claim exact CAD fidelity." : "Plan a flat 2D teaching diagram and do not describe it as a rotatable model."} ${wantsReferenceRecreation(request.question) ? "Identify a tight referenceRegion around the visible subject if it appears on screen." : "Set referenceRegion:null unless the learner specifically asks to recreate a visible object."}` : ""}${retryVisual ? `\n${RETRY_VISUAL_PROMPT}` : ""}` },
+          { role: "system", content: `${request.frames.length || requestedVisual ? TEACHER_PROMPT : GENERAL_PROMPT}${!request.frames.length && requestedVisual ? `\n${NO_SCREEN_VISUAL_NOTE}` : ""}${request.transformPriorVisual ? `\n${TRANSFORM_PRIOR_VISUAL_PROMPT}` : ""}${requestedVisual ? `\n${REQUESTED_VISUAL_PROMPT}\nThe requested visual is ${visualDimension}D. ${visualDimension === 3 ? "Plan real spatial components for a subject-specific rotatable teaching model. Do not claim exact CAD fidelity." : "Plan a flat 2D teaching diagram and do not describe it as a rotatable model."} ${wantsReferenceRecreation(request.question) ? "Identify a tight referenceRegion around the visible subject if it appears on screen." : "Set referenceRegion:null unless the learner specifically asks to recreate a visible object."}` : ""}${retryVisual ? `\n${RETRY_VISUAL_PROMPT}` : ""}` },
           ...history,
           { role: "user", content: [{ type: "text", text: request.question }, ...priorVisual, ...visualContent] },
         ],
