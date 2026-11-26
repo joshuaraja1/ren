@@ -456,6 +456,9 @@ export function App() {
     try {
       if (!await window.ren.speechStart(sampleRateRef.current)) throw new Error("Deepgram dictation could not start");
       if (session !== dictationSessionRef.current) return;
+      // Opening the speech stream can overlap a visibility update from the
+      // previous answer. Keep the notch visible once this session is ready.
+      showCompanion();
       dictationStartedAtRef.current = Date.now();
       for (const samples of pendingAudioRef.current.splice(0)) {
         feedChainRef.current = feedChainRef.current.then(async () => {
