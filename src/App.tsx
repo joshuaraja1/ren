@@ -214,7 +214,10 @@ export function App() {
               }
               if (!dictationReadyRef.current) {
                 // Keep the question spoken while the cloud socket connects.
-                if (pendingAudioRef.current.length >= 180) pendingAudioRef.current.shift();
+                // The socket can take a moment to open. Keep enough pre-roll
+                // for the beginning of the question without sending a long
+                // burst that exceeds the realtime stream's audio budget.
+                if (pendingAudioRef.current.length >= 64) pendingAudioRef.current.shift();
                 pendingAudioRef.current.push(samples);
                 return;
               }
@@ -229,13 +232,13 @@ export function App() {
               queuedFeedsRef.current += 1;
               feedChainRef.current = feedChainRef.current.then(async () => {
                 if (session !== dictationSessionRef.current) return;
-                if (!await window.ren!.speechFeed(samples)) throw new Error("Deepgram audio stream stopped");
-              }).catch(() => {
+                if (!await window.ren!.speechFeed(samples)) throw new Error("Ren lost the microphone audio stream. Please try again.");
+              }).catch((reason) => {
                 if (session !== dictationSessionRef.current) return;
                 conversationOpenRef.current = false;
                 awaitingFollowUpRef.current = false;
                 stopNativeDictation();
-                showVoiceError("Deepgram dictation stopped. Check your network and key.");
+                showVoiceError(reason instanceof Error ? reason.message : "Ren lost the microphone audio stream. Please try again.");
               }).finally(() => { if (session === dictationSessionRef.current) queuedFeedsRef.current -= 1; });
               if ((voicedFramesRef.current >= 2 && now - lastVoiceAtRef.current > 2000) || now - dictationStartedAtRef.current > (voicedFramesRef.current ? 30_000 : 10_000)) void finishNativeDictation();
               return;
@@ -496,7 +499,7 @@ export function App() {
       for (const samples of pendingAudioRef.current.splice(0)) {
         feedChainRef.current = feedChainRef.current.then(async () => {
           if (session !== dictationSessionRef.current) return;
-          if (!await window.ren!.speechFeed(samples)) throw new Error("Deepgram audio stream stopped");
+          if (!await window.ren!.speechFeed(samples)) throw new Error("Ren lost the microphone audio stream. Please try again.");
         });
       }
       dictationReadyRef.current = true;

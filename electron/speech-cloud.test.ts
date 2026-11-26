@@ -60,6 +60,12 @@ describe("Deepgram dictation", () => {
     state.sockets[0].close();
     expect(errors).toEqual(["Deepgram disconnected during dictation."]);
   });
+  it("distinguishes a stalled audio stream from a key or network failure", async () => {
+    expect(await startSpeech(48000)).toBe(true);
+    const socket = state.sockets[0] as typeof state.sockets[number] & { bufferedAmount: number };
+    socket.bufferedAmount = 1_000_001;
+    await expect(feedSpeech([0])).rejects.toThrow("could not keep up with microphone audio");
+  });
   it("stays unavailable without a key", async () => {
     state.key = "";
     expect(await speechAvailable()).toBe(false);

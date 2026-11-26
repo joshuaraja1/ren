@@ -75,8 +75,10 @@ export async function startSpeech(sampleRate: number, onEvent?: (event: SpeechIn
 
 export async function feedSpeech(samples: unknown) {
   const current = active;
-  if (!current || current.socket.readyState !== WebSocket.OPEN || !Array.isArray(samples) || samples.length === 0 || samples.length > 8192 || !samples.every((value) => typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= 1) || !current.budget.accept(samples.length)) return false;
-  if (current.socket.bufferedAmount > 1_000_000) return false;
+  if (!current || current.socket.readyState !== WebSocket.OPEN) throw new Error("The voice connection closed while Ren was listening. Please try again.");
+  if (!Array.isArray(samples) || samples.length === 0 || samples.length > 8192 || !samples.every((value) => typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= 1)) throw new Error("Ren received invalid microphone audio. Please try again.");
+  if (!current.budget.accept(samples.length)) throw new Error("Microphone audio arrived faster than Ren could stream it. Please try again.");
+  if (current.socket.bufferedAmount > 1_000_000) throw new Error("The voice connection could not keep up with microphone audio. Please try again.");
   const pcm = Buffer.allocUnsafe(samples.length * 2);
   samples.forEach((sample, index) => pcm.writeInt16LE(Math.round(sample < 0 ? sample * 32768 : sample * 32767), index * 2));
   current.socket.send(pcm);
