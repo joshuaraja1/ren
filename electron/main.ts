@@ -95,7 +95,6 @@ function sendOverlayIllustration(value: Illustration | null) {
 
 const collapsedSize = { width: 236, height: 58 };
 const expandedSize = { width: 420, height: 560 };
-const voicePanelSize = { width: 300, height: 142 };
 
 function onboardingMarkerPath() { return join(app.getPath("userData"), "onboarding-complete"); }
 function hasCompletedOnboarding() { return existsSync(onboardingMarkerPath()); }
@@ -110,19 +109,19 @@ function permissionStatus() {
   return { ready: screenAccess === "granted", microphone, screen: screenAccess, interaction: circleInputActive ? "granted" : accessibility ? "unavailable" : "not-granted" };
 }
 
-function positionMainWindow(expanded: boolean, displayId?: number, tall = false) {
+function positionMainWindow(expanded: boolean, displayId?: number) {
   if (!mainWindow) return;
   const display = (displayId && screen.getAllDisplays().find((item) => item.id === displayId))
     || (expanded ? screen.getDisplayNearestPoint(screen.getCursorScreenPoint()) : screen.getPrimaryDisplay());
   const workArea = display.workArea;
-  const size = expanded ? tall ? expandedSize : voicePanelSize : collapsedSize;
-  mainWindow.setBounds({ x: Math.round(workArea.x + (workArea.width - size.width) / 2), y: workArea.y, ...size }, true);
+  const size = expanded ? expandedSize : collapsedSize;
+  mainWindow.setBounds({ x: Math.round(workArea.x + (workArea.width - size.width) / 2), y: workArea.y, ...size }, false);
 }
 
 function repositionMainWindow(displayId?: number) {
   const bounds = mainWindow?.getBounds();
   if (!bounds) return;
-  positionMainWindow(bounds.width !== collapsedSize.width, displayId, bounds.height === expandedSize.height);
+  positionMainWindow(bounds.width !== collapsedSize.width, displayId);
 }
 
 function createOverlayWindow() {
@@ -175,7 +174,7 @@ function requireMainRenderer(event: Electron.IpcMainInvokeEvent) {
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    ...expandedSize,
+    ...collapsedSize,
     ...(process.platform === "darwin" ? { type: "panel" as const } : {}),
     frame: false,
     transparent: true,
@@ -201,8 +200,8 @@ function createMainWindow() {
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   mainWindow.once("ready-to-show", () => {
     const access = permissionStatus();
-    const needsOnboarding = !access.ready || (process.platform === "darwin" && access.microphone !== "granted");
-    positionMainWindow(needsOnboarding, undefined, needsOnboarding);
+    const needsOnboarding = process.platform === "darwin" ? access.microphone !== "granted" : !access.ready;
+    positionMainWindow(needsOnboarding);
     if (needsOnboarding) mainWindow?.show();
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -229,7 +228,7 @@ function voiceMode() { return { paused: voicePaused, alwaysOn: alwaysOnVoice }; 
 function updateTrayMenu() {
   if (!tray) return;
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: "Open Ren", click: () => mainWindow?.webContents.send("ren:open-panel") },
+    { label: "AI settings", click: () => mainWindow?.webContents.send("ren:open-panel") },
     { label: "Start voice conversation", enabled: !voicePaused, click: () => mainWindow?.webContents.send("ren:activate-voice") },
     { label: alwaysOnVoice ? "Turn always-on voice off" : "Turn always-on voice on", click: () => setAlwaysOnVoice(!alwaysOnVoice) },
     { label: voicePaused ? "Resume Ren" : "Pause Ren", click: () => setVoicePaused(!voicePaused) },
@@ -434,14 +433,15 @@ app.whenReady().then(() => {
     });
     return circleInputActive;
   }
-  if (permissionStatus().ready) enableCircleInput();
+  // Voice activation must remain available even if screen capture is denied.
+  enableCircleInput();
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
     callback(permission === "media" && webContents === mainWindow?.webContents);
   });
 
   ipcMain.handle("ren:permission-status", (event) => {
     requireMainRenderer(event);
-    if (!permissionRequest && permissionStatus().ready && !circleInputActive && (process.platform !== "darwin" || systemPreferences.isTrustedAccessibilityClient(false))) enableCircleInput();
+    if (!permissionRequest && !circleInputActive && (process.platform !== "darwin" || systemPreferences.isTrustedAccessibilityClient(false))) enableCircleInput();
     return permissionStatus();
   });
   ipcMain.handle("ren:vision-status", (event) => event.sender === mainWindow?.webContents ? visionStatus() : null);
@@ -514,8 +514,8 @@ app.whenReady().then(() => {
         if (canComplete) writeFileSync(onboardingMarkerPath(), new Date().toISOString(), { encoding: "utf8", mode: 0o600 });
         if (permissionStatus().ready) {
           if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: true });
-          enableCircleInput();
         }
+        enableCircleInput();
         return permissionStatus();
       } finally {
         if (wasOnTop) mainWindow?.setAlwaysOnTop(true, "screen-saver");
@@ -527,9 +527,9 @@ app.whenReady().then(() => {
     requireMainRenderer(event);
     if (process.platform === "darwin") await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${kind === "microphone" ? "Privacy_Microphone" : "Privacy_ScreenCapture"}`);
   });
-  ipcMain.handle("ren:set-expanded", (event, expanded: unknown, tall: unknown) => {
+  ipcMain.handle("ren:set-expanded", (event, expanded: unknown) => {
     requireMainRenderer(event);
-    positionMainWindow(expanded === true, undefined, tall === true);
+    positionMainWindow(expanded === true);
     if (expanded === true) mainWindow?.showInactive();
   });
   ipcMain.handle("ren:set-companion-visible", (event, visible: unknown) => {

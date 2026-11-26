@@ -94,24 +94,8 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--listen);
   background: var(--paper);
   box-shadow: 0 24px 70px oklch(8% 0.01 70 / 34%);
 }
-.ambient-panel.is-quick { color: oklch(96% 0.006 80); background: oklch(13% 0.008 70 / 97%); border-radius: 0 0 17px 17px; box-shadow: 0 12px 30px oklch(8% 0.01 70 / 27%); }
-.ambient-panel.is-quick .ambient-header { min-height: 44px; grid-template-columns: 25px 1fr 16px 24px; gap: 8px; padding: 6px 9px; box-shadow: none; }
-.ambient-panel.is-quick .ambient-header::after { display: none; }
-.ambient-panel.is-quick .companion-orb { width: 25px; height: 25px; border-radius: 9px; }
-.ambient-panel.is-quick .companion-orb .spark { width: 14px; }
-.ambient-panel.is-quick .header-copy p { margin-bottom: 1px; font-size: 7px; }
-.ambient-panel.is-quick .header-copy h1 { font-size: 11px; font-weight: 620; }
-.ambient-panel.is-quick .collapse-button { width: 22px; height: 22px; font-size: 14px; }
-.ambient-panel.is-quick .voice-meter { height: 16px; }
-.quick-panel-content { flex: 1; min-height: 0; padding: 3px 9px 5px; display: flex; flex-direction: column; justify-content: center; gap: 3px; border-top: 1px solid oklch(100% 0 0 / 11%); }
-.quick-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
-.quick-actions .listen-button { width: 29px; height: 29px; flex: none; }
-.quick-actions > button:not(.listen-button), .quick-note button { min-width: 0; max-width: 100%; padding: 6px 7px; overflow: hidden; border: 1px solid oklch(100% 0 0 / 13%); border-radius: 8px; color: oklch(91% 0.008 80); background: oklch(100% 0 0 / 6%); font-size: 9px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
-.quick-actions > button:not(.listen-button):hover, .quick-note button:hover { background: oklch(100% 0 0 / 13%); }
-.quick-note { min-width: 0; height: 18px; display: flex; align-items: center; justify-content: space-between; gap: 6px; color: oklch(71% 0.012 75); font-size: 9px; }
-.quick-note span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.quick-note.is-error { color: oklch(78% 0.11 40); }
-.quick-note button { padding: 3px 6px; }
+.shortcut-settings { padding: 14px 18px 20px; border-top: 1px solid oklch(50% 0 0 / 16%); }
+.shortcut-settings h2 { margin: 5px 0 12px; font-size: 16px; }
 .ambient-header {
   -webkit-app-region: drag;
   position: relative;

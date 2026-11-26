@@ -4,6 +4,7 @@ dist-electron/
 dist-server/
 release/
 release-permission-test/
+release-voice-reliability/
 coverage/
 playwright-report/
 test-results/

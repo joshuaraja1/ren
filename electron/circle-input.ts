@@ -36,6 +36,7 @@ export function startCircleInput(hooks: Hooks) {
     const controlKeys = new Set<number>([UiohookKey.Ctrl, UiohookKey.CtrlRight]);
     const circleKeys = new Set<number>([...controlKeys, UiohookKey.Alt, UiohookKey.AltRight]);
     const sketchKeys = new Set<number>([UiohookKey.Meta, UiohookKey.MetaRight, UiohookKey.Alt, UiohookKey.AltRight]);
+    const modifierKeys = new Set<number>([...circleKeys, ...sketchKeys, UiohookKey.Shift, UiohookKey.ShiftRight]);
     const gesture = new TripleControlGesture(controlKeys, () => hooks.onTripleControl?.());
     let active: { mode: "circle" | "sketch"; displayId: number; bounds: Electron.Rectangle; points: AbsolutePoint[] } | null = null;
     let lastDrawn = 0;
@@ -60,7 +61,7 @@ export function startCircleInput(hooks: Hooks) {
       } else hooks.onSketchCancel?.();
     };
     uIOhook.on("keydown", (event) => {
-      hooks.onInteraction?.();
+      if (!modifierKeys.has(event.keycode)) hooks.onInteraction?.();
       gesture.keyDown(event);
       if (event.keycode === UiohookKey.Escape) { cancel(); return; }
       if (active) return;
@@ -100,7 +101,8 @@ export function startCircleInput(hooks: Hooks) {
     stopHook = () => { uIOhook.stop(); removeListeners?.(); };
     running = true;
     return true;
-  } catch {
+  } catch (error) {
+    console.error("Ren global shortcut hook could not start:", error);
     removeListeners?.();
     return false;
   }

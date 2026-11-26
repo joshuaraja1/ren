@@ -4,21 +4,56 @@ import { App } from "./App";
 import type { RenBridge } from "./contracts";
 
 describe("Ren voice interface", () => {
-  it("shows voice controls and never opens a chat box", async () => {
-    render(<App />);
-    expect(await screen.findByRole("button", { name: /start listening/i })).toBeVisible();
-    expect(screen.getByRole("main")).toHaveClass("is-quick");
-    expect(screen.queryByText(/go ahead, i’m listening/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
+  it("shows only the compact voice strip and never opens a chat box", async () => {
+    window.ren = {
+      platform: "darwin", permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
+      primarySource: async () => ({ id: "screen", name: "Main display", thumbnail: "" }),
+      wakeAvailable: async () => false, onFocusSelection: () => () => {},
+      setExpanded: async () => {}, setCompanionVisible: async () => {}, speechStop: async () => {},
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      expect(await screen.findByRole("button", { name: /start speaking to ren/i })).toHaveClass("ren-pebble");
+      expect(screen.queryByRole("main")).not.toBeInTheDocument();
+      expect(screen.queryByText(/go ahead, i’m listening/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
+    } finally { window.ren = undefined; }
   });
 
   it("opens only voice settings when the user requests them", async () => {
-    render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /connect ai/i }));
-    expect(screen.getByRole("textbox", { name: /vision model/i })).toHaveValue("gpt-6-sol");
-    expect(screen.getByLabelText(/openai api key/i)).toHaveAttribute("type", "password");
-    expect(screen.getByLabelText(/deepgram api key/i)).toHaveAttribute("type", "password");
-    expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
+    window.ren = {
+      platform: "darwin", permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
+      primarySource: async () => ({ id: "screen", name: "Main display", thumbnail: "" }),
+      wakeAvailable: async () => false, onFocusSelection: () => () => {},
+      setExpanded: async () => {}, setCompanionVisible: async () => {}, speechStop: async () => {},
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      fireEvent.contextMenu(await screen.findByRole("button", { name: /start speaking to ren/i }));
+      expect(await screen.findByRole("textbox", { name: /vision model/i })).toHaveValue("gpt-6-sol");
+      expect(screen.getByLabelText(/openai api key/i)).toHaveAttribute("type", "password");
+      expect(screen.getByLabelText(/deepgram api key/i)).toHaveAttribute("type", "password");
+      expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
+    } finally { window.ren = undefined; }
+  });
+
+  it("keeps voice available without Screen Recording and offers Accessibility setup", async () => {
+    const wakeAvailable = vi.fn(async () => false);
+    const enableCircleInput = vi.fn(async () => ({ ready: false, microphone: "granted", screen: "denied", interaction: "not-granted" }));
+    window.ren = {
+      platform: "darwin", permissionStatus: async () => ({ ready: false, microphone: "granted", screen: "denied", interaction: "not-granted" }),
+      wakeAvailable, enableCircleInput, onFocusSelection: () => () => {},
+      setExpanded: async () => {}, setCompanionVisible: async () => {}, speechStop: async () => {},
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      const strip = await screen.findByRole("button", { name: /start speaking to ren/i });
+      expect(screen.queryByText(/give ren permission once/i)).not.toBeInTheDocument();
+      await waitFor(() => expect(wakeAvailable).toHaveBeenCalled());
+      fireEvent.contextMenu(strip);
+      fireEvent.click(await screen.findByRole("button", { name: /enable keyboard shortcut/i }));
+      expect(enableCircleInput).toHaveBeenCalledOnce();
+    } finally { window.ren = undefined; }
   });
 
   it("shrinks the setup window when microphone permission becomes ready", async () => {
@@ -38,8 +73,8 @@ describe("Ren voice interface", () => {
       expect(screen.getByText(/give ren permission once/i)).toBeVisible();
       fireEvent.focus(window);
       await waitFor(() => expect(permissionStatus).toHaveBeenCalledTimes(2));
-      await waitFor(() => expect(setExpanded).toHaveBeenCalledWith(true, false));
-      expect(screen.getByRole("main")).toHaveClass("is-quick");
+      await waitFor(() => expect(setExpanded).toHaveBeenCalledWith(false, false));
+      expect(screen.getByRole("button", { name: /start speaking to ren/i })).toHaveClass("ren-pebble");
     } finally { window.ren = undefined; }
   });
 
@@ -56,14 +91,14 @@ describe("Ren voice interface", () => {
     } as unknown as RenBridge;
     try {
       render(<App />);
-      await screen.findByRole("button", { name: /open ren/i });
+      await screen.findByRole("button", { name: /start speaking to ren/i });
       act(() => activate?.());
-      expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible();
+      expect(screen.getByRole("button", { name: /start speaking to ren/i })).toBeVisible();
       expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
     } finally { window.ren = undefined; }
   });
 
-  it("keeps the voice strip collapsed until controls or settings are opened manually", async () => {
+  it("keeps the strip compact for voice and opens settings only on right-click", async () => {
     let activate: (() => void) | undefined;
     const setExpanded = vi.fn(async () => {});
     window.ren = {
@@ -77,22 +112,20 @@ describe("Ren voice interface", () => {
     } as unknown as RenBridge;
     try {
       render(<App />);
-      const strip = await screen.findByRole("button", { name: /open ren/i });
+      const strip = await screen.findByRole("button", { name: /start speaking to ren/i });
       expect(strip).toBeVisible();
       expect(setExpanded).not.toHaveBeenCalledWith(true, expect.anything());
       act(() => activate?.());
-      expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible();
+      expect(screen.getByRole("button", { name: /start speaking to ren/i })).toBeVisible();
       expect(setExpanded).not.toHaveBeenCalledWith(true, expect.anything());
-      fireEvent.click(strip);
-      await waitFor(() => expect(setExpanded).toHaveBeenCalledWith(true, false));
-      expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: /ai settings|connect ai/i }));
+      fireEvent.contextMenu(strip);
       await waitFor(() => expect(setExpanded).toHaveBeenCalledWith(true, true));
       expect(screen.getByLabelText(/openai api key/i)).toHaveAttribute("type", "password");
+      expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
     } finally { window.ren = undefined; }
   });
 
-  it("keeps a spoken question active when the controls collapse to the strip", async () => {
+  it("keeps a spoken question on the strip and finishes it with one click", async () => {
     let selected: (() => void) | undefined;
     const originalAudioContext = globalThis.AudioContext;
     const originalMediaDevices = navigator.mediaDevices;
@@ -124,15 +157,10 @@ describe("Ren voice interface", () => {
       await waitFor(() => expect(wakeStart).toHaveBeenCalledTimes(1));
       await act(async () => { selected?.(); });
       await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(1));
-      fireEvent.click(screen.getByRole("button", { name: /open ren/i }));
-      expect(screen.getByRole("button", { name: /finish speaking/i })).toBeVisible();
-      const stoppedBeforeCollapse = speechStop.mock.calls.length;
-      fireEvent.click(screen.getByRole("button", { name: /collapse ren/i }));
-      expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible();
-      expect(speechStop.mock.calls.length).toBe(stoppedBeforeCollapse);
-      fireEvent.click(screen.getByRole("button", { name: /open ren/i }));
-      expect(screen.getByRole("button", { name: /finish speaking/i })).toBeVisible();
-      fireEvent.click(screen.getByRole("button", { name: /finish speaking/i }));
+      const strip = screen.getByRole("button", { name: /finish speaking to ren/i });
+      expect(strip).toHaveClass("ren-pebble");
+      expect(screen.queryByRole("main")).not.toBeInTheDocument();
+      fireEvent.click(strip);
       await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({ question: "Explain this component" })));
     } finally {
       window.ren = undefined;
@@ -174,8 +202,7 @@ describe("Ren voice interface", () => {
       await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(1));
       expect(ask).not.toHaveBeenCalled();
       expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: /open ren/i }));
-      fireEvent.click(screen.getByRole("button", { name: /finish speaking/i }));
+      fireEvent.click(screen.getByRole("button", { name: /finish speaking to ren/i }));
       await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({ question: "What does this part do?", focus: { x: .2, y: .3, width: .3, height: .2 } })));
     } finally {
       window.ren = undefined;
@@ -236,24 +263,24 @@ describe("Ren voice interface", () => {
       render(<App />);
       await waitFor(() => expect(processor?.onaudioprocess).toBeTypeOf("function"));
       const voiceFrame = { inputBuffer: { getChannelData: () => new Float32Array(2048).fill(.03) } };
-      const quietFollowUpFrame = { inputBuffer: { getChannelData: () => new Float32Array(2048).fill(.008) } };
+      const quietFollowUpFrame = { inputBuffer: { getChannelData: () => new Float32Array(2048).fill(.018) } };
       const silentFrame = { inputBuffer: { getChannelData: () => new Float32Array(2048) } };
       act(() => processor?.onaudioprocess?.(voiceFrame));
       await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(1));
       expect(setCompanionVisible).toHaveBeenCalledWith(true);
-      expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible();
+      expect(screen.getByRole("button", { name: /finish speaking to ren/i })).toBeVisible();
       expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
       now += 2_100;
       act(() => processor?.onaudioprocess?.(silentFrame));
       await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
       expect(captureContext).toHaveBeenNthCalledWith(1, false, "Draw a diagram of the hover system");
       await waitFor(() => expect(generateIllustration).toHaveBeenCalledExactlyOnceWith(true));
-      await waitFor(() => expect(screen.getByRole("button", { name: /open ren\. listening/i })).toBeVisible());
+      await waitFor(() => expect(screen.getByRole("button", { name: /start speaking to ren/i })).toBeVisible());
       await waitFor(() => expect(setCompanionVisible).toHaveBeenCalledWith(false), { timeout: 2_500 });
       expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
       expect(speechStart).toHaveBeenCalledTimes(1);
       now += 400;
-      act(() => { for (let index = 0; index < 3; index += 1) processor?.onaudioprocess?.(quietFollowUpFrame); });
+      act(() => { for (let index = 0; index < 5; index += 1) processor?.onaudioprocess?.(quietFollowUpFrame); });
       await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(2));
       expect(setCompanionVisible).toHaveBeenLastCalledWith(true);
       expect(wakeFeed).toHaveBeenCalledTimes(1);
@@ -262,20 +289,18 @@ describe("Ren voice interface", () => {
       await waitFor(() => expect(ask).toHaveBeenCalledTimes(2));
       expect(captureContext).toHaveBeenNthCalledWith(2, true, "Why does the fan help?");
       expect(ask).toHaveBeenLastCalledWith(expect.objectContaining({ question: "Why does the fan help?", history: expect.arrayContaining([expect.objectContaining({ role: "assistant", content: "The engine drives the fan." })]) }));
-      await waitFor(() => expect(screen.getByRole("button", { name: /open ren\. listening/i })).toBeVisible());
+      await waitFor(() => expect(screen.getByRole("button", { name: /start speaking to ren/i })).toBeVisible());
       expect(speechStart).toHaveBeenCalledTimes(2);
       now += 400;
-      act(() => { for (let index = 0; index < 3; index += 1) processor?.onaudioprocess?.(voiceFrame); });
+      act(() => { for (let index = 0; index < 5; index += 1) processor?.onaudioprocess?.(voiceFrame); });
       await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(3));
       now += 2_100;
       act(() => processor?.onaudioprocess?.(silentFrame));
-      await waitFor(() => expect(screen.getByRole("button", { name: /open ren\. listening/i })).toBeVisible());
+      await waitFor(() => expect(screen.getByRole("button", { name: /start speaking to ren/i })).toBeVisible());
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       expect(wakeFeed).toHaveBeenCalledTimes(1);
-      fireEvent.click(screen.getByRole("button", { name: /open ren/i }));
       expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: /stop listening/i }));
-      expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible();
+      expect(screen.getByRole("button", { name: /start speaking to ren/i })).toHaveClass("ren-pebble");
     } finally {
       dateNow.mockRestore();
       window.ren = undefined;

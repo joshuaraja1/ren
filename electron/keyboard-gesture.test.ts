@@ -49,12 +49,12 @@ describe("TripleControlGesture", () => {
     const gesture = new TripleControlGesture(controlKeys, toggle);
     gesture.keyDown(down(CTRL), 0);
     gesture.keyUp({ keycode: CTRL }, 30);
-    gesture.keyDown(down(CTRL), 800);
-    gesture.keyUp({ keycode: CTRL }, 830);
-    gesture.keyDown(down(65), 900);
+    gesture.keyDown(down(CTRL), 1_200);
+    gesture.keyUp({ keycode: CTRL }, 1_230);
+    gesture.keyDown(down(65), 1_300);
     for (const index of [0, 1]) {
-      gesture.keyDown(down(CTRL), 1000 + index * 180);
-      gesture.keyUp({ keycode: CTRL }, 1040 + index * 180);
+      gesture.keyDown(down(CTRL), 1_400 + index * 180);
+      gesture.keyUp({ keycode: CTRL }, 1_440 + index * 180);
     }
     expect(toggle).not.toHaveBeenCalled();
   });
@@ -73,5 +73,16 @@ describe("TripleControlGesture", () => {
       gesture.keyUp({ keycode: CTRL }, 240 + index * 180);
     }
     expect(toggle).not.toHaveBeenCalled();
+  });
+
+  it("accepts deliberate taps with a slower release and gap", () => {
+    const toggle = vi.fn();
+    const gesture = new TripleControlGesture(controlKeys, toggle);
+    for (const [index, key] of [CTRL, RIGHT_CTRL, CTRL].entries()) {
+      const start = 100 + index * 680;
+      gesture.keyDown(down(key), start);
+      gesture.keyUp({ keycode: key }, start + 300);
+    }
+    expect(toggle).toHaveBeenCalledOnce();
   });
 });
