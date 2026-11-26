@@ -61,6 +61,7 @@ contextBridge.exposeInMainWorld("ren", {
     ipcRenderer.on("ren:visual-lesson", handler);
     return () => ipcRenderer.removeListener("ren:visual-lesson", handler);
   },
+  overlayReady: () => ipcRenderer.send("ren:overlay-ready"),
   onOrbitPointer: (listener: (point: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, point: unknown) => listener(point);
     ipcRenderer.on("ren:orbit-pointer", handler);

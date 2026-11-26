@@ -7,18 +7,26 @@ import "./overlay.css";
 
 const pos = (point: Point) => ({ left: `${point.x * 100}%`, top: `${point.y * 100}%` });
 
-function Overlay() {
+export function Overlay() {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [visualLesson, setVisualLesson] = useState<VisualLesson | null>(null);
   const [illustration, setIllustration] = useState<Illustration | null>(null);
-  useEffect(() => window.ren?.onAnnotations(setAnnotations), []);
-  useEffect(() => window.ren?.onVisualLesson((next) => {
-    // Clear the preceding lesson's image in the same React update. A new
-    // pending lesson must never briefly reveal the previous subject's image.
-    setIllustration(null);
-    setVisualLesson(next);
-  }), []);
-  useEffect(() => window.ren?.onIllustration(setIllustration), []);
+  useEffect(() => {
+    const bridge = window.ren;
+    if (!bridge) return;
+    const offAnnotations = bridge.onAnnotations(setAnnotations);
+    const offLesson = bridge.onVisualLesson((next) => {
+      // Clear the preceding lesson's image in the same React update. A new
+      // pending lesson must never briefly reveal the previous subject's image.
+      setIllustration(null);
+      setVisualLesson(next);
+    });
+    const offIllustration = bridge.onIllustration(setIllustration);
+    // The main process can finish a lesson before this renderer subscribes.
+    // Request the current state only after every listener is installed.
+    bridge.overlayReady();
+    return () => { offAnnotations(); offLesson(); offIllustration(); };
+  }, []);
   return (
     <div className="overlay-canvas">
       <svg className="overlay-svg" viewBox="0 0 1000 1000" preserveAspectRatio="none">
@@ -48,5 +56,6 @@ function Overlay() {
   );
 }
 
-createRoot(document.getElementById("overlay-root")!).render(<Overlay />);
+const overlayRoot = document.getElementById("overlay-root");
+if (overlayRoot) createRoot(overlayRoot).render(<Overlay />);
 

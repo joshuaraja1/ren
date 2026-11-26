@@ -269,6 +269,12 @@ app.whenReady().then(() => {
   if (permissionStatus().ready && app.isPackaged) app.setLoginItemSettings({ openAtLogin: true });
   createMainWindow();
   createOverlayWindow();
+  ipcMain.on("ren:overlay-ready", (event) => {
+    if (event.sender !== overlayWindow?.webContents) return;
+    event.sender.send("ren:annotations", overlayAnnotations);
+    event.sender.send("ren:visual-lesson", overlayLesson);
+    event.sender.send("ren:illustration", overlayIllustration);
+  });
   createTray();
   agentJobs.onUpdate((snapshot) => mainWindow?.webContents.send("ren:job-update", snapshot));
   voiceShortcutActive = globalShortcut.register("CommandOrControl+Shift+Space", () => {
