@@ -22,6 +22,10 @@ it("places general 3D callouts on their nearest side and in vertical part order"
   expect(layout.frame.slot).toBeLessThan(layout.battery.slot);
   expect(layout.board.slot).toBeLessThan(layout.screen.slot);
   expect(layout.screen.slot).toBeLessThan(layout.port.slot);
+  expect(layout.camera.column).toBeGreaterThanOrEqual(.03);
+  expect(layout.camera.column).toBeLessThanOrEqual(.34);
+  expect(layout.port.column).toBeGreaterThanOrEqual(.66);
+  expect(layout.port.column).toBeLessThanOrEqual(.86);
 });
 
 it("shows a projected machine and connected callouts when WebGL is unavailable", async () => {

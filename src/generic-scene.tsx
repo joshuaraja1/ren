@@ -155,6 +155,23 @@ export function orbitCameraDistance(bounds: THREE.Box3, verticalFovDegrees: numb
   return Math.min(75, Math.max(7, radius / Math.sin(Math.min(halfVertical, halfHorizontal)) * 1.2 + 1));
 }
 
+/** Fit the current angle rather than reserving space for the widest possible orbit. */
+export function cameraDistanceForView(bounds: THREE.Box3, azimuth: number, elevation: number, fov: number, aspect: number): number {
+  const center = bounds.getCenter(new THREE.Vector3());
+  const direction = new THREE.Vector3(Math.sin(azimuth) * Math.cos(elevation), Math.sin(elevation), Math.cos(azimuth) * Math.cos(elevation));
+  const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), direction).normalize();
+  const up = new THREE.Vector3().crossVectors(direction, right).normalize();
+  const tangentY = Math.tan(THREE.MathUtils.degToRad(fov / 2)) * .86;
+  const tangentX = tangentY * Math.max(.1, aspect);
+  let required = 4;
+  for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) {
+    const corner = new THREE.Vector3(x, y, z).sub(center);
+    required = Math.max(required, corner.dot(direction) + Math.abs(corner.dot(right)) / tangentX,
+      corner.dot(direction) + Math.abs(corner.dot(up)) / tangentY);
+  }
+  return Math.min(75, required * 1.06);
+}
+
 /** Start wide enough for separated parts, then settle on the finished object. */
 export function assemblyCameraFrame(startingBounds: THREE.Box3, assembledBounds: THREE.Box3, completion: number, fov: number, aspect: number) {
   const fraction = THREE.MathUtils.clamp(completion, 0, 1);
@@ -269,7 +286,10 @@ export function GenericScene({ lesson, onAnchors, onUnavailable, onAssemblyStep 
         : .16 + (.5 - cursor.y) * .85;
       azimuth += (targetAzimuth - azimuth) * .1;
       elevation += (targetElevation - elevation) * .1;
-      const { center, distance } = assemblyCameraFrame(startingBounds, assembledBounds, completion, camera.fov, camera.aspect);
+      const { center } = assemblyCameraFrame(startingBounds, assembledBounds, completion, camera.fov, camera.aspect);
+      const distance = THREE.MathUtils.lerp(
+        cameraDistanceForView(startingBounds, azimuth, elevation, camera.fov, camera.aspect),
+        cameraDistanceForView(assembledBounds, azimuth, elevation, camera.fov, camera.aspect), completion);
       camera.position.set(center.x + Math.sin(azimuth) * Math.cos(elevation) * distance, center.y + Math.sin(elevation) * distance, center.z + Math.cos(azimuth) * Math.cos(elevation) * distance);
       camera.lookAt(center);
       renderer.render(scene, camera);

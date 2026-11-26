@@ -17,14 +17,16 @@ export function calloutPageSize(stageHeight: number): 2 | 4 | 6 {
 }
 
 /** Place labels beside the nearest half of the model, then preserve that arrangement during orbit. */
-export function modelCalloutLayout(parts: Pick<VisualLesson["parts"][number], "id">[], anchors: Record<string, { x: number; y: number }>): Record<string, { side: "left" | "right"; slot: number }> {
-  const layout: Record<string, { side: "left" | "right"; slot: number }> = {};
+export function modelCalloutLayout(parts: Pick<VisualLesson["parts"][number], "id">[], anchors: Record<string, { x: number; y: number }>): Record<string, { side: "left" | "right"; slot: number; column: number }> {
+  const layout: Record<string, { side: "left" | "right"; slot: number; column: number }> = {};
   const byX = [...parts].sort((first, second) => anchors[first.id].x - anchors[second.id].x);
   const leftIds = new Set(byX.slice(0, Math.ceil(parts.length / 2)).map((part) => part.id));
+  const projectedX = parts.map((part) => .17 + .66 * anchors[part.id].x);
+  const columns = { left: Math.max(.03, Math.min(.34, Math.min(...projectedX) - .13)), right: Math.min(.86, Math.max(.66, Math.max(...projectedX) + .09)) };
   for (const side of ["left", "right"] as const) {
     const group = parts.filter((part) => (leftIds.has(part.id) ? "left" : "right") === side)
       .sort((first, second) => anchors[first.id].y - anchors[second.id].y);
-    group.forEach((part, rank) => { layout[part.id] = { side, slot: .17 + .66 * (rank + .5) / group.length }; });
+    group.forEach((part, rank) => { layout[part.id] = { side, slot: .17 + .66 * (rank + .5) / group.length, column: columns[side] }; });
   }
   return layout;
 }
@@ -74,7 +76,7 @@ function InteractiveGenericLesson({ lesson, illustration }: { lesson: VisualLess
   const [anchors, setAnchors] = useState<Record<string, { x: number; y: number }>>({});
   const [unavailable, setUnavailable] = useState(false);
   const [assemblyStep, setAssemblyStep] = useState(0);
-  const [modelLayout, setModelLayout] = useState<Record<string, { side: "left" | "right"; slot: number }> | null>(null);
+  const [modelLayout, setModelLayout] = useState<Record<string, { side: "left" | "right"; slot: number; column: number }> | null>(null);
   useLayoutEffect(() => { setAssemblyStep(0); setUnavailable(false); setAnchors({}); setModelLayout(null); }, [lesson]);
   const { page, pageSize, pageCount, visibleParts } = usePartPaging(lesson, !lesson.model);
   useLayoutEffect(() => {
@@ -82,7 +84,7 @@ function InteractiveGenericLesson({ lesson, illustration }: { lesson: VisualLess
   }, [lesson, anchors, modelLayout]);
   const placement = { left: `${lesson.placement.x * 100}%`, top: `${lesson.placement.y * 100}%`, width: `${lesson.placement.width * 100}%`, height: `${lesson.placement.height * 100}%` };
   const rows = Math.ceil(visibleParts.length / 2);
-  const cards = visibleParts.map((part, index) => ({ part, side: modelLayout?.[part.id]?.side ?? (index % 2 ? "right" as const : "left" as const), slot: modelLayout?.[part.id]?.slot ?? .17 + .66 * (Math.floor(index / 2) + .5) / rows }));
+  const cards = visibleParts.map((part, index) => ({ part, side: modelLayout?.[part.id]?.side ?? (index % 2 ? "right" as const : "left" as const), slot: modelLayout?.[part.id]?.slot ?? .17 + .66 * (Math.floor(index / 2) + .5) / rows, column: modelLayout?.[part.id]?.column }));
   const kind = unavailable ? "2D part guide; 3D graphics unavailable" : lesson.model ? "Illustrative 3D model" : "Conceptual 3D schematic";
   const assembly = lesson.playAssembly ? lesson.model?.assembly : undefined;
   const currentAssembly = assembly && assemblyStep > 0 && assemblyStep <= assembly.length ? assembly[assemblyStep - 1] : null;
@@ -93,9 +95,9 @@ function InteractiveGenericLesson({ lesson, illustration }: { lesson: VisualLess
     {unavailable ? lesson.model ? <SceneFallback spec={lesson.model} connections={lesson.connections} /> : <div className="jet-scene"><LessonVectorFallback lesson={lesson} /></div> : <Suspense fallback={<div className="jet-scene" aria-hidden="true" />}><GenericScene lesson={lesson} onAnchors={setAnchors} onUnavailable={() => setUnavailable(true)} onAssemblyStep={setAssemblyStep} /></Suspense>}
     <div className="interactive-jet-heading" aria-hidden="true"><span>REN EXPLAINS</span><strong>{lesson.title}</strong><small>{unavailable ? "2D part guide · 3D view unavailable" : "Move your cursor to rotate and inspect parts"}</small></div>
     <svg className="visual-lesson-lines interactive-jet-lines" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
-      {cards.map(({ part, side, slot }) => shownAnchors[part.id] && <g key={part.id}><line x1={side === "left" ? 150 : 850} y1={slot * 1000} x2={(.17 + .66 * shownAnchors[part.id].x) * 1000} y2={(.13 + .76 * shownAnchors[part.id].y) * 1000} /><circle cx={(.17 + .66 * shownAnchors[part.id].x) * 1000} cy={(.13 + .76 * shownAnchors[part.id].y) * 1000} r="4" /></g>)}
+      {cards.map(({ part, side, slot, column }) => shownAnchors[part.id] && <g key={part.id}><line x1={lesson.model && column !== undefined ? (column + (side === "left" ? .13 : 0)) * 1000 : side === "left" ? 180 : 820} y1={slot * 1000} x2={(.17 + .66 * shownAnchors[part.id].x) * 1000} y2={(.13 + .76 * shownAnchors[part.id].y) * 1000} /><circle cx={(.17 + .66 * shownAnchors[part.id].x) * 1000} cy={(.13 + .76 * shownAnchors[part.id].y) * 1000} r="4" /></g>)}
     </svg>
-    {cards.map(({ part, side, slot }) => <div key={part.id} className={`visual-lesson-part illustrated-lesson-part ${side}`} style={{ left: lesson.model ? side === "left" ? "4%" : "85%" : side === "left" ? "0%" : "82%", top: `${slot * 100}%` }} aria-hidden="true"><strong>{part.label}</strong>{!lesson.model && <small>{part.explanation}</small>}</div>)}
+    {cards.map(({ part, side, slot, column }) => <div key={part.id} className={`visual-lesson-part illustrated-lesson-part ${side}`} style={{ left: lesson.model && column !== undefined ? `${column * 100}%` : side === "left" ? "0%" : "82%", top: `${slot * 100}%` }} aria-hidden="true"><strong>{part.label}</strong>{!lesson.model && <small>{part.explanation}</small>}</div>)}
     {assembly && <div className="interactive-assembly-step" aria-live="polite">
       {unavailable ? "Assembly animation requires 3D graphics"
         : currentAssembly ? <><strong>Step {assemblyStep} of {assembly.length}</strong><span>{currentAssembly.instruction}</span></>

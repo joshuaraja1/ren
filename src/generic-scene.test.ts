@@ -5,7 +5,7 @@ import { vi } from "vitest";
 import type { VisualLesson } from "../electron/visual-lesson";
 import type { SceneSpec } from "../electron/scene-spec";
 import { raspberryPiCameraTemplate } from "../electron/scene-templates";
-import { GenericScene, applyAssemblyProgress, assemblyCameraFrame, hasHorizontalBase, makeGenericScene, makeSubjectScene, orbitCameraDistance, projectGenericAnchors } from "./generic-scene";
+import { GenericScene, applyAssemblyProgress, assemblyCameraFrame, cameraDistanceForView, hasHorizontalBase, makeGenericScene, makeSubjectScene, orbitCameraDistance, projectGenericAnchors } from "./generic-scene";
 
 const lesson: VisualLesson = {
   version: 1, title: "Camera signal path", placement: { x: 0, y: 0, width: 1, height: 1 },
@@ -65,6 +65,25 @@ it("keeps a wide subject fully framed while orbiting through diagonal views", ()
       expect(Math.abs(projected.y)).toBeLessThan(1);
     }
   }
+});
+
+it("fits the visible angle more closely while keeping every subject corner in frame", () => {
+  const bounds = new THREE.Box3(new THREE.Vector3(-3, -.2, -1), new THREE.Vector3(3, 2, 1));
+  const camera = new THREE.PerspectiveCamera(38, 1.45, .1, 100);
+  for (const azimuth of [0, .45, Math.PI / 2, Math.PI]) {
+    const elevation = .6;
+    const center = bounds.getCenter(new THREE.Vector3());
+    const distance = cameraDistanceForView(bounds, azimuth, elevation, camera.fov, camera.aspect);
+    camera.position.set(center.x + Math.sin(azimuth) * Math.cos(elevation) * distance,
+      center.y + Math.sin(elevation) * distance, center.z + Math.cos(azimuth) * Math.cos(elevation) * distance);
+    camera.lookAt(center); camera.updateMatrixWorld(true);
+    for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) {
+      const point = new THREE.Vector3(x, y, z).project(camera);
+      expect(Math.abs(point.x)).toBeLessThan(.95);
+      expect(Math.abs(point.y)).toBeLessThan(.95);
+    }
+  }
+  expect(cameraDistanceForView(bounds, 0, .6, camera.fov, camera.aspect)).toBeLessThan(orbitCameraDistance(bounds, camera.fov, camera.aspect));
 });
 
 it("frames separated parts at first and closes in on the assembled subject", () => {

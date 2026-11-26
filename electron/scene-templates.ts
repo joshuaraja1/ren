@@ -48,22 +48,22 @@ export function raspberryPiCameraTemplate(lesson: VisualLesson, question: string
 
   // The reference has the module standing above the horizontal board, with a
   // continuous ribbon from its lower connector down into CAM/DISP0.
-  primitives.push({ partId: cableId, kind: "box", position: [.62, .84, .7], scale: [.28, 1.45, .035], rotation: [0, 0, 0], color: "#c5d0ca" });
+  primitives.push({ partId: cableId, kind: "box", position: [.62, 1.18, .7], scale: [.28, 2.13, .035], rotation: [0, 0, 0], color: "#c5d0ca" });
   primitives.push({ partId: cableId, kind: "box", position: [.62, .14, .72], scale: [.24, .12, .025], rotation: [0, 0, 0], color: "#cba55e" });
-  primitives.push({ partId: cableId, kind: "box", position: [.62, 1.56, .72], scale: [.24, .12, .025], rotation: [0, 0, 0], color: "#cba55e" });
+  primitives.push({ partId: cableId, kind: "box", position: [.62, 2.24, .72], scale: [.24, .12, .025], rotation: [0, 0, 0], color: "#cba55e" });
 
-  primitives.push({ partId: cameraId, kind: "box", position: [.62, 1.88, .7], scale: [.96, .74, .09], rotation: [0, 0, 0], color: "#277e4b" });
-  primitives.push({ partId: cameraId, kind: "box", position: [.62, 1.55, .77], scale: [.32, .13, .12], rotation: [0, 0, 0], color: "#d5ddd5" });
-  primitives.push({ partId: cameraId, kind: "box", position: [.62, 1.9, .84], scale: [.52, .44, .22], rotation: [0, 0, 0], color: "#34383c" });
-  primitives.push({ partId: cameraId, kind: "cylinder", position: [.62, 1.9, 1.01], scale: [.31, .28, .31], rotation: [Math.PI / 2, 0, 0], color: "#1c2429" });
-  primitives.push({ partId: cameraId, kind: "torus", position: [.62, 1.9, 1.18], scale: [.57, .57, .18], rotation: [0, 0, 0], color: "#54616b" });
+  primitives.push({ partId: cameraId, kind: "box", position: [.62, 2.56, .7], scale: [.96, .74, .09], rotation: [0, 0, 0], color: "#277e4b" });
+  primitives.push({ partId: cameraId, kind: "box", position: [.62, 2.23, .77], scale: [.32, .13, .12], rotation: [0, 0, 0], color: "#d5ddd5" });
+  primitives.push({ partId: cameraId, kind: "box", position: [.62, 2.58, .84], scale: [.52, .44, .22], rotation: [0, 0, 0], color: "#34383c" });
+  primitives.push({ partId: cameraId, kind: "cylinder", position: [.62, 2.58, 1.01], scale: [.31, .28, .31], rotation: [Math.PI / 2, 0, 0], color: "#1c2429" });
+  primitives.push({ partId: cameraId, kind: "torus", position: [.62, 2.58, 1.18], scale: [.57, .57, .18], rotation: [0, 0, 0], color: "#54616b" });
 
   return {
     version: 1, subject: "Raspberry Pi 5 with Camera Module (Standard-Mini cable)", fidelity: "conceptual", primitives,
     anchors: [
       { partId: piId, position: onTable([.9, .68, .16]) },
-      { partId: cableId, position: [.62, .84, .75] },
-      { partId: cameraId, position: [.62, 1.9, 1.2] },
+      { partId: cableId, position: [.62, 1.18, .75] },
+      { partId: cameraId, position: [.62, 2.58, 1.2] },
     ],
     ...(assemblyRequested ? { assembly: [
       { partId: cableId, from: [.85, .45, .75], instruction: "Power off Pi 5. Gently lift the CAM/DISP0 latch. Insert the 22-pin Standard-Mini end straight with contacts away from the latch; close the latch." },
