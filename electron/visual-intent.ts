@@ -37,7 +37,7 @@ export function wantsPriorVisualIn3D(question: string): boolean {
 
 /** An anaphoric how-to should replay the current physical model as a lesson. */
 export function wantsPriorAssemblyGuide(question: string): boolean {
-  return /\b(?:how (?:do|can) (?:i|we) do (?:it|that|this)|show (?:me )?how to do (?:it|that|this)|walk (?:me )?through (?:it|that|this)|show (?:me )?the (?:assembly )?steps)\b/i.test(question);
+  return /\b(?:how (?:do|can) (?:i|we) do (?:it|that|this)|show (?:me )?how to do (?:it|that|this)|walk (?:me )?through (?:it|that|this)|show (?:me )?the (?:assembly )?steps|(?:repeat|replay|restart) (?:the )?(?:assembly|animation|steps|sequence|it|that)|show (?:me )?(?:the )?steps again|show (?:me )?(?:it|that) again)\b/i.test(question);
 }
 
 /** Diagram requests default to 2D; explicit 3D view requests opt into 3D. */

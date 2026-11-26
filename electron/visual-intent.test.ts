@@ -22,6 +22,10 @@ it("renders only when the learner explicitly asks for a visual", () => {
   expect(wantsVisualCreation("How do I build a job application agent?")).toBe(false);
   expect(wantsPriorAssemblyGuide("How do I do that?")).toBe(true);
   expect(wantsPriorAssemblyGuide("Show me how to do it")).toBe(true);
+  expect(wantsPriorAssemblyGuide("Repeat the steps")).toBe(true);
+  expect(wantsPriorAssemblyGuide("Replay it")).toBe(true);
+  expect(wantsPriorAssemblyGuide("Restart the animation")).toBe(true);
+  expect(wantsPriorAssemblyGuide("Show me that again")).toBe(true);
   expect(wantsPriorAssemblyGuide("How does this diagram work?")).toBe(false);
 });
 
