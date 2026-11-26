@@ -95,7 +95,7 @@ function sendOverlayIllustration(value: Illustration | null) {
 
 const collapsedSize = { width: 236, height: 58 };
 const expandedSize = { width: 420, height: 560 };
-const voicePanelSize = { width: 420, height: 340 };
+const voicePanelSize = { width: 300, height: 142 };
 
 function onboardingMarkerPath() { return join(app.getPath("userData"), "onboarding-complete"); }
 function hasCompletedOnboarding() { return existsSync(onboardingMarkerPath()); }
@@ -117,6 +117,12 @@ function positionMainWindow(expanded: boolean, displayId?: number, tall = false)
   const workArea = display.workArea;
   const size = expanded ? tall ? expandedSize : voicePanelSize : collapsedSize;
   mainWindow.setBounds({ x: Math.round(workArea.x + (workArea.width - size.width) / 2), y: workArea.y, ...size }, true);
+}
+
+function repositionMainWindow(displayId?: number) {
+  const bounds = mainWindow?.getBounds();
+  if (!bounds) return;
+  positionMainWindow(bounds.width !== collapsedSize.width, displayId, bounds.height === expandedSize.height);
 }
 
 function createOverlayWindow() {
@@ -379,7 +385,7 @@ app.whenReady().then(() => {
   }
   screen.on("display-removed", () => {
     invalidateSpatialContext();
-    positionMainWindow(mainWindow?.getBounds().width === expandedSize.width);
+    repositionMainWindow();
   });
   screen.on("display-metrics-changed", invalidateSpatialContext);
   function enableCircleInput() {
@@ -408,7 +414,7 @@ app.whenReady().then(() => {
         selectedFocus = { displayId, region, createdAt: Date.now() };
         showFocusPath(displayId, region.points);
         completeFocusPath(displayId);
-        positionMainWindow(mainWindow?.getBounds().width === expandedSize.width, displayId);
+        repositionMainWindow(displayId);
         mainWindow?.webContents.send("ren:focus-selection", "circle");
       },
       onCancel: cancelFocusPath,
