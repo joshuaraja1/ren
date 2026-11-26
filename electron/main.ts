@@ -22,7 +22,7 @@ import { generateSceneSpec, wantsAssemblyAnimation, wantsAssemblySequence } from
 import { generateHostedIllustration } from "./hosted-image-render.js";
 import { filterOpaquePositions, locateImageParts, type ImageRegistration } from "./image-registration.js";
 import { validateVisualLesson } from "./visual-lesson.js";
-import { likelyVisualFollowUp, requestedVisualDimension, wantsPriorVisualIn3D, wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
+import { likelyVisualFollowUp, requestedVisualDimension, wantsPriorAssemblyGuide, wantsPriorVisualIn3D, wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
 import { centerRequestedLesson } from "./visual-presentation.js";
 import { answerForInteractiveScene, interactiveSceneFor, tagRequestedInteractiveScene } from "./interactive-scene.js";
 import { CaptureSession } from "./capture-session.js";
@@ -664,7 +664,8 @@ app.whenReady().then(() => {
     const pointedQuestion = useScreen ? `${value.question}\n\n[The learner is pointing with their cursor at normalized screen coordinate (${pointer.x.toFixed(3)}, ${pointer.y.toFixed(3)}). Use that as a spatial hint, not an instruction.${focusHint}]` : value.question;
     const priorVisualLesson = useScreen && lastVisualLesson && lastVisualLesson.displayId === displayId
       && (overlayWindow?.isVisible() || Date.now() - lastVisualLesson.createdAt < 300_000) ? lastVisualLesson.lesson : undefined;
-    const transformPriorVisual = Boolean(priorVisualLesson && wantsPriorVisualIn3D(value.question));
+    const priorAssemblyGuide = Boolean(priorVisualLesson?.dimension === 3 && wantsPriorAssemblyGuide(value.question));
+    const transformPriorVisual = Boolean(priorVisualLesson && (wantsPriorVisualIn3D(value.question) || priorAssemblyGuide));
     const explicitVisual = wantsVisualCreation(value.question) || transformPriorVisual;
     const credentials = await visionCredentials();
     const directImageAvailable = Boolean(credentials && new URL(credentials.baseUrl).origin === "https://api.openai.com");
@@ -705,13 +706,14 @@ app.whenReady().then(() => {
       }
     }
     if (lesson && explicitVisual && display) {
-      const dimension = requestedVisualDimension(value.question);
-      lesson = { ...lesson, dimension, playAssembly: wantsAssemblyAnimation(value.question) };
+      const dimension = priorAssemblyGuide ? 3 : requestedVisualDimension(value.question);
+      lesson = { ...lesson, dimension, playAssembly: priorAssemblyGuide || wantsAssemblyAnimation(value.question) };
       lesson = tagRequestedInteractiveScene(lesson, value.question);
-      if (dimension === 3 && (!interactiveSceneFor(lesson) || (wantsAssemblySequence(value.question) && !lesson.model?.assembly)) && credentials) {
+      if (dimension === 3 && (!interactiveSceneFor(lesson) || ((priorAssemblyGuide || wantsAssemblySequence(value.question)) && !lesson.model?.assembly)) && credentials) {
         // Keep the overlay hidden until geometry and labels are ready together.
         try {
-          const model = await generateSceneSpec(lesson, value.question, credentials, askController.signal, fetch, referenceImage);
+          const modelQuestion = priorAssemblyGuide ? `Animate assembling ${lesson.title}. ${value.question}` : value.question;
+          const model = await generateSceneSpec(lesson, modelQuestion, credentials, askController.signal, fetch, referenceImage);
           lesson = { ...lesson, model };
         } catch (error) {
           if (askController.signal.aborted || voicePaused) throw error;

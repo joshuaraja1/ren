@@ -8,6 +8,12 @@ export type GenericAnchors = Record<string, Point>;
 
 export type SubjectScene = ReturnType<typeof makeSubjectScene>;
 
+/** Leave time to see the separated parts, then move each part in turn. */
+export function assemblyProgressAt(elapsedMs: number, stepCount: number, reducedMotion = false): number {
+  if (reducedMotion) return stepCount;
+  return Math.min(stepCount, Math.max(0, (elapsedMs - 900) / 2200));
+}
+
 /** Move each part from an exploded position to its validated teaching position. */
 export function applyAssemblyProgress(model: SubjectScene, progress: number) {
   const steps = model.assembly;
@@ -299,7 +305,7 @@ export function GenericScene({ lesson, onAnchors, onUnavailable, onAssemblyStep 
       let completion = 1;
       if (lesson.model && assembly?.length) {
         if (!assemblyStarted) assemblyStarted = time;
-        const progress = reducedMotion ? assembly.length : Math.min(assembly.length, Math.max(0, (time - assemblyStarted - 450) / 2600));
+        const progress = assemblyProgressAt(time - assemblyStarted, assembly.length, reducedMotion);
         completion = progress / assembly.length;
         applyAssemblyProgress(model as SubjectScene, progress);
         const step = progress >= assembly.length ? assembly.length + 1 : Math.floor(progress) + 1;

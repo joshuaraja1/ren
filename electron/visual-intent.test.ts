@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { likelyVisualFollowUp, requestedVisualDimension, wantsPriorVisualIn3D, wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
+import { likelyVisualFollowUp, requestedVisualDimension, wantsPriorAssemblyGuide, wantsPriorVisualIn3D, wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
 
 it("renders only when the learner explicitly asks for a visual", () => {
   expect(wantsVisualCreation("Can you recreate that jet for me and explain it? ")).toBe(true);
@@ -17,6 +17,12 @@ it("renders only when the learner explicitly asks for a visual", () => {
   expect(wantsVisualCreation("Animate connecting a turbine to a generator")).toBe(true);
   expect(wantsVisualCreation("How does this diagram work?")).toBe(false);
   expect(wantsVisualCreation("How does this jet work? ")).toBe(false);
+  expect(wantsVisualCreation("How do I connect a camera module to this Pi?")).toBe(true);
+  expect(requestedVisualDimension("How do I connect a camera module to this Pi?")).toBe(3);
+  expect(wantsVisualCreation("How do I build a job application agent?")).toBe(false);
+  expect(wantsPriorAssemblyGuide("How do I do that?")).toBe(true);
+  expect(wantsPriorAssemblyGuide("Show me how to do it")).toBe(true);
+  expect(wantsPriorAssemblyGuide("How does this diagram work?")).toBe(false);
 });
 
 it("turns a follow-up into a 3D view of the existing subject", () => {

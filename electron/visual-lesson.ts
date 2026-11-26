@@ -19,7 +19,7 @@ export type VisualLesson = {
   dimension?: 2 | 3;
   /** Renderer-only: reveal the lesson after its requested image is complete. */
   pendingIllustration?: boolean;
-  /** Renderer-only: animate a previously shown complete assembly on request. */
+  /** Renderer-only: animate assembly when the learner requests a physical how-to. */
   playAssembly?: boolean;
   layout?: "centered";
   scene?: "f35b-hover" | "conceptual-3d";

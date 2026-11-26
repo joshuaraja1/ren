@@ -1,6 +1,9 @@
+import { wantsAssemblySequence } from "./assembly-intent.js";
+
 /** An explicit request to make a visual authorizes an image render for this answer. */
 export function wantsVisualCreation(question: string) {
-  return /\b(?:create|recreate|draw|render|illustrate|sketch|visuali[sz]e|generate)\b/i.test(question)
+  return wantsAssemblySequence(question)
+    || /\b(?:create|recreate|draw|render|illustrate|sketch|visuali[sz]e|generate)\b/i.test(question)
     || /\b(?:play|replay|animate)\s+(?:the\s+)?(?:assembly|assembly steps)\b/i.test(question)
     || /\b(?:show|animate|walk me through)\b[^.!?]{0,90}\b(?:assembl(?:e|y|ing)|putting .{0,25} together|connecting (?:the )?parts|plugging .{0,20} in)\b/i.test(question)
     || /\b(?:show|animate|render|draw)\b[^.!?]{0,100}\b(?:attach(?:ing)?|install(?:ing)?|mount(?:ing)?)\b[^.!?]{0,100}\b(?:to|into|onto|on|in)\b/i.test(question)
@@ -32,10 +35,16 @@ export function wantsPriorVisualIn3D(question: string): boolean {
     && !/\b(?:diagram|model|parts|components)\s+(?:of|for|about)\s+(?:a|an|the|this|that)?\s*[\w-]+/i.test(value);
 }
 
+/** An anaphoric how-to should replay the current physical model as a lesson. */
+export function wantsPriorAssemblyGuide(question: string): boolean {
+  return /\b(?:how (?:do|can) (?:i|we) do (?:it|that|this)|show (?:me )?how to do (?:it|that|this)|walk (?:me )?through (?:it|that|this)|show (?:me )?the (?:assembly )?steps)\b/i.test(question);
+}
+
 /** Diagram requests default to 2D; explicit 3D view requests opt into 3D. */
 export function requestedVisualDimension(question: string): 2 | 3 {
   if (/\b(?:play|replay|animate)\s+(?:the\s+)?(?:assembly|assembly steps)\b/i.test(question)) return 3;
   if (/\b(?:2d|two[ -]dimensional)\b|\bflat\s+(?:diagram|drawing|schematic|model|illustration)\b/i.test(question)) return 2;
+  if (wantsAssemblySequence(question)) return 3;
   if (/\b(?:show|walk me through)\b[^.!?]{0,100}\battach\b[^.!?]{0,70}\bcamera\b[^.!?]{0,100}\b(?:raspberry\s*pi|pi\s*5)\b/i.test(question)
     || /\b(?:show|walk me through)\b[^.!?]{0,100}\b(?:raspberry\s*pi|pi\s*5)\b[^.!?]{0,100}\battach\b[^.!?]{0,70}\bcamera\b/i.test(question)) return 3;
   if (/\b(?:exploded (?:view|model)|animate\b[^.!?]{0,80}\b(?:assembl(?:e|y|ing)|attach(?:ing)?|install(?:ing)?|connect(?:ing)?)|show\b[^.!?]{0,50}\b(?:parts? (?:moving|connecting)|assembl(?:e|y|ing)))\b/i.test(question)) return 3;

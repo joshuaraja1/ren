@@ -5,7 +5,7 @@ import { vi } from "vitest";
 import type { VisualLesson } from "../electron/visual-lesson";
 import type { SceneSpec } from "../electron/scene-spec";
 import { raspberryPiCameraTemplate } from "../electron/scene-templates";
-import { GenericScene, applyAssemblyProgress, assemblyCameraFrame, cameraDistanceForPoints, cameraDistanceForView, hasHorizontalBase, makeGenericScene, makeSubjectScene, orbitCameraDistance, projectGenericAnchors, sceneGeometryCorners } from "./generic-scene";
+import { GenericScene, applyAssemblyProgress, assemblyCameraFrame, assemblyProgressAt, cameraDistanceForPoints, cameraDistanceForView, hasHorizontalBase, makeGenericScene, makeSubjectScene, orbitCameraDistance, projectGenericAnchors, sceneGeometryCorners } from "./generic-scene";
 
 const lesson: VisualLesson = {
   version: 1, title: "Camera signal path", placement: { x: 0, y: 0, width: 1, height: 1 },
@@ -220,6 +220,15 @@ it("moves the Pi camera cable before the camera and leaves the board fixed", () 
   applyAssemblyProgress(model, 2);
   expect(model.partMeshes.camera[0].position.equals(cameraFinal)).toBe(true);
   expect(model.anchors.camera.y).toBeCloseTo(spec.anchors.find((item) => item.partId === "camera")!.position[1]);
+});
+
+it("holds the exploded view before moving each part through visible assembly steps", () => {
+  expect(assemblyProgressAt(800, 2)).toBe(0);
+  expect(assemblyProgressAt(2000, 2)).toBeCloseTo(.5);
+  expect(assemblyProgressAt(3100, 2)).toBe(1);
+  expect(assemblyProgressAt(4200, 2)).toBeCloseTo(1.5);
+  expect(assemblyProgressAt(5300, 2)).toBe(2);
+  expect(assemblyProgressAt(0, 2, true)).toBe(2);
 });
 
 it("reports a missing WebGL context for the host to display its 2D fallback", () => {
