@@ -15,7 +15,7 @@ const mock = vi.hoisted(() => {
     start: vi.fn(),
     stop: vi.fn(),
   };
-  const keys = { Ctrl: 29, CtrlRight: 3613, Alt: 56, AltRight: 3640, Meta: 3675, MetaRight: 3676, Escape: 1 };
+  const keys = { Ctrl: 29, CtrlRight: 3613, Alt: 56, AltRight: 3640, Meta: 3675, MetaRight: 3676, Shift: 42, ShiftRight: 54, Escape: 1 };
   return { hook, keys, listeners, cursor: { x: 500, y: 400 } };
 });
 
@@ -51,6 +51,23 @@ const traceCircle = () => {
 
 beforeEach(() => { mock.cursor = { x: 570, y: 400 }; });
 afterEach(() => { stopCircleInput(); mock.listeners.clear(); vi.clearAllMocks(); });
+
+it("toggles voice after three Control taps without treating modifiers as screen interaction", () => {
+  const onTripleControl = vi.fn();
+  const onInteraction = vi.fn();
+  const clock = vi.spyOn(Date, "now");
+  try {
+    expect(startCircleInput({ onProgress: vi.fn(), onComplete: vi.fn(), onCancel: vi.fn(), onScroll: vi.fn(), onTripleControl, onInteraction })).toBe(true);
+    for (let index = 0; index < 3; index++) {
+      clock.mockReturnValue(100 + index * 220);
+      emit("keydown", event(mock.keys.Ctrl, true, false));
+      clock.mockReturnValue(160 + index * 220);
+      emit("keyup", event(mock.keys.Ctrl, false, false));
+    }
+    expect(onTripleControl).toHaveBeenCalledOnce();
+    expect(onInteraction).not.toHaveBeenCalled();
+  } finally { clock.mockRestore(); }
+});
 
 it.each([
   ["Control then Option", [mock.keys.Ctrl, mock.keys.Alt]],
