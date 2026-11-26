@@ -90,8 +90,10 @@ export type RenBridge = {
   saveDeepgramKey(key: string): Promise<DeepgramStatus>;
   clearDeepgramKey(): Promise<DeepgramStatus>;
   speak(id: string, text: string): Promise<boolean>;
+  cancelSpeech(id: string): Promise<boolean>;
   onSpeechData(listener: (data: { id: string; chunk?: string; done?: boolean; error?: string }) => void): () => void;
   ask(request: AskRequest): Promise<AskResponse>;
+  cancelAsk(): Promise<boolean>;
   clearAnnotations(): Promise<void>;
   generateIllustration(automatic?: boolean): Promise<boolean>;
   onIllustration(listener: (image: Illustration | null) => void): () => void;
@@ -101,6 +103,7 @@ export type RenBridge = {
   onFocusSelection(listener: (kind: "circle" | "sketch") => void): () => void;
   onActivateVoice(listener: () => void): () => void;
   onOpenPanel(listener: () => void): () => void;
+  onOpenHome(listener: () => void): () => void;
   voiceShortcutAvailable(): Promise<boolean>;
   voiceModeStatus(): Promise<VoiceMode>;
   stopVoiceConversation(): Promise<VoiceMode>;

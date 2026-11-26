@@ -7,6 +7,8 @@ import { detectAgentJobIntent } from "../electron/agent-job-intent";
 import type { AgentJobSnapshot } from "../electron/agent-jobs";
 
 type VoiceState = "idle" | "listening" | "processing" | "responding";
+type PanelTab = "home" | "agents" | "connections";
+type PromptMode = "ask" | "agent" | "chat";
 type Message = ConversationTurn & { id: string; provider?: AskResponse["provider"]; followUps?: string[]; sources?: { title: string; url: string }[] };
 type RecognitionResult = { 0: { transcript: string }; isFinal: boolean };
 type SpeechRecognitionLike = {
@@ -24,19 +26,23 @@ const demoHosted: HostedImageStatus = { mode: "demo", baseUrl: "", host: "" };
 const voiceLabels: Record<VoiceState, { title: string; detail: string }> = {
   idle: { title: "Ready", detail: "Say “Hey Ren”" },
   listening: { title: "Listening", detail: "Follow up without saying Hey Ren" },
-  processing: { title: "Looking closely", detail: "Reading your screen" },
-  responding: { title: "Explaining", detail: "Working it through" },
+  processing: { title: "Thinking", detail: "Reading your screen" },
+  responding: { title: "Speaking", detail: "Working it through" },
 };
 const Spark = () => <svg aria-hidden="true" viewBox="0 0 32 32" className="spark"><path d="M16 2c.8 8.6 5.4 13.2 14 14-8.6.8-13.2 5.4-14 14-.8-8.6-5.4-13.2-14-14 8.6-.8 13.2-5.4 14-14Z" /></svg>;
 const VoiceMeter = ({ active = false }: { active?: boolean }) => <span className={`voice-meter${active ? " is-active" : ""}`} aria-hidden="true"><i /><i /><i /><i /></span>;
 
 export function App() {
   const [permission, setPermission] = useState<AmbientStatus | null>(null);
+  const previousMicrophonePermissionRef = useRef<string | undefined>(undefined);
   const [expanded, setExpandedState] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [dictationActive, setDictationActive] = useState(false);
   const voiceStateRef = useRef<VoiceState>("idle");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [homePrompt, setHomePrompt] = useState("");
+  const [panelTab, setPanelTab] = useState<PanelTab>("home");
+  const [promptMode, setPromptMode] = useState<PromptMode>("ask");
   const [error, setError] = useState("");
   const [vision, setVision] = useState<VisionStatus>(demoVision);
   const [deepgram, setDeepgram] = useState<DeepgramStatus>({ mode: "demo" });
@@ -54,6 +60,7 @@ export function App() {
   const [voiceMode, setVoiceMode] = useState<VoiceMode>({ paused: false, alwaysOn: false });
   const [agentJob, setAgentJob] = useState<AgentJobSnapshot | null>(null);
   const agentJobIdRef = useRef<string | null>(null);
+  const ignoredAgentJobIdsRef = useRef(new Set<string>());
   const voicePausedRef = useRef(false);
   const alwaysOnRef = useRef(false);
   const imageRenderingRef = useRef(false);
@@ -83,6 +90,7 @@ export function App() {
   const pendingAudioRef = useRef<number[][]>([]);
   const expandedRef = useRef(false);
   const askingRef = useRef(false);
+  const askGenerationRef = useRef(0);
   const visionOpenRef = useRef(false);
 
   useEffect(() => { messagesRef.current = messages; }, [messages]);
@@ -98,7 +106,9 @@ export function App() {
   useEffect(() => { void window.ren?.deepgramStatus?.().then(setDeepgram).catch(() => setError("Could not read Deepgram settings.")); }, []);
   useEffect(() => { void window.ren?.voiceShortcutAvailable?.().then(setVoiceShortcutAvailable).catch(() => {}); }, []);
   useEffect(() => {
-    if (expandedRef.current && permission?.microphone === "granted" && !visionOpenRef.current) {
+    const previous = previousMicrophonePermissionRef.current;
+    previousMicrophonePermissionRef.current = permission?.microphone;
+    if (previous && previous !== "granted" && expandedRef.current && permission?.microphone === "granted" && !visionOpenRef.current) {
       void setExpanded(false);
     }
   }, [permission?.ready, permission?.microphone]);
@@ -125,8 +135,6 @@ export function App() {
   }), []);
   useEffect(() => window.ren?.onActivateVoice?.(() => {
     if (voicePausedRef.current) return;
-    if (askingRef.current) return;
-    speechCancelRef.current?.();
     if (nativeSpeechRef.current) void startNativeDictation();
     else {
       setError("Voice is unavailable. Open Ren manually to check the microphone and Deepgram settings.");
@@ -135,6 +143,12 @@ export function App() {
     }
   }), []);
   useEffect(() => window.ren?.onOpenPanel?.(() => { openVisionSettings(); }), []);
+  useEffect(() => window.ren?.onOpenHome?.(() => {
+    visionOpenRef.current = false;
+    setVisionOpen(false);
+    setPanelTab("home");
+    void setExpanded(true);
+  }), []);
   useEffect(() => window.ren?.onAgentJobUpdate?.(handleAgentJobUpdate), []);
 
   useEffect(() => {
@@ -220,7 +234,8 @@ export function App() {
               return;
             }
             if (conversationOpenRef.current) {
-              if (!awaitingFollowUpRef.current || Date.now() < suppressSpeechUntilRef.current) {
+              const interruptible = Boolean(speechCancelRef.current) || askingRef.current;
+              if ((!awaitingFollowUpRef.current && !interruptible) || (!interruptible && Date.now() < suppressSpeechUntilRef.current)) {
                 wasAwaitingFollowUp = false;
                 followUpVoiceFrames = 0;
                 return;
@@ -308,17 +323,19 @@ export function App() {
 
   function applyVoiceMode(mode: VoiceMode) {
     if (!mode || typeof mode.paused !== "boolean" || typeof mode.alwaysOn !== "boolean") return;
+    const wasAlwaysOn = alwaysOnRef.current;
+    const wasPaused = voicePausedRef.current;
     voicePausedRef.current = mode.paused;
     alwaysOnRef.current = mode.alwaysOn;
     setVoiceMode(mode);
-    if (mode.paused || !mode.alwaysOn) {
+    if (mode.paused || (wasAlwaysOn && !mode.alwaysOn)) {
       conversationOpenRef.current = false;
       awaitingFollowUpRef.current = false;
-      stopNativeDictation();
-      if (mode.paused) speechCancelRef.current?.();
+      if (dictationActiveRef.current) stopNativeDictation();
+      if (mode.paused) interruptCurrentResponse();
       setVoiceState("idle");
       if (!expandedRef.current) void window.ren?.setCompanionVisible?.(false);
-    } else {
+    } else if (mode.alwaysOn && (!wasAlwaysOn || wasPaused)) {
       conversationOpenRef.current = true;
       awaitingFollowUpRef.current = true;
       setVoiceState("idle");
@@ -328,6 +345,8 @@ export function App() {
   }
 
   async function endVoiceConversation() {
+    interruptCurrentResponse();
+    stopNativeDictation();
     conversationOpenRef.current = false;
     awaitingFollowUpRef.current = false;
     alwaysOnRef.current = false;
@@ -337,8 +356,16 @@ export function App() {
 
   function handleAgentJobUpdate(job: AgentJobSnapshot) {
     if (!job || typeof job.id !== "string") return;
+    if (ignoredAgentJobIdsRef.current.has(job.id)) return;
+    if (agentJobIdRef.current && agentJobIdRef.current !== job.id) return;
     setAgentJob(job);
-    if (job.status === "running") { agentJobIdRef.current = job.id; setVoiceState("processing"); return; }
+    if (job.status === "running") {
+      agentJobIdRef.current = job.id;
+      conversationOpenRef.current = nativeSpeechRef.current;
+      awaitingFollowUpRef.current = nativeSpeechRef.current;
+      setVoiceState("processing");
+      return;
+    }
     if (agentJobIdRef.current !== job.id) return;
     agentJobIdRef.current = null;
     const answer = job.answer || job.error || (job.status === "cancelled" ? "I stopped that job." : "The job ended without a result.");
@@ -389,8 +416,25 @@ export function App() {
     void window.ren?.speechStop();
   }
 
+  function interruptCurrentResponse() {
+    const wasAsking = askingRef.current;
+    const currentJob = agentJobIdRef.current;
+    askGenerationRef.current += 1;
+    askingRef.current = false;
+    if (wasAsking) void window.ren?.cancelAsk?.();
+    if (currentJob) {
+      agentJobIdRef.current = null;
+      ignoredAgentJobIdsRef.current.add(currentJob);
+      setAgentJob(null);
+      void window.ren?.cancelAgentJob?.(currentJob);
+    }
+    speechCancelRef.current?.();
+    suppressSpeechUntilRef.current = 0;
+  }
+
   async function startNativeDictation(preRoll: number[][] = [], automatic = false) {
     if (!window.ren || !nativeSpeechRef.current || dictationActiveRef.current) return;
+    interruptCurrentResponse();
     conversationOpenRef.current = true;
     awaitingFollowUpRef.current = false;
     showCompanion();
@@ -603,7 +647,10 @@ export function App() {
         if (data.done) player?.complete();
       } catch (reason) { finish(reason instanceof Error ? reason.message : "Deepgram speech could not play."); }
     });
-    speechCancelRef.current = () => finish(undefined, false);
+    speechCancelRef.current = () => {
+      void window.ren?.cancelSpeech?.(id);
+      finish(undefined, false);
+    };
     startTimer = setTimeout(() => {
       if (context.state !== "running") finish("Audio playback did not start. Click Ren’s microphone button and try again.");
     }, 10_000);
@@ -679,23 +726,33 @@ export function App() {
 
   async function askQuestion(rawQuestion: string) {
     const clean = rawQuestion.trim(); if (!clean) return;
-    if (askingRef.current) { setError("Ren is still answering. Try the circle again when the answer finishes."); return; }
+    if (/^(?:cancel|stop) (?:the |my )?(?:agent )?job[.!?]*$/i.test(clean) && agentJobIdRef.current && window.ren?.cancelAgentJob) {
+      interruptCurrentResponse();
+      setMessages((current) => [...current,
+        { id: crypto.randomUUID(), role: "user", content: clean },
+        { id: crypto.randomUUID(), role: "assistant", content: "I stopped that job." },
+      ]);
+      awaitingFollowUpRef.current = conversationOpenRef.current;
+      setVoiceState("idle");
+      hideCompanionSoon();
+      return;
+    }
+    interruptCurrentResponse();
+    const generation = ++askGenerationRef.current;
+    const history = messagesRef.current.slice(-8).map(({ role, content }) => ({ role, content }));
     queuedIllustrationRef.current = false;
     askingRef.current = true;
     showCompanion();
-    if (expandedRef.current && !visionOpenRef.current) void setExpanded(false);
+    if (expandedRef.current && !visionOpenRef.current && promptMode !== "chat") void setExpanded(false);
     awaitingFollowUpRef.current = false;
     stopNativeDictation();
     setError(""); setVoiceState("processing"); keepAwake();
     setMessages((current) => [...current, { id: crypto.randomUUID(), role: "user", content: clean }]);
     try {
-      if (/^(?:cancel|stop) (?:the |my )?(?:agent )?job[.!?]*$/i.test(clean) && agentJobIdRef.current && window.ren?.cancelAgentJob) {
-        await window.ren.cancelAgentJob(agentJobIdRef.current);
-        return;
-      }
       const jobTask = detectAgentJobIntent(clean);
       if (jobTask && window.ren?.startAgentJob) {
         const context = await captureBurst(clean);
+        if (generation !== askGenerationRef.current) return;
         if (!context.contextToken) throw new Error("Ren could not capture the screen for this job.");
         const started = await window.ren.startAgentJob({ task: jobTask, contextToken: context.contextToken });
         agentJobIdRef.current = started.id;
@@ -703,12 +760,13 @@ export function App() {
         setVoiceState("processing");
         return;
       }
-      const history = messagesRef.current.slice(-8).map(({ role, content }) => ({ role, content }));
-      const response = window.ren ? await (async () => { const context = await captureBurst(clean); return window.ren!.ask({ question: clean, ...context, history }); })() : { answer: "I can see the interaction working in preview mode. The packaged desktop app will use your current screen and cursor as context.", annotations: [], provider: "demo" as const };
+      const response = window.ren ? await (async () => { const context = await captureBurst(clean); if (generation !== askGenerationRef.current) return null; return window.ren!.ask({ question: clean, ...context, history }); })() : { answer: "I can see the interaction working in preview mode. The packaged desktop app will use your current screen and cursor as context.", annotations: [], provider: "demo" as const };
+      if (!response || generation !== askGenerationRef.current) return;
       if (!response.reusedVisual) setImageAvailable(!!response.visualLesson && !interactiveSceneFor(response.visualLesson));
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: response.answer, provider: response.provider, followUps: response.followUps }]);
       setVoiceState("responding"); suppressSpeechUntilRef.current = Date.now() + Math.min(12_000, response.answer.length * 45);
       void speak(response.answer, () => {
+        if (generation !== askGenerationRef.current) return;
         if (nativeSpeechRef.current && conversationOpenRef.current && !visionOpenRef.current) {
           awaitingFollowUpRef.current = true;
           setVoiceState("idle");
@@ -716,8 +774,9 @@ export function App() {
         }
         else { setVoiceState("idle"); keepAwake(); hideCompanionSoon(); }
       });
-      if (response.autoIllustrate) void illustrate(true);
+      if (response.autoIllustrate && generation === askGenerationRef.current) void illustrate(true);
     } catch (reason) {
+      if (generation !== askGenerationRef.current) return;
       setError(reason instanceof Error ? reason.message : "Ren couldn’t answer.");
       if (conversationOpenRef.current && nativeSpeechRef.current) {
         awaitingFollowUpRef.current = true;
@@ -725,7 +784,7 @@ export function App() {
         hideCompanionSoon();
       } else { setVoiceState("idle"); hideCompanionSoon(); }
     }
-    finally { askingRef.current = false; }
+    finally { if (generation === askGenerationRef.current) askingRef.current = false; }
   }
 
   async function illustrate(automatic = false) {
@@ -768,13 +827,24 @@ export function App() {
     : permission?.microphone !== "granted" ? "Mic off"
     : voiceLabels[voiceState].title;
 
-  if (!expanded) return <button className={`ren-pebble state-${voiceState}`} onClick={toggleListening} onContextMenu={(event) => { event.preventDefault(); openVisionSettings(); }} aria-label={dictationActive ? "Finish speaking to Ren" : "Start speaking to Ren"} title={error || "Click to speak. Right-click for AI settings."}><span className="pebble-mark"><Spark /></span><span className="pebble-copy"><strong>Ren · {stripStatus}</strong><small>{error ? "Right-click for settings" : imageRendering ? "Drawing on your screen" : dictationActive ? "Ask your question" : voiceMode.alwaysOn || conversationOpenRef.current ? "Ask a follow-up" : "Say “Hey Ren”"}</small></span><VoiceMeter active={dictationActive || voiceState === "processing" || voiceState === "responding" || imageRendering} /><span className="privacy-dot" aria-hidden="true" /></button>;
+  if (!expanded) return <button className={`ren-pebble state-${voiceState}`} onClick={() => { if (dictationActive || voiceState !== "idle") toggleListening(); else void setExpanded(true); }} onContextMenu={(event) => { event.preventDefault(); openVisionSettings(); }} aria-label={dictationActive ? "Finish speaking to Ren" : voiceState === "idle" ? "Open Ren" : "Start speaking to Ren"} title={error || "Open Ren. Right-click for connections."}><span className="pebble-mark"><span className="clicky-triangle" /></span><span className="pebble-copy"><strong>{stripStatus}</strong></span><VoiceMeter active={dictationActive || voiceState === "processing" || voiceState === "responding" || imageRendering} /></button>;
 
   const needsSetup = Boolean(window.ren) ? permission?.microphone !== "granted" : !permission?.ready;
   return <main className="ambient-panel">
-    <header className={`ambient-header state-${voiceState}`}><div className="companion-orb"><Spark /></div><div className="header-copy"><p><span className="state-dot" /> REN</p><h1>{visionOpen ? "AI settings" : stripStatus === "Ready" ? "Say Hey Ren" : stripStatus}</h1></div><VoiceMeter active={dictationActive || voiceState === "processing" || voiceState === "responding" || imageRendering} /><button className="collapse-button" onClick={() => void setExpanded(false)} aria-label="Collapse Ren">⌃</button></header>
+    <header className="ambient-header"><span className="panel-grip" aria-hidden="true">⋮⋮</span><button className={`panel-tab ${!visionOpen && panelTab === "home" ? "selected" : ""}`} onClick={() => { setVisionOpen(false); visionOpenRef.current = false; setPanelTab("home"); }}>⌂ <span>Home</span></button><button className={`panel-tab ${!visionOpen && panelTab === "agents" ? "selected" : ""}`} onClick={() => { setVisionOpen(false); visionOpenRef.current = false; setPanelTab("agents"); }}>◈ <span>Agents</span></button><button className={`panel-tab ${!visionOpen && panelTab === "connections" ? "selected" : ""}`} onClick={() => { setVisionOpen(false); visionOpenRef.current = false; setPanelTab("connections"); }}>⌁ <span>Connect</span></button><button className={`panel-chrome ${visionOpen ? "selected" : ""}`} onClick={openVisionSettings} aria-label="Open Ren settings">⚙</button><button className="panel-chrome" onClick={() => void setExpanded(false)} aria-label="Collapse Ren">×</button></header>
 
     {needsSetup ? <section className="onboarding-card"><span className="step-kicker">ONE-TIME SETUP</span><h2>Give Ren permission once.</h2><p>Allow microphone, screen recording, and pointer access now. After that, Ren starts quietly with your computer and only captures the screen when you ask a question.</p><div className="permission-row"><span>Microphone</span><b>{permission?.microphone ?? "checking"}</b></div><div className="permission-row"><span>Screen recording</span><b>{permission?.screen ?? "checking"}</b></div><div className="permission-row"><span>Circle shortcut</span><b>{permission?.interaction ?? "checking"}</b></div>{permission?.ready && permission.microphone !== "granted" ? <button className="allow-button" onClick={() => void enableMicrophone()}>Enable microphone</button> : <button className="allow-button" onClick={() => void requestOneTimePermissions()}>Allow and continue</button>}{permission && !permission.ready && <button className="settings-link" onClick={() => void openPermissionSettings()}>Request access and open system settings</button>}</section> : <>
+      {!visionOpen && panelTab === "home" && <section className="panel-home">
+        <div className="panel-hero"><div className="hero-heading"><span className="hero-kicker">ASK REN</span><span className="hero-symbol" aria-hidden="true">✦</span></div><h1>What can I help with?</h1><p>Ask about what’s on your screen, or start a conversation.</p>
+          <div className="panel-conversation">{messages.length ? messages.slice(-4).map((message) => <article key={message.id} className={message.role}><b>{message.role === "user" ? "YOU" : "REN"}</b><p>{message.content}</p>{message.role === "assistant" && message.followUps?.length ? <div className="panel-followups">{message.followUps.slice(0, 2).map((followUp) => <button key={followUp} onClick={() => void askQuestion(followUp)}>{followUp} ↗</button>)}</div> : null}</article>) : <div className="panel-suggestions"><span>TRY ASKING</span><button onClick={() => { setHomePrompt("Explain what’s on my screen"); }}>Explain what’s on my screen <b>↗</b></button><button onClick={() => { setHomePrompt("Help me understand this step by step"); }}>Help me understand this step by step <b>↗</b></button></div>}</div>
+          <form className="panel-prompt" onSubmit={(event) => { event.preventDefault(); const text = homePrompt.trim(); if (!text) return; setHomePrompt(""); void askQuestion(promptMode === "agent" ? `spawn agent to ${text}` : text); }}><textarea rows={2} aria-label="Ask Ren" value={homePrompt} onChange={(event) => setHomePrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={promptMode === "agent" ? "Give an agent a task…" : promptMode === "chat" ? "Continue the conversation…" : "Ask Ren anything…"} /><button type="button" className="prompt-mic" aria-label={dictationActive ? "Finish speaking to Ren" : "Start speaking to Ren"} onClick={toggleListening}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21m-4 0h8" /></svg></button><button type="submit" aria-label="Send Ren prompt" disabled={!homePrompt.trim()}>➤</button></form>
+          <div className="prompt-modes"><button type="button" className={promptMode === "ask" ? "active" : ""} aria-pressed={promptMode === "ask"} onClick={() => setPromptMode("ask")}>✦ Ask</button><button type="button" className={promptMode === "agent" ? "active" : ""} aria-pressed={promptMode === "agent"} onClick={() => setPromptMode("agent")}>◈ Agent</button><button type="button" className={promptMode === "chat" ? "active" : ""} aria-pressed={promptMode === "chat"} onClick={() => setPromptMode("chat")}>▤ Chat</button></div>
+        </div>
+        <div className="panel-status"><span>◈ {agentJob?.status === "running" ? "1 running" : "Agents ready"}</span><span>◇ {permission?.microphone === "granted" ? "Permissions" : "Needs permissions"}</span><span>◉ {stripStatus}</span></div>
+        {error && <p className="panel-error" role="alert">{error}</p>}
+      </section>}
+      {!visionOpen && panelTab === "agents" && <section className="panel-list"><div className="list-heading"><span className="hero-kicker">AGENT WORK</span><h1>Agents</h1><p>Longer tasks appear here while Ren works.</p></div>{agentJob ? <article className="agent-summary"><span className="agent-status">{agentJob.status}</span><h2>{agentJob.task || "Current task"}</h2><p>{agentJob.answer || agentJob.error || "Ren is working on this task."}</p>{agentJob.status === "running" && <button onClick={() => { if (agentJobIdRef.current) void window.ren?.cancelAgentJob?.(agentJobIdRef.current); }}>Stop task</button>}</article> : <div className="panel-empty"><span>◈</span><strong>No agent tasks yet</strong><p>Ask Ren to research, build, or work on a larger task.</p></div>}</section>}
+      {!visionOpen && panelTab === "connections" && <section className="panel-list"><div className="list-heading"><span className="hero-kicker">LOCAL CONNECTIONS</span><h1>Connections</h1><p>Connect the services Ren uses for voice and screen-aware answers.</p></div><button className="connection-row" onClick={openVisionSettings}><span>◉</span><span><strong>Deepgram voice</strong><small>{deepgram.mode === "connected" ? "Connected" : "Connect to use voice"}</small></span><b>↗</b></button><button className="connection-row" onClick={openVisionSettings}><span>✦</span><span><strong>OpenAI vision</strong><small>{vision.mode === "connected" ? "Connected" : "Connect for screen-aware answers"}</small></span><b>↗</b></button></section>}
       {visionOpen ? <form className="vision-settings" onSubmit={(event) => void saveVision(event)}><span className="step-kicker">CLOUD VOICE</span><h2>Connect Deepgram</h2><p>Ren keeps the small “Hey Ren” detector on your Mac. After it wakes, Ren streams your spoken question to Deepgram for transcription and sends reply text to Deepgram for speech. While the conversation stays open, Ren detects follow-ups locally and streams audio only when you speak. Deepgram may charge for usage.</p><label>Deepgram API key<input aria-label="Deepgram API key" type="password" value={deepgramInput} onChange={(event) => setDeepgramInput(event.target.value)} placeholder={deepgram.mode === "demo" ? "Enter your Deepgram key" : "Deepgram key saved"} autoComplete="off" /></label><div className="vision-actions"><button type="button" className="allow-button" onClick={() => void saveDeepgram()}>Save Deepgram key</button>{deepgram.mode === "connected" && <button type="button" onClick={() => void clearDeepgram()}>Remove Deepgram key</button>}</div><span className="step-kicker">SCREEN-AWARE ANSWERS</span><h2>Connect OpenAI</h2><p>When you ask about your screen, Ren sends your question and an on-demand screen snapshot to OpenAI. OpenAI may charge for requests.</p><label>Model<input aria-label="Vision model" value={visionModel} onChange={(event) => setVisionModel(event.target.value)} spellCheck={false} /></label><label>OpenAI API key<input aria-label="OpenAI API key" type="password" value={visionKey} onChange={(event) => setVisionKey(event.target.value)} placeholder={vision.mode === "connected" ? "Leave blank to keep saved key" : "Enter your OpenAI key"} autoComplete="off" /></label><div className="vision-actions"><button type="submit" className="allow-button">Save OpenAI key</button><button type="button" onClick={() => { setDeepgramInput(""); setError(""); void setExpanded(false); }}>Back to Ren</button>{vision.mode === "connected" && <button type="button" onClick={() => void clearVision()}>Remove OpenAI key</button>}</div><div className="hosted-settings"><span className="step-kicker">REALISTIC ON-SCREEN IMAGES</span><h2>Ren image service</h2><p>{hosted.mode === "demo" ? "Connect the Ren hosted image service once. Your validated lesson part names and connections go to this service when you approve an illustration; no screen screenshot is sent. The service uses your Ren illustration allowance." : `Connected to ${hosted.host}. Illustration requests use your Ren allowance; no screen screenshot is sent.`}</p><label>Ren image service URL<input aria-label="Ren image service URL" value={hostedUrl} onChange={(event) => setHostedUrl(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void saveHosted(); } }} placeholder="https://images.ren.example/v1" spellCheck={false} /></label><label>Ren access token<input aria-label="Ren access token" type="password" value={hostedToken} onChange={(event) => setHostedToken(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void saveHosted(); } }} placeholder={hosted.mode === "connected" ? "Leave blank to keep saved token" : "Enter your Ren access token"} autoComplete="off" /></label><div className="vision-actions"><button type="button" className="allow-button" onClick={() => void saveHosted()}>Save image service</button>{hosted.mode === "connected" && <button type="button" onClick={() => void clearHosted()}>Disconnect service</button>}</div></div></form>
       : null}
       {visionOpen && <section className="shortcut-settings"><span className="step-kicker">MAC SHORTCUTS</span><h2>Voice and screen access</h2><div className="permission-row"><span>Accessibility · triple Control and circle</span><b>{permission?.interaction ?? "checking"}</b></div><div className="permission-row"><span>Screen Recording · on-demand context</span><b>{permission?.screen ?? "checking"}</b></div><div className="vision-actions">{permission?.interaction !== "granted" && <button type="button" className="allow-button" onClick={() => void enableCircle()}>Enable keyboard shortcut</button>}{permission?.screen !== "granted" && <button type="button" onClick={() => void openPermissionSettings()}>Enable screen context</button>}</div></section>}

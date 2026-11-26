@@ -31,12 +31,14 @@ contextBridge.exposeInMainWorld("ren", {
   saveDeepgramKey: (key: string) => ipcRenderer.invoke("ren:deepgram-save", key),
   clearDeepgramKey: () => ipcRenderer.invoke("ren:deepgram-clear"),
   speak: (id: string, text: string) => ipcRenderer.invoke("ren:speak", id, text),
+  cancelSpeech: (id: string) => ipcRenderer.invoke("ren:speak-cancel", id),
   onSpeechData: (listener: (data: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: unknown) => listener(data);
     ipcRenderer.on("ren:speech-data", handler);
     return () => ipcRenderer.removeListener("ren:speech-data", handler);
   },
   ask: (request: unknown) => ipcRenderer.invoke("ren:ask", request),
+  cancelAsk: () => ipcRenderer.invoke("ren:ask-cancel"),
   clearAnnotations: () => ipcRenderer.invoke("ren:clear-annotations"),
   generateIllustration: (automatic?: boolean) => ipcRenderer.invoke("ren:generate-illustration", automatic === true),
   onIllustration: (listener: (image: unknown) => void) => {
@@ -73,6 +75,11 @@ contextBridge.exposeInMainWorld("ren", {
     const handler = () => listener();
     ipcRenderer.on("ren:open-panel", handler);
     return () => ipcRenderer.removeListener("ren:open-panel", handler);
+  },
+  onOpenHome: (listener: () => void) => {
+    const handler = () => listener();
+    ipcRenderer.on("ren:open-home", handler);
+    return () => ipcRenderer.removeListener("ren:open-home", handler);
   },
   voiceShortcutAvailable: () => ipcRenderer.invoke("ren:voice-shortcut-available"),
   voiceModeStatus: () => ipcRenderer.invoke("ren:voice-mode"),

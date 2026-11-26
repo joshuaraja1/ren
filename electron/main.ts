@@ -59,7 +59,7 @@ let imageRequestBusy = false;
 let imageRequestedFor: VisualLesson | null = null;
 let pendingVisualDecision = false;
 let voiceShortcutActive = false;
-const speechOutputControllers = new Set<AbortController>();
+const speechOutputControllers = new Map<string, AbortController>();
 let visualGeneration = 0;
 let permissionRequest: Promise<ReturnType<typeof permissionStatus>> | null = null;
 let overlayAnnotations: Annotation[] = [];
@@ -93,8 +93,9 @@ function sendOverlayIllustration(value: Illustration | null) {
 }
 
 
-const collapsedSize = { width: 236, height: 58 };
-const expandedSize = { width: 420, height: 560 };
+const collapsedSize = { width: 190, height: 38 };
+const expandedSize = { width: 475, height: 620 };
+let lastPanelCollapseAt = 0;
 
 function onboardingMarkerPath() { return join(app.getPath("userData"), "onboarding-complete"); }
 function hasCompletedOnboarding() { return existsSync(onboardingMarkerPath()); }
@@ -115,7 +116,7 @@ function positionMainWindow(expanded: boolean, displayId?: number) {
     || (expanded ? screen.getDisplayNearestPoint(screen.getCursorScreenPoint()) : screen.getPrimaryDisplay());
   const workArea = display.workArea;
   const size = expanded ? expandedSize : collapsedSize;
-  mainWindow.setBounds({ x: Math.round(workArea.x + (workArea.width - size.width) / 2), y: workArea.y, ...size }, false);
+  mainWindow.setBounds({ x: Math.round(workArea.x + (workArea.width - size.width) / 2), y: expanded ? workArea.y + 8 : display.bounds.y, ...size }, false);
 }
 
 function repositionMainWindow(displayId?: number) {
@@ -251,7 +252,7 @@ function setVoicePaused(value: boolean) {
     visualGeneration += 1;
     stopWake();
     stopSpeech();
-    for (const controller of speechOutputControllers) controller.abort();
+    for (const controller of speechOutputControllers.values()) controller.abort();
     activeAskController?.abort();
     agentJobs.cancelAll();
     imageRenderAbort?.abort();
@@ -486,14 +487,33 @@ app.whenReady().then(() => {
     if (typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Invalid speech request.");
     const sender = event.sender;
     const controller = new AbortController();
-    speechOutputControllers.add(controller);
+    speechOutputControllers.set(id, controller);
     void streamWithDeepgram(value, (chunk) => {
       if (!controller.signal.aborted && !sender.isDestroyed()) sender.send("ren:speech-data", { id, chunk: Buffer.from(chunk).toString("base64") });
     }, controller.signal).then(() => {
       if (!sender.isDestroyed()) sender.send("ren:speech-data", { id, done: true });
     }).catch((reason: unknown) => {
       if (!sender.isDestroyed()) sender.send("ren:speech-data", { id, error: reason instanceof Error ? reason.message : "Deepgram speech failed." });
-    }).finally(() => { speechOutputControllers.delete(controller); });
+    }).finally(() => { if (speechOutputControllers.get(id) === controller) speechOutputControllers.delete(id); });
+    return true;
+  });
+  ipcMain.handle("ren:speak-cancel", (event, id: unknown) => {
+    requireMainRenderer(event);
+    if (typeof id !== "string") return false;
+    const controller = speechOutputControllers.get(id);
+    if (!controller) return false;
+    controller.abort();
+    speechOutputControllers.delete(id);
+    return true;
+  });
+  ipcMain.handle("ren:ask-cancel", (event) => {
+    requireMainRenderer(event);
+    const controller = activeAskController;
+    if (!controller) return false;
+    controller.abort();
+    visualGeneration += 1;
+    captureSession.invalidate();
+    overlayWindow?.hide();
     return true;
   });
   ipcMain.handle("ren:request-permissions", (event) => {
@@ -529,6 +549,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("ren:set-expanded", (event, expanded: unknown) => {
     requireMainRenderer(event);
+    if (expanded === false) lastPanelCollapseAt = Date.now();
     positionMainWindow(expanded === true);
     if (expanded === true) mainWindow?.showInactive();
   });
@@ -846,7 +867,7 @@ app.whenReady().then(() => {
   });
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
-    else mainWindow?.webContents.send("ren:open-panel");
+    else if (Date.now() - lastPanelCollapseAt > 800) mainWindow?.webContents.send("ren:open-home");
   });
 });
 

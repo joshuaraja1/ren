@@ -4,7 +4,7 @@ import { App } from "./App";
 import type { RenBridge } from "./contracts";
 
 describe("Ren voice interface", () => {
-  it("shows only the compact voice strip and never opens a chat box", async () => {
+  it("opens the OpenClicky-style home panel from the compact notch", async () => {
     window.ren = {
       platform: "darwin", permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
       primarySource: async () => ({ id: "screen", name: "Main display", thumbnail: "" }),
@@ -13,14 +13,45 @@ describe("Ren voice interface", () => {
     } as unknown as RenBridge;
     try {
       render(<App />);
-      expect(await screen.findByRole("button", { name: /start speaking to ren/i })).toHaveClass("ren-pebble");
+      const notch = await screen.findByRole("button", { name: /open ren/i });
+      expect(notch).toHaveClass("ren-pebble");
       expect(screen.queryByRole("main")).not.toBeInTheDocument();
-      expect(screen.queryByText(/go ahead, i’m listening/i)).not.toBeInTheDocument();
-      expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
+      fireEvent.click(notch);
+      expect(await screen.findByRole("textbox", { name: /ask ren/i })).toBeVisible();
+      expect(screen.getByRole("button", { name: /agents/i })).toBeVisible();
+      expect(screen.getByRole("button", { name: /connect/i })).toBeVisible();
+      expect(screen.getByRole("button", { name: /collapse ren/i })).toBeVisible();
     } finally { window.ren = undefined; }
   });
 
-  it("opens only voice settings when the user requests them", async () => {
+  it("keeps Chat visible for a typed follow-up and routes Agent mode to a job", async () => {
+    const setExpanded = vi.fn(async () => {});
+    const ask = vi.fn(async () => ({ answer: "Here is the answer.", annotations: [], provider: "demo" as const }));
+    const startAgentJob = vi.fn(async ({ task }: { task: string }) => ({ id: "job-1", task, status: "running" as const, stage: "Starting", completedSteps: 0, totalSteps: 1, scope: "current screen" as const }));
+    window.ren = {
+      platform: "darwin", permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
+      wakeAvailable: async () => false, onFocusSelection: () => () => {},
+      setExpanded, setCompanionVisible: async () => {}, speechStop: async () => {},
+      captureContext: async () => ({ frames: [], pointer: { x: .5, y: .5 }, contextToken: "capture-1" }), ask, startAgentJob,
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
+      fireEvent.click(await screen.findByRole("button", { name: /chat/i }));
+      fireEvent.change(screen.getByRole("textbox", { name: /ask ren/i }), { target: { value: "Tell me more" } });
+      fireEvent.click(screen.getByRole("button", { name: /send ren prompt/i }));
+      await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({ question: "Tell me more" })));
+      expect(screen.getByRole("textbox", { name: /ask ren/i })).toBeVisible();
+      expect(setExpanded).not.toHaveBeenCalledWith(false, false);
+      fireEvent.click(screen.getByRole("button", { name: /agent$/i }));
+      fireEvent.change(screen.getByRole("textbox", { name: /ask ren/i }), { target: { value: "Compare two learning tools" } });
+      fireEvent.click(screen.getByRole("button", { name: /send ren prompt/i }));
+      await waitFor(() => expect(startAgentJob).toHaveBeenCalledWith(expect.objectContaining({ task: "Compare two learning tools" })));
+      await waitFor(() => expect(setExpanded).toHaveBeenCalledWith(false, false));
+    } finally { window.ren = undefined; }
+  });
+
+  it("opens settings from the notch context action", async () => {
     window.ren = {
       platform: "darwin", permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
       primarySource: async () => ({ id: "screen", name: "Main display", thumbnail: "" }),
@@ -29,7 +60,7 @@ describe("Ren voice interface", () => {
     } as unknown as RenBridge;
     try {
       render(<App />);
-      fireEvent.contextMenu(await screen.findByRole("button", { name: /start speaking to ren/i }));
+      fireEvent.contextMenu(await screen.findByRole("button", { name: /open ren/i }));
       expect(await screen.findByRole("textbox", { name: /vision model/i })).toHaveValue("gpt-6-sol");
       expect(screen.getByLabelText(/openai api key/i)).toHaveAttribute("type", "password");
       expect(screen.getByLabelText(/deepgram api key/i)).toHaveAttribute("type", "password");
@@ -47,7 +78,7 @@ describe("Ren voice interface", () => {
     } as unknown as RenBridge;
     try {
       render(<App />);
-      const strip = await screen.findByRole("button", { name: /start speaking to ren/i });
+      const strip = await screen.findByRole("button", { name: /open ren/i });
       expect(screen.queryByText(/give ren permission once/i)).not.toBeInTheDocument();
       await waitFor(() => expect(wakeAvailable).toHaveBeenCalled());
       fireEvent.contextMenu(strip);
@@ -74,11 +105,11 @@ describe("Ren voice interface", () => {
       fireEvent.focus(window);
       await waitFor(() => expect(permissionStatus).toHaveBeenCalledTimes(2));
       await waitFor(() => expect(setExpanded).toHaveBeenCalledWith(false, false));
-      expect(screen.getByRole("button", { name: /start speaking to ren/i })).toHaveClass("ren-pebble");
+      expect(screen.getByRole("button", { name: /open ren/i })).toHaveClass("ren-pebble");
     } finally { window.ren = undefined; }
   });
 
-  it("does not open a chat panel for the global voice shortcut", async () => {
+  it("keeps the notch compact for a global voice shortcut", async () => {
     let activate: (() => void) | undefined;
     window.ren = {
       platform: "darwin",
@@ -91,14 +122,14 @@ describe("Ren voice interface", () => {
     } as unknown as RenBridge;
     try {
       render(<App />);
-      await screen.findByRole("button", { name: /start speaking to ren/i });
+      await screen.findByRole("button", { name: /open ren/i });
       act(() => activate?.());
-      expect(screen.getByRole("button", { name: /start speaking to ren/i })).toBeVisible();
+      expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible();
       expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
     } finally { window.ren = undefined; }
   });
 
-  it("keeps the strip compact for voice and opens settings only on right-click", async () => {
+  it("keeps voice on the notch and opens settings on right-click", async () => {
     let activate: (() => void) | undefined;
     const setExpanded = vi.fn(async () => {});
     window.ren = {
@@ -112,11 +143,11 @@ describe("Ren voice interface", () => {
     } as unknown as RenBridge;
     try {
       render(<App />);
-      const strip = await screen.findByRole("button", { name: /start speaking to ren/i });
+      const strip = await screen.findByRole("button", { name: /open ren/i });
       expect(strip).toBeVisible();
       expect(setExpanded).not.toHaveBeenCalledWith(true, expect.anything());
       act(() => activate?.());
-      expect(screen.getByRole("button", { name: /start speaking to ren/i })).toBeVisible();
+      expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible();
       expect(setExpanded).not.toHaveBeenCalledWith(true, expect.anything());
       fireEvent.contextMenu(strip);
       await waitFor(() => expect(setExpanded).toHaveBeenCalledWith(true, true));
@@ -275,32 +306,32 @@ describe("Ren voice interface", () => {
       await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
       expect(captureContext).toHaveBeenNthCalledWith(1, false, "Draw a diagram of the hover system");
       await waitFor(() => expect(generateIllustration).toHaveBeenCalledExactlyOnceWith(true));
-      await waitFor(() => expect(screen.getByRole("button", { name: /start speaking to ren/i })).toBeVisible());
+      await waitFor(() => expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible());
       await waitFor(() => expect(setCompanionVisible).toHaveBeenCalledWith(false), { timeout: 2_500 });
       expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
       expect(speechStart).toHaveBeenCalledTimes(1);
       now += 400;
       act(() => { for (let index = 0; index < 5; index += 1) processor?.onaudioprocess?.(quietFollowUpFrame); });
       await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(2));
-      expect(setCompanionVisible).toHaveBeenLastCalledWith(true);
+      await waitFor(() => expect(setCompanionVisible).toHaveBeenLastCalledWith(true));
       expect(wakeFeed).toHaveBeenCalledTimes(1);
       now += 2_100;
       act(() => processor?.onaudioprocess?.(silentFrame));
       await waitFor(() => expect(ask).toHaveBeenCalledTimes(2));
       expect(captureContext).toHaveBeenNthCalledWith(2, true, "Why does the fan help?");
       expect(ask).toHaveBeenLastCalledWith(expect.objectContaining({ question: "Why does the fan help?", history: expect.arrayContaining([expect.objectContaining({ role: "assistant", content: "The engine drives the fan." })]) }));
-      await waitFor(() => expect(screen.getByRole("button", { name: /start speaking to ren/i })).toBeVisible());
+      await waitFor(() => expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible());
       expect(speechStart).toHaveBeenCalledTimes(2);
       now += 400;
       act(() => { for (let index = 0; index < 5; index += 1) processor?.onaudioprocess?.(voiceFrame); });
       await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(3));
       now += 2_100;
       act(() => processor?.onaudioprocess?.(silentFrame));
-      await waitFor(() => expect(screen.getByRole("button", { name: /start speaking to ren/i })).toBeVisible());
+      await waitFor(() => expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible());
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       expect(wakeFeed).toHaveBeenCalledTimes(1);
       expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /start speaking to ren/i })).toHaveClass("ren-pebble");
+      expect(screen.getByRole("button", { name: /open ren/i })).toHaveClass("ren-pebble");
     } finally {
       dateNow.mockRestore();
       window.ren = undefined;
