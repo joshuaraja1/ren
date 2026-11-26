@@ -52,8 +52,8 @@ it("renders subject geometry from the model spec and keeps labels tied to its re
     version: 1, subject: "Camera", fidelity: "conceptual",
     primitives: [
       { partId: "lens", kind: "cylinder", position: [-1, 0, 0], scale: [.7, .4, .7], rotation: [Math.PI / 2, 0, 0], color: "#777777" },
-      { partId: "sensor", kind: "box", position: [0, 0, 0], scale: [.8, .7, .2], rotation: [0, 0, 0], color: "#336699" },
-      { partId: "processor", kind: "box", position: [1, 0, 0], scale: [.5, .5, .2], rotation: [0, 0, 0], color: "#cc8844" },
+      { partId: "sensor", kind: "extrusion", position: [0, 0, 0], scale: [.8, .7, .2], rotation: [0, 0, 0], color: "#336699", outline: [[-.5, -.4], [.5, -.4], [.4, .4], [-.4, .4]] },
+      { partId: "processor", kind: "capsule", position: [1, 0, 0], scale: [.5, .5, .2], rotation: [0, 0, 0], color: "#cc8844" },
     ],
     anchors: [
       { partId: "lens", position: [-1, 0, .25] },
@@ -63,6 +63,13 @@ it("renders subject geometry from the model spec and keeps labels tied to its re
   };
   const { root, anchors } = makeSubjectScene(spec, lesson.connections);
   expect(root.children.filter((object) => object instanceof THREE.Mesh && object.name === "lens")).toHaveLength(1);
+  expect((root.children.find((object) => object.name === "sensor") as THREE.Mesh).geometry).toBeInstanceOf(THREE.ExtrudeGeometry);
+  const capsule = root.children.find((object) => object.name === "processor") as THREE.Mesh;
+  expect(capsule.geometry).toBeInstanceOf(THREE.CapsuleGeometry);
+  const capsuleSize = new THREE.Box3().setFromObject(capsule).getSize(new THREE.Vector3());
+  expect(capsuleSize.x).toBeCloseTo(.5, 1);
+  expect(capsuleSize.y).toBeCloseTo(.5, 1);
+  expect(capsuleSize.z).toBeCloseTo(.2, 1);
   expect(root.children.filter((object) => object.name.includes("→"))).toHaveLength(2);
   expect(anchors.lens.x).toBe(-1);
   const camera = new THREE.PerspectiveCamera(38, 1.6, .1, 100);

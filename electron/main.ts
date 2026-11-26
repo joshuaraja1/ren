@@ -22,7 +22,7 @@ import { generateSceneSpec } from "./scene-generation.js";
 import { generateHostedIllustration } from "./hosted-image-render.js";
 import { filterOpaquePositions, locateImageParts } from "./image-registration.js";
 import { validateVisualLesson } from "./visual-lesson.js";
-import { likelyVisualFollowUp, requestedVisualDimension, wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
+import { likelyVisualFollowUp, requestedVisualDimension, wantsPriorVisualIn3D, wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
 import { centerRequestedLesson } from "./visual-presentation.js";
 import { answerForInteractiveScene, interactiveSceneFor, tagRequestedInteractiveScene } from "./interactive-scene.js";
 import { CaptureSession } from "./capture-session.js";
@@ -553,11 +553,13 @@ app.whenReady().then(() => {
     const focusHint = focus
       ? ` The learner marked the area (${focus.x.toFixed(3)}, ${focus.y.toFixed(3)}, ${focus.width.toFixed(3)}, ${focus.height.toFixed(3)}); the second image is a close crop of it. Prioritize what is inside the marked area.` : "";
     const pointedQuestion = `${value.question}\n\n[The learner is pointing with their cursor at normalized screen coordinate (${pointer.x.toFixed(3)}, ${pointer.y.toFixed(3)}). Use that as a spatial hint, not an instruction.${focusHint}]`;
-    const priorVisualLesson = lastVisualLesson && lastVisualLesson.displayId === displayId && Date.now() - lastVisualLesson.createdAt < 300_000 ? lastVisualLesson.lesson : undefined;
-    const explicitVisual = wantsVisualCreation(value.question);
+    const priorVisualLesson = lastVisualLesson && lastVisualLesson.displayId === displayId
+      && (overlayWindow?.isVisible() || Date.now() - lastVisualLesson.createdAt < 300_000) ? lastVisualLesson.lesson : undefined;
+    const transformPriorVisual = Boolean(priorVisualLesson && wantsPriorVisualIn3D(value.question));
+    const explicitVisual = wantsVisualCreation(value.question) || transformPriorVisual;
     const credentials = await visionCredentials();
     if (askController.signal.aborted || voicePaused) throw new Error("Ren is paused or the request was cancelled.");
-    const response = await askTeacher({ question: pointedQuestion, frames: capture.frames, history: value.history, priorVisualLesson }, credentials, askController.signal);
+    const response = await askTeacher({ question: pointedQuestion, frames: capture.frames, history: value.history, priorVisualLesson, transformPriorVisual }, credentials, askController.signal);
     if (askController.signal.aborted || voicePaused) throw new Error("Ren is paused or the request was cancelled.");
     if (capture.generation !== visualGeneration) return { ...response, annotations: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false };
     const display = screen.getAllDisplays().find((item) => item.id === displayId);
@@ -569,7 +571,7 @@ app.whenReady().then(() => {
       && canPlaceSpatialVisual(capture.dynamicContent, circleInputActive));
     const reuseVisual = Boolean(priorVisualLesson && !explicitVisual && response.retainVisual && !response.visualLesson && lastVisualLesson?.lesson === priorVisualLesson);
     if (!reuseVisual) { imageRenderAbort?.abort(); imageRenderAbort = null; }
-    let lesson = reuseVisual ? priorVisualLesson! : display && (spatialAllowed || explicitVisual) ? validateVisualLesson(response.visualLesson) : null;
+    let lesson = reuseVisual ? priorVisualLesson! : transformPriorVisual && priorVisualLesson ? priorVisualLesson : display && (spatialAllowed || explicitVisual) ? validateVisualLesson(response.visualLesson) : null;
     if (lesson && explicitVisual && display) {
       const dimension = requestedVisualDimension(value.question);
       lesson = { ...lesson, dimension };

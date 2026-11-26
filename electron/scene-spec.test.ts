@@ -38,4 +38,14 @@ describe("subject 3D scene contract", () => {
     expect(validateSceneSpec({ ...scene, anchors: [scene.anchors[0], { partId: "display", position: [5, 5, 5] }] }, ["body", "display"])).toBeNull();
     expect(validateSceneSpec({ ...scene, primitives: [{ ...scene.primitives[0], position: [0, 0, 0] }, { ...scene.primitives[1], position: [0, 0, 0] }] }, ["body", "display"])).toBeNull();
   });
+
+  it("accepts a bounded shaped silhouette but rejects degenerate or oversized outlines", () => {
+    const scene = valid();
+    const shaped = { ...scene.primitives[0], kind: "extrusion", outline: [[-.5, -.4], [.5, -.4], [.4, .4], [-.4, .4]] };
+    const accepted = validateSceneSpec({ ...scene, primitives: [shaped, scene.primitives[1]] }, ["body", "display"]);
+    expect(accepted?.primitives[0]).toMatchObject({ kind: "extrusion", outline: shaped.outline });
+    expect(validateSceneSpec({ ...scene, primitives: [{ ...shaped, outline: [[0, 0], [.1, 0], [.2, 0]] }, scene.primitives[1]] }, ["body", "display"])).toBeNull();
+    expect(validateSceneSpec({ ...scene, primitives: [{ ...shaped, outline: [[-1, 0], [0, 0], [0, .5]] }, scene.primitives[1]] }, ["body", "display"])).toBeNull();
+    expect(validateSceneSpec({ ...scene, primitives: [{ ...shaped, outline: [[-.5, -.5], [.5, .5], [.5, -.5], [-.5, .5]] }, scene.primitives[1]] }, ["body", "display"])).toBeNull();
+  });
 });

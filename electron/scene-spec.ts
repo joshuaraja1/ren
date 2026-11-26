@@ -1,11 +1,13 @@
 /** Bounded, subject-derived geometry for an approximate rotatable teaching model. */
 export type ScenePrimitive = {
   partId: string;
-  kind: "box" | "sphere" | "cylinder" | "cone" | "torus";
+  kind: "box" | "sphere" | "cylinder" | "cone" | "torus" | "capsule" | "extrusion";
   position: [number, number, number];
   scale: [number, number, number];
   rotation: [number, number, number];
   color: string;
+  /** Local XY outline for an extruded silhouette, normalized around its center. */
+  outline?: [number, number][];
 };
 
 export type SceneSpec = {
@@ -23,6 +25,35 @@ const vector = (value: unknown, min: number, max: number): [number, number, numb
   Array.isArray(value) && value.length === 3 && value.every((item) => typeof item === "number" && Number.isFinite(item) && item >= min && item <= max)
     ? [value[0], value[1], value[2]] : null;
 
+function outline(value: unknown): [number, number][] | null {
+  if (!Array.isArray(value) || value.length < 3 || value.length > 12) return null;
+  const points: [number, number][] = [];
+  for (const item of value) {
+    if (!Array.isArray(item) || item.length !== 2 || item.some((number) => typeof number !== "number" || !Number.isFinite(number) || number < -.5 || number > .5)) return null;
+    points.push([item[0], item[1]]);
+  }
+  for (let first = 0; first < points.length; first++) {
+    for (let second = first + 1; second < points.length; second++) {
+      if (Math.hypot(points[first][0] - points[second][0], points[first][1] - points[second][1]) < .001) return null;
+    }
+  }
+  const side = (a: [number, number], b: [number, number], c: [number, number]) =>
+    (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  for (let first = 0; first < points.length; first++) {
+    for (let second = first + 2; second < points.length; second++) {
+      if (first === 0 && second === points.length - 1) continue;
+      const a = points[first], b = points[(first + 1) % points.length];
+      const c = points[second], d = points[(second + 1) % points.length];
+      if (side(a, b, c) * side(a, b, d) <= 0 && side(c, d, a) * side(c, d, b) <= 0) return null;
+    }
+  }
+  const area = Math.abs(points.reduce((sum, [x, y], index) => {
+    const [nextX, nextY] = points[(index + 1) % points.length];
+    return sum + x * nextY - nextX * y;
+  }, 0)) / 2;
+  return area >= .01 ? points : null;
+}
+
 export function validateSceneSpec(value: unknown, partIds: Iterable<string>): SceneSpec | null {
   const raw = record(value);
   const ids = new Set(partIds);
@@ -37,13 +68,15 @@ export function validateSceneSpec(value: unknown, partIds: Iterable<string>): Sc
   for (const item of raw.primitives) {
     const primitive = record(item);
     if (!primitive || typeof primitive.partId !== "string" || !ids.has(primitive.partId)
-      || !["box", "sphere", "cylinder", "cone", "torus"].includes(String(primitive.kind))) return null;
+      || !["box", "sphere", "cylinder", "cone", "torus", "capsule", "extrusion"].includes(String(primitive.kind))) return null;
     const position = vector(primitive.position, -5, 5);
     const scale = vector(primitive.scale, .02, 5);
     const rotation = vector(primitive.rotation, -Math.PI * 2, Math.PI * 2);
     if (!position || !scale || !rotation || typeof primitive.color !== "string" || !/^#[0-9a-f]{6}$/i.test(primitive.color)) return null;
+    const shape = primitive.kind === "extrusion" ? outline(primitive.outline) : null;
+    if (primitive.kind === "extrusion" && !shape) return null;
     represented.add(primitive.partId);
-    primitives.push({ partId: primitive.partId, kind: primitive.kind as ScenePrimitive["kind"], position, scale, rotation, color: primitive.color });
+    primitives.push({ partId: primitive.partId, kind: primitive.kind as ScenePrimitive["kind"], position, scale, rotation, color: primitive.color, ...(shape ? { outline: shape } : {}) });
   }
   if (represented.size !== ids.size) return null;
   const center = primitives[0].position;

@@ -4,10 +4,28 @@ export function wantsVisualCreation(question: string) {
     || /\b(?:model|diagram)\s+(?:me\s+)?(?:the|this|that|a|an)\s+[a-z]/i.test(question)
     || /\b(?:2d|3d|two[ -]dimensional|three[ -]dimensional)\s+(?:model|diagram|render|illustration|cutaway)\s+of\b/i.test(question)
     || /\bdiagram\s+(?:the|this|how|why)\b/i.test(question)
-    || /\b(?:make|show|build)\s+(?:(?:me|us)\s+)?(?:a|an|the|this)?\s*(?:3d|image|picture|diagram|model|render|drawing|visualization)\b/i.test(question);
+    || /\b(?:make|show|build)\s+(?:(?:me|us)\s+)?(?:a|an|the|this)?\s*(?:3d|image|picture|diagram|model|render|drawing|visualization)\b/i.test(question)
+    || /\b(?:build(?:\s+out)?|make|give)\b[^.!?]{0,35}\b(?:2d|3d)\s+(?:diagram|model)\b/i.test(question)
+    || /\b(?:show|build|make|give)\b[^.!?]{0,80}\b(?:in\s+3d|as\s+a\s+3d\s+(?:model|diagram))\b/i.test(question)
+    || /\b(?:make|turn|convert|show)\b[\s\S]{0,45}\b(?:it|that|this|same|current|existing)\b[\s\S]{0,45}\b(?:3d|three[ -]dimensional|rotatable)\b/i.test(question);
 }
 
-/** An explicit flat request wins over 3D words elsewhere in the conversation. */
+/** A request to change the current lesson's view, without naming a new subject. */
+export function wantsPriorVisualIn3D(question: string): boolean {
+  const value = question.trim();
+  if (!value || requestedVisualDimension(value) !== 3 || /\b(?:new|another|different|unrelated)\s+(?:topic|subject|object|diagram|model)\b/i.test(value)) return false;
+  if (/\b(?:this|that)\s+(?!diagram\b|drawing\b|model\b|one\b|same\b)(?:[\w-]+\s+){1,4}(?:in\s+)?3d\b/i.test(value)) return false;
+  const anaphoric = /\b(?:make|turn|convert|show|build|give)\s+(?:me\s+)?(?:it|that|this)\s+(?:(?:into|as|in)\s+)?(?:a\s+)?(?:rotatable\s+)?(?:3d|three[ -]dimensional)\b/i.test(value)
+    || /\b(?:same|current|previous|existing)\s+(?:thing|diagram|drawing|model)\s+(?:in|as|into)\s+(?:a\s+)?(?:3d|three[ -]dimensional|rotatable)\b/i.test(value)
+    || /\b(?:the|this|that)\s+(?:diagram|drawing|model)\b[\s\S]{0,30}\b(?:3d|three[ -]dimensional|rotatable)\b/i.test(value)
+    || /\b(?:3d|three[ -]dimensional|rotatable)\s+(?:version|view|model|diagram)\s+of\s+(?:it|that|this)(?=\s*[?.,!]?\s*$)/i.test(value)
+    || /\b(?:can|could)\s+(?:i|we)\s+(?:rotate|spin|orbit)\s+(?:it|that|this|the diagram|the model)\b/i.test(value);
+  if (anaphoric) return true;
+  return /\b3d\s+diagram\b[^.!?]{0,80}\b(?:parts|components)\b/i.test(value)
+    && !/\b(?:diagram|model|parts|components)\s+(?:of|for|about)\s+(?:a|an|the|this|that)?\s*[\w-]+/i.test(value);
+}
+
+/** Diagram requests default to 2D; explicit 3D view requests opt into 3D. */
 export function requestedVisualDimension(question: string): 2 | 3 {
   if (/\b(?:2d|two[ -]dimensional)\b|\bflat\s+(?:diagram|drawing|schematic|model|illustration)\b/i.test(question)) return 2;
   if (/\b(?:3d|three[ -]dimensional)\s+(?:model|render|diagram|view|illustration|drawing|scene|version|cutaway)\b|\b(?:model|render|diagram|view|illustration|drawing|scene|cutaway)\s+(?:in\s+)?3d\b|\b(?:draw|make|show|render|generate|build|create|model)\b[\s\S]{0,35}\b3d\b(?!\s+printer\b)|\b(?:rotat(?:e|able|ing)|orbit|spin|turn (?:it|the model) around|move (?:it|the model) around|inspect (?:it|the model) from all sides)\b/i.test(question)) return 3;

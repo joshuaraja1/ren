@@ -19,6 +19,21 @@ export function makeSubjectScene(spec: SceneSpec, connections: VisualLesson["con
       case "cylinder": geometry = new THREE.CylinderGeometry(.5, .5, 1, 24); break;
       case "cone": geometry = new THREE.ConeGeometry(.5, 1, 24); break;
       case "torus": geometry = new THREE.TorusGeometry(.5, .14, 10, 32); break;
+      case "capsule": {
+        geometry = new THREE.CapsuleGeometry(.3, .4, 8, 16);
+        geometry.scale(1 / .6, 1, 1 / .6);
+        break;
+      }
+      case "extrusion": {
+        const points = part.outline!;
+        const shape = new THREE.Shape();
+        shape.moveTo(...points[0]);
+        for (const point of points.slice(1)) shape.lineTo(...point);
+        shape.closePath();
+        geometry = new THREE.ExtrudeGeometry(shape, { depth: 1, steps: 1, bevelEnabled: true, bevelSize: .025, bevelThickness: .025, bevelSegments: 1, curveSegments: 4 });
+        geometry.translate(0, 0, -.5);
+        break;
+      }
       default: geometry = new THREE.BoxGeometry(1, 1, 1);
     }
     const material = new THREE.MeshStandardMaterial({ color: part.color, metalness: .28, roughness: .42, side: THREE.DoubleSide });

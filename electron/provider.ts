@@ -18,6 +18,7 @@ type AskRequest = {
   frames: string[];
   history: { role: "user" | "assistant"; content: string }[];
   priorVisualLesson?: VisualLesson;
+  transformPriorVisual?: boolean;
 };
 
 export type ProviderResponse = {
@@ -110,6 +111,13 @@ Return the complete JSON answer again with version 1, valid placement, 4-8 uniqu
 parts with bounded coordinates, and connections linking every part. Do not omit the
 lesson merely because a screen reference is small, moving, or absent.`;
 
+const TRANSFORM_PRIOR_VISUAL_PROMPT = `The learner is asking to turn the preceding on-screen lesson into a rotatable 3D explanation.
+Continue the SAME subject and its established component names and causal relationships.
+Do not infer a new object from the current screen or substitute a generic graph.
+The app retains and models the prior lesson itself, so return visualLesson:null and retainVisual:false.
+Explain how the existing parts work together in 3-5 spoken sentences; mention that the
+learner can move the cursor to inspect the resulting model.`;
+
 const clamp = (value: unknown) => Math.min(1, Math.max(0, typeof value === "number" ? value : 0));
 const point = (value: unknown): Point => {
   const candidate = value && typeof value === "object" ? value as Record<string, unknown> : {};
@@ -184,7 +192,7 @@ export async function askTeacher(request: AskRequest, credentials: VisionCredent
   if (!credentials) return demoAnswer(request.question);
 
   const { apiKey, model, baseUrl: base } = credentials;
-  const requestedVisual = wantsVisualCreation(request.question);
+  const requestedVisual = wantsVisualCreation(request.question) && !request.transformPriorVisual;
   const visualDimension = requestedVisualDimension(request.question);
   const visualContent = request.frames.slice(0, 3).map((url) => ({ type: "image_url", image_url: { url, detail: "high" } }));
   const history = request.history.slice(-8).map((turn) => ({ role: turn.role, content: turn.content }));
@@ -202,7 +210,7 @@ export async function askTeacher(request: AskRequest, credentials: VisionCredent
         ...(model === "gpt-6-sol" ? { reasoning_effort: "medium" } : {}),
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: `${TEACHER_PROMPT}${requestedVisual ? `\n${REQUESTED_VISUAL_PROMPT}\nThe requested visual is ${visualDimension}D. ${visualDimension === 3 ? "Plan real spatial components for a subject-specific rotatable teaching model. Do not claim exact CAD fidelity." : "Plan a flat 2D teaching diagram and do not describe it as a rotatable model."} ${wantsReferenceRecreation(request.question) ? "Identify a tight referenceRegion around the visible subject if it appears on screen." : "Set referenceRegion:null unless the learner specifically asks to recreate a visible object."}` : ""}${retryVisual ? `\n${RETRY_VISUAL_PROMPT}` : ""}` },
+          { role: "system", content: `${TEACHER_PROMPT}${request.transformPriorVisual ? `\n${TRANSFORM_PRIOR_VISUAL_PROMPT}` : ""}${requestedVisual ? `\n${REQUESTED_VISUAL_PROMPT}\nThe requested visual is ${visualDimension}D. ${visualDimension === 3 ? "Plan real spatial components for a subject-specific rotatable teaching model. Do not claim exact CAD fidelity." : "Plan a flat 2D teaching diagram and do not describe it as a rotatable model."} ${wantsReferenceRecreation(request.question) ? "Identify a tight referenceRegion around the visible subject if it appears on screen." : "Set referenceRegion:null unless the learner specifically asks to recreate a visible object."}` : ""}${retryVisual ? `\n${RETRY_VISUAL_PROMPT}` : ""}` },
           ...history,
           { role: "user", content: [{ type: "text", text: request.question }, ...priorVisual, ...visualContent] },
         ],

@@ -41,6 +41,7 @@ export function SceneFallback({ spec, connections }: { spec: SceneSpec; connecti
       const color = primitive.color;
       const shape = primitive.kind === "sphere" ? <circle cx={cx} cy={cy} r={Math.min(width, height) / 2} />
         : primitive.kind === "torus" ? <circle cx={cx} cy={cy} r={Math.min(width, height) / 2} fill="none" stroke={color} strokeWidth={Math.max(5, Math.min(width, height) * .23)} />
+        : primitive.kind === "extrusion" && primitive.outline ? <polygon points={primitive.outline.map(([x, y]) => `${cx + x * width},${cy - y * height}`).join(" ")} />
         : primitive.kind === "cone" ? <path d={`M${cx} ${cy - height / 2} L${cx - width / 2} ${cy + height / 2} L${cx + width / 2} ${cy + height / 2} Z`} />
         : primitive.kind === "cylinder" ? <><rect x={cx - width / 2} y={cy - height / 2} width={width} height={height} rx={width * .1} /><ellipse cx={cx} cy={cy - height / 2} rx={width / 2} ry={Math.max(5, height * .12)} /></>
         : <rect x={cx - width / 2} y={cy - height / 2} width={width} height={height} rx={Math.min(10, width * .08)} />;

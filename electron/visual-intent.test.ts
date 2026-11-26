@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { likelyVisualFollowUp, requestedVisualDimension, wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
+import { likelyVisualFollowUp, requestedVisualDimension, wantsPriorVisualIn3D, wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
 
 it("renders only when the learner explicitly asks for a visual", () => {
   expect(wantsVisualCreation("Can you recreate that jet for me and explain it? ")).toBe(true);
@@ -9,8 +9,26 @@ it("renders only when the learner explicitly asks for a visual", () => {
   expect(wantsVisualCreation("Can you diagram the engine and lift fan?")).toBe(true);
   expect(wantsVisualCreation("Model the circulatory system in 3D")).toBe(true);
   expect(wantsVisualCreation("A 3D model of the solar system, please")).toBe(true);
+  expect(wantsVisualCreation("Can you build out a 3D diagram showing the engine and parts?")).toBe(true);
   expect(wantsVisualCreation("How does this diagram work?")).toBe(false);
   expect(wantsVisualCreation("How does this jet work? ")).toBe(false);
+});
+
+it("turns a follow-up into a 3D view of the existing subject", () => {
+  expect(wantsVisualCreation("Make it 3D")).toBe(true);
+  expect(requestedVisualDimension("Make it 3D")).toBe(3);
+  expect(wantsPriorVisualIn3D("Make it 3D")).toBe(true);
+  expect(wantsPriorVisualIn3D("Can you build out a 3D diagram showing where the engine and parts are?")).toBe(true);
+  expect(wantsPriorVisualIn3D("Can you build out a 3D diagram kind of showing me clearly where the engine and the parts are?")).toBe(true);
+  expect(wantsPriorVisualIn3D("Show me the same thing in 3D")).toBe(true);
+  expect(wantsPriorVisualIn3D("Can I rotate that diagram? ")).toBe(true);
+  expect(wantsPriorVisualIn3D("Draw a 3D model of a human heart")).toBe(false);
+  expect(wantsPriorVisualIn3D("Build a 3D diagram showing parts of an F-35")).toBe(false);
+  expect(wantsPriorVisualIn3D("Make a new 3D diagram of a turbine")).toBe(false);
+  expect(wantsPriorVisualIn3D("Show this F-35 in 3D")).toBe(false);
+  expect(wantsPriorVisualIn3D("Show where the engine is in a 3D F-35 model")).toBe(false);
+  expect(wantsVisualCreation("Show this F-35 in 3D")).toBe(true);
+  expect(requestedVisualDimension("Draw a diagram of how a turbine works")).toBe(2);
 });
 
 it("uses visible pixels only for appearance recreation, not a new explanatory diagram", () => {

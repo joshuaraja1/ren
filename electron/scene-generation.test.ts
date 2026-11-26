@@ -47,6 +47,19 @@ describe("generic subject model generation", () => {
     expect(validateVisualLesson({ ...lesson, model: result })?.model).toEqual(result);
   });
 
+  it("plans an anaphoric 3D follow-up from the retained diagram's subject and parts", async () => {
+    const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      expect(body.messages[0].content).toContain('only says "it"');
+      expect(body.messages[1].content).toContain('"title":"How a phone works"');
+      expect(body.messages[1].content).toContain('"id":"display"');
+      expect(body.messages[1].content).toContain('"request":"Make it 3D"');
+      return reply(model);
+    }) as unknown as typeof fetch;
+    const result = await generateSceneSpec(lesson, "Make it 3D", credentials, new AbortController().signal, fetcher);
+    expect(result.subject).toBe("Classic cell phone");
+  });
+
   it("retries an incomplete model once and fails clearly if still invalid", async () => {
     const fetcher = vi.fn(async () => reply({ ...model, anchors: model.anchors.slice(0, 1) })) as unknown as typeof fetch;
     await expect(generateSceneSpec(lesson, "Make a 3D phone", credentials, new AbortController().signal, fetcher)).rejects.toThrow("could not construct a coherent 3D model");

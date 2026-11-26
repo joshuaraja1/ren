@@ -118,6 +118,30 @@ describe("provider privacy boundary", () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
+  it("answers a 2D-to-3D follow-up using the prior subject without replanning its parts", async () => {
+    const priorVisualLesson = {
+      version: 1 as const, dimension: 2 as const, title: "How a turbine works", placement: { x: .1, y: .1, width: .8, height: .8 },
+      parts: [
+        { id: "rotor", label: "Rotor", explanation: "Spins the shaft.", x: .3, y: .5 },
+        { id: "shaft", label: "Shaft", explanation: "Transfers power.", x: .7, y: .5 },
+      ],
+      connections: [{ from: "rotor", to: "shaft", label: "drives" }],
+    };
+    const calls: Array<{ messages: Array<{ content: unknown }> }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {
+      calls.push(JSON.parse(String(options.body)));
+      return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "The rotor drives the shaft.", visualLesson: null }) } }] }) };
+    }));
+    try {
+      const result = await askTeacher({ question: "Make it 3D", frames: [], history: [], priorVisualLesson, transformPriorVisual: true }, { apiKey: "test", model: "gpt-6-sol", baseUrl: "https://api.openai.com/v1" });
+      expect(result.visualLesson).toBeUndefined();
+      expect(calls).toHaveLength(1);
+      expect(String(calls[0].messages[0].content)).toContain("SAME subject");
+      expect(String(calls[0].messages[0].content)).not.toContain("visualLesson is REQUIRED");
+      expect(JSON.stringify(calls[0].messages.at(-1)?.content)).toContain("How a turbine works");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("reports a useful failure when both diagram plans are invalid", async () => {
     const fetchCall = vi.fn(async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "I can explain the jet.", visualLesson: null }) } }] }) }));
     vi.stubGlobal("fetch", fetchCall);
