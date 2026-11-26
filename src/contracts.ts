@@ -93,7 +93,7 @@ export type RenBridge = {
   cancelSpeech(id: string): Promise<boolean>;
   onSpeechData(listener: (data: { id: string; chunk?: string; done?: boolean; error?: string }) => void): () => void;
   ask(request: AskRequest): Promise<AskResponse>;
-  cancelAsk(): Promise<boolean>;
+  cancelAsk(contextToken?: string): Promise<boolean>;
   clearAnnotations(): Promise<void>;
   generateIllustration(automatic?: boolean): Promise<boolean>;
   onIllustration(listener: (image: Illustration | null) => void): () => void;

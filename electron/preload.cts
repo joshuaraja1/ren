@@ -38,7 +38,7 @@ contextBridge.exposeInMainWorld("ren", {
     return () => ipcRenderer.removeListener("ren:speech-data", handler);
   },
   ask: (request: unknown) => ipcRenderer.invoke("ren:ask", request),
-  cancelAsk: () => ipcRenderer.invoke("ren:ask-cancel"),
+  cancelAsk: (contextToken?: string) => ipcRenderer.invoke("ren:ask-cancel", contextToken),
   clearAnnotations: () => ipcRenderer.invoke("ren:clear-annotations"),
   generateIllustration: (automatic?: boolean) => ipcRenderer.invoke("ren:generate-illustration", automatic === true),
   onIllustration: (listener: (image: unknown) => void) => {

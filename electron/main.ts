@@ -26,6 +26,7 @@ import { likelyVisualFollowUp, requestedVisualDimension, wantsPriorVisualIn3D, w
 import { centerRequestedLesson } from "./visual-presentation.js";
 import { answerForInteractiveScene, interactiveSceneFor, tagRequestedInteractiveScene } from "./interactive-scene.js";
 import { CaptureSession } from "./capture-session.js";
+import { cancelActiveAsk, type ActiveAskRequest } from "./ask-cancellation.js";
 import { requestMacScreenCaptureAccess } from "./mac-screen-permission.js";
 import type { VisualLesson } from "./visual-lesson.js";
 import { AgentJobManager } from "./agent-jobs.js";
@@ -51,9 +52,8 @@ let lastCaptureData: { token: string; generation: number; frames: string[]; poin
 let lastVisualLesson: ActiveVisual | null = null;
 let pendingScenePreview: ScenePreview | null = null;
 let screenCaptureBusy = false;
-let pendingAnswerToken: string | null = null;
 let imageRenderAbort: AbortController | null = null;
-let activeAskController: AbortController | null = null;
+let activeAskRequest: ActiveAskRequest | null = null;
 let imageRequestBusy = false;
 let imageRequestedFor: VisualLesson | null = null;
 let pendingVisualDecision = false;
@@ -252,7 +252,7 @@ function setVoicePaused(value: boolean) {
     stopWake();
     stopSpeech();
     for (const controller of speechOutputControllers.values()) controller.abort();
-    activeAskController?.abort();
+    activeAskRequest?.controller.abort();
     agentJobs.cancelAll();
     imageRenderAbort?.abort();
     imageRenderAbort = null;
@@ -497,21 +497,14 @@ app.whenReady().then(() => {
     speechOutputControllers.delete(id);
     return true;
   });
-  ipcMain.handle("ren:ask-cancel", (event) => {
+  ipcMain.handle("ren:ask-cancel", (event, contextToken: unknown) => {
     requireMainRenderer(event);
-    const controller = activeAskController;
-    if (!controller) return false;
-    // A follow-up may already have issued its own capture by the time this
-    // cancellation arrives. Abort the old answer without invalidating the
-    // newer capture or its visual generation.
-    const ownsCurrentCapture = Boolean(pendingAnswerToken && captureSession.isCurrent(pendingAnswerToken));
-    controller.abort();
-    if (ownsCurrentCapture) {
+    const result = cancelActiveAsk(contextToken, activeAskRequest, captureSession);
+    if (result.invalidatedCapture) {
       visualGeneration += 1;
-      captureSession.invalidate();
       overlayWindow?.hide();
     }
-    return true;
+    return result.cancelled;
   });
   ipcMain.handle("ren:request-permissions", (event) => {
     requireMainRenderer(event);
@@ -647,9 +640,8 @@ app.whenReady().then(() => {
     if (!value.contextToken || !capture || capture.token !== value.contextToken) throw new Error("Screen context expired. Ask again.");
     const displayId = captureSession.consume(value.contextToken);
     lastCaptureData = null;
-    pendingAnswerToken = value.contextToken;
     const askController = new AbortController();
-    activeAskController = askController;
+    activeAskRequest = { token: value.contextToken, controller: askController };
     try {
     const pointer = capture.pointer;
     const focus = capture.focus;
@@ -766,9 +758,8 @@ app.whenReady().then(() => {
       throw error;
     } finally {
       if (pendingScenePreview?.owner === value.contextToken) pendingScenePreview = null;
-      if (activeAskController === askController) activeAskController = null;
+      if (activeAskRequest?.controller === askController) activeAskRequest = null;
       pendingVisualDecision = false;
-      if (pendingAnswerToken === value.contextToken) pendingAnswerToken = null;
     }
   });
   ipcMain.handle("ren:generate-illustration", async (event, automatic: unknown) => {
