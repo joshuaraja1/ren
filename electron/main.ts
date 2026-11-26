@@ -64,6 +64,7 @@ let permissionRequest: Promise<ReturnType<typeof permissionStatus>> | null = nul
 let overlayAnnotations: Annotation[] = [];
 let overlayLesson: VisualLesson | null = null;
 let overlayIllustration: Illustration | null = null;
+let responseCaptionTimer: ReturnType<typeof setTimeout> | null = null;
 let focusOverlaySnapshot: {
   annotations: Annotation[];
   lesson: VisualLesson | null;
@@ -89,6 +90,13 @@ function sendOverlayIllustration(value: Illustration | null) {
   overlayIllustration = value;
   if (value && focusOverlaySnapshot) focusOverlaySnapshot.illustration = value;
   overlayWindow?.webContents.send("ren:illustration", value);
+}
+
+function clearResponseCaption() {
+  if (responseCaptionTimer) clearTimeout(responseCaptionTimer);
+  responseCaptionTimer = null;
+  overlayWindow?.webContents.send("ren:response-caption", null);
+  if (!overlayAnnotations.length && !overlayLesson && !overlayIllustration) overlayWindow?.hide();
 }
 
 
@@ -547,6 +555,17 @@ app.whenReady().then(() => {
     requireMainRenderer(event);
     if (visible === true) mainWindow?.showInactive();
     else if (visible === false) mainWindow?.hide();
+  });
+  ipcMain.handle("ren:response-caption", (event, value: unknown) => {
+    requireMainRenderer(event);
+    clearResponseCaption();
+    if (typeof value !== "string" || !value.trim() || !overlayWindow) return;
+    const text = value.trim().slice(0, 300);
+    const { display, pointer } = cursorDisplayContext();
+    overlayWindow.setBounds(display.bounds);
+    overlayWindow.webContents.send("ren:response-caption", { text, point: pointer });
+    overlayWindow.showInactive();
+    responseCaptionTimer = setTimeout(clearResponseCaption, 12_000);
   });
 
   ipcMain.handle("ren:list-sources", async (event) => {

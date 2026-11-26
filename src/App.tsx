@@ -434,6 +434,7 @@ export function App() {
       void window.ren?.cancelAgentJob?.(currentJob);
     }
     speechCancelRef.current?.();
+    void window.ren?.setResponseCaption?.(null);
     suppressSpeechUntilRef.current = 0;
   }
 
@@ -779,6 +780,7 @@ export function App() {
       if (!response || generation !== askGenerationRef.current) return;
       if (!response.reusedVisual) setImageAvailable(!!response.visualLesson && !interactiveSceneFor(response.visualLesson));
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: response.answer, provider: response.provider, followUps: response.followUps }]);
+      void window.ren?.setResponseCaption?.(response.answer);
       setVoiceState("responding"); suppressSpeechUntilRef.current = Date.now() + Math.min(12_000, response.answer.length * 45);
       void speak(response.answer, () => {
         if (generation !== askGenerationRef.current) return;

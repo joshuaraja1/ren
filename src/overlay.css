@@ -1,5 +1,8 @@
 html, body, #overlay-root { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; pointer-events: none; }
 .overlay-canvas { position: fixed; inset: 0; font-family: "Avenir Next", sans-serif; }
+.response-caption { position: absolute; z-index: 8; box-sizing: border-box; width: min(340px, calc(100vw - 32px)); max-height: 142px; overflow: hidden; transform: translate(-50%, 18px); padding: 10px 13px; border: 1px solid rgba(148,182,238,.28); border-radius: 13px; color: #f5f7fb; background: rgba(16,19,25,.95); box-shadow: 0 10px 30px rgba(0,0,0,.38); }
+.response-caption span { color: #8bb7ff; font: 800 9px/1.2 -apple-system, BlinkMacSystemFont, sans-serif; letter-spacing: .14em; }
+.response-caption p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden; margin: 5px 0 0; font: 12px/1.35 -apple-system, BlinkMacSystemFont, sans-serif; }
 .overlay-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .overlay-svg line, .overlay-svg rect, .overlay-svg ellipse, .overlay-svg polygon, .overlay-svg polyline { fill: none; stroke: currentColor; stroke-width: 5; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 2px 1px rgba(255,255,255,.9)); }
 .overlay-svg line, .overlay-svg rect, .overlay-svg ellipse, .overlay-svg polygon, .overlay-svg polyline { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw-mark .45s ease-out forwards; }

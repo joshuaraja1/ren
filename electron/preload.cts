@@ -40,6 +40,12 @@ contextBridge.exposeInMainWorld("ren", {
   ask: (request: unknown) => ipcRenderer.invoke("ren:ask", request),
   cancelAsk: (contextToken?: string) => ipcRenderer.invoke("ren:ask-cancel", contextToken),
   clearAnnotations: () => ipcRenderer.invoke("ren:clear-annotations"),
+  setResponseCaption: (text: string | null) => ipcRenderer.invoke("ren:response-caption", text),
+  onResponseCaption: (listener: (caption: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, caption: unknown) => listener(caption);
+    ipcRenderer.on("ren:response-caption", handler);
+    return () => ipcRenderer.removeListener("ren:response-caption", handler);
+  },
   generateIllustration: (automatic?: boolean) => ipcRenderer.invoke("ren:generate-illustration", automatic === true),
   onIllustration: (listener: (image: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, image: unknown) => listener(image);
