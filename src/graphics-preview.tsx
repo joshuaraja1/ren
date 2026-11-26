@@ -19,7 +19,7 @@ const placement = { x: .025, y: .04, width: .95, height: .91 };
 const piParts: VisualLesson["parts"] = [
   { id: "board", label: "Raspberry Pi 5", explanation: "Horizontal main board with two CAM/DISP connectors.", x: .42, y: .68 },
   { id: "ribbon", label: "Standard-Mini cable", explanation: "22-pin end at the Pi, 15-pin end at the camera.", x: .51, y: .48 },
-  { id: "camera", label: "Camera Module 3", explanation: "Camera board above the Pi with its lens facing forward.", x: .51, y: .22 },
+  { id: "camera", label: "Camera Module 3", explanation: "Camera board beside the Pi with its lens facing upward.", x: .51, y: .22 },
 ];
 const desktopParts: VisualLesson["parts"] = [
   { id: "case", label: "Open case", explanation: "Holds the components on mounting points.", x: .5, y: .5 },

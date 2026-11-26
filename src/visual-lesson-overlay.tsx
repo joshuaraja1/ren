@@ -103,7 +103,7 @@ function InteractiveGenericLesson({ lesson, illustration }: { lesson: VisualLess
         : currentAssembly ? <><strong>Step {assemblyStep} of {assembly.length}</strong><span>{currentAssembly.instruction}</span></>
           : assemblyStep > assembly.length ? <>
             <strong>Assembly complete · ask Ren to replay</strong>
-            {assembly.length <= 6 ? assembly.map((step, index) => <span key={step.partId}>{index + 1}. {step.instruction}</span>) : <span>Rotate to inspect the connected parts and ask Ren to replay the steps.</span>}
+            <span>Rotate to inspect the connection, or ask Ren to repeat the steps.</span>
           </> : <><strong>Preparing assembly</strong><span>Parts will move into place in sequence.</span></>}
     </div>}
     <div className="interactive-jet-note" aria-hidden="true">{lesson.model ? "Illustrative 3D model · approximate geometry" : "Conceptual 3D schematic · relationships"}{pageCount > 1 ? ` · Parts ${page * pageSize + 1}–${Math.min((page + 1) * pageSize, lesson.parts.length)} of ${lesson.parts.length}; hold cursor in a top corner for more` : ""}</div>

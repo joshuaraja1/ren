@@ -36,8 +36,8 @@ export function raspberryPiCameraTemplate(lesson: VisualLesson, question: string
   // Back-edge GPIO header and side ports make the Pi 5 silhouette legible from
   // the same three-quarter view as the source image.
   box(piId, [-.16, 1.4, .12], [2.4, .19, .18], "#202a30");
-  for (let index = 0; index < 8; index++) {
-    cylinder(piId, [-1.17 + index * .29, 1.4, .28], [.045, .28, .045], "#d8ad65");
+  for (let index = 0; index < 6; index++) {
+    cylinder(piId, [-1.03 + index * .35, 1.4, .28], [.045, .28, .045], "#d8ad65");
   }
   box(piId, [1.62, 1.02, .27], [.55, .5, .4], "#9aa7ad");
   box(piId, [1.62, .45, .27], [.55, .5, .4], "#919fa5");
@@ -49,30 +49,36 @@ export function raspberryPiCameraTemplate(lesson: VisualLesson, question: string
   box(piId, [.02, .14, .12], [.29, .25, .11], "#34464c");
   box(piId, [-1.15, .65, .19], [.23, .18, .15], "#c3c8bb");
 
-  // The reference has the module standing above the horizontal board, with a
-  // continuous ribbon from its lower connector down into CAM/DISP0.
-  primitives.push({ partId: cableId, kind: "box", position: [.62, 1.18, .7], scale: [.28, 2.13, .035], rotation: [0, 0, 0], color: "#c5d0ca" });
-  primitives.push({ partId: cableId, kind: "box", position: [.62, .14, .72], scale: [.24, .12, .025], rotation: [0, 0, 0], color: "#cba55e" });
-  primitives.push({ partId: cableId, kind: "box", position: [.62, 2.24, .72], scale: [.24, .12, .025], rotation: [0, 0, 0], color: "#cba55e" });
-  primitives.push({ partId: cableId, kind: "box", position: [.62, .25, .73], scale: [.28, .1, .025], rotation: [0, 0, 0], color: "#2676a5" });
-  primitives.push({ partId: cableId, kind: "box", position: [.62, 2.13, .73], scale: [.28, .1, .025], rotation: [0, 0, 0], color: "#2676a5" });
+  // Both boards rest on the table. Short tilted strips give the ribbon a
+  // shallow flexible loop instead of turning it into a vertical solid slab.
+  const ribbonPath: Position[] = [[.62, .27, .67], [.62, .34, .84], [.62, .47, 1.05], [.62, .47, 1.27], [.62, .34, 1.49], [.62, .24, 1.75]];
+  for (let index = 1; index < ribbonPath.length; index++) {
+    const start = ribbonPath[index - 1];
+    const end = ribbonPath[index];
+    const rise = end[1] - start[1];
+    const run = end[2] - start[2];
+    primitives.push({ partId: cableId, kind: "box", position: [.62, (start[1] + end[1]) / 2, (start[2] + end[2]) / 2], scale: [.29, .025, Math.hypot(rise, run) + .015], rotation: [-Math.atan2(rise, run), 0, 0], color: "#d0d8cf" });
+  }
+  for (const z of [.68, 1.74]) {
+    primitives.push({ partId: cableId, kind: "box", position: [.62, .275, z], scale: [.29, .032, .12], rotation: [0, 0, 0], color: "#337ca2" });
+  }
 
-  primitives.push({ partId: cameraId, kind: "box", position: [.62, 2.56, .7], scale: [.72, .74, .09], rotation: [0, 0, 0], color: "#277e4b" });
-  primitives.push({ partId: cameraId, kind: "box", position: [.62, 2.23, .77], scale: [.28, .13, .12], rotation: [0, 0, 0], color: "#d5ddd5" });
-  primitives.push({ partId: cameraId, kind: "box", position: [.62, 2.58, .84], scale: [.42, .4, .22], rotation: [0, 0, 0], color: "#34383c" });
-  primitives.push({ partId: cameraId, kind: "cylinder", position: [.62, 2.58, 1.01], scale: [.24, .28, .24], rotation: [Math.PI / 2, 0, 0], color: "#1c2429" });
-  primitives.push({ partId: cameraId, kind: "torus", position: [.62, 2.58, 1.18], scale: [.4, .4, .15], rotation: [0, 0, 0], color: "#54616b" });
+  primitives.push({ partId: cameraId, kind: "box", position: [.62, .15, 2.13], scale: [.88, .09, .82], rotation: [0, 0, 0], color: "#277e4b" });
+  primitives.push({ partId: cameraId, kind: "box", position: [.62, .23, 1.77], scale: [.32, .08, .14], rotation: [0, 0, 0], color: "#d5ddd5" });
+  primitives.push({ partId: cameraId, kind: "box", position: [.62, .26, 2.17], scale: [.44, .15, .43], rotation: [0, 0, 0], color: "#34383c" });
+  primitives.push({ partId: cameraId, kind: "cylinder", position: [.62, .39, 2.17], scale: [.28, .23, .28], rotation: [0, 0, 0], color: "#1c2429" });
+  primitives.push({ partId: cameraId, kind: "torus", position: [.62, .52, 2.17], scale: [.37, .37, .12], rotation: [Math.PI / 2, 0, 0], color: "#54616b" });
 
   return {
     version: 1, subject: "Raspberry Pi 5 with Camera Module (Standard-Mini cable)", fidelity: "conceptual", primitives,
     anchors: [
       { partId: piId, position: onTable([.9, .68, .16]) },
-      { partId: cableId, position: [.62, 1.18, .75] },
-      { partId: cameraId, position: [.62, 2.58, 1.2] },
+      { partId: cableId, position: [.62, .47, 1.2] },
+      { partId: cameraId, position: [.62, .52, 2.17] },
     ],
     ...(assemblyRequested ? { assembly: [
-      { partId: cableId, from: [.85, .45, .75], instruction: "Power off Pi 5. Gently lift the CAM/DISP0 latch. Insert the 22-pin Standard-Mini end straight with contacts away from the latch; close the latch." },
-      { partId: cameraId, from: [.85, .45, .75], instruction: "Gently lift the camera connector latch. Insert the 15-pin end straight with contacts toward the camera board; close the latch. Test with rpicam-hello." },
+      { partId: cableId, from: [0, .75, .55], instruction: "Power off Pi 5. Gently lift the CAM/DISP0 latch; insert the 22-pin end straight with contacts away from the latch, then close it." },
+      { partId: cameraId, from: [0, .55, .95], instruction: "Gently lift the camera latch; insert the 15-pin end straight with contacts toward the camera board, then close it. Test with rpicam-hello." },
     ] } : {}),
   };
 }

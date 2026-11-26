@@ -60,11 +60,14 @@ it("models a Pi 5 camera connection with the right cable and board-first assembl
   const camera = model!.primitives.find((primitive) => primitive.partId === "camera" && primitive.kind === "box")!;
   expect(board.scale[1]).toBeLessThan(board.scale[2]);
   expect(board.scale[1]).toBeLessThan(board.scale[0]);
-  expect(cable.scale[1]).toBeGreaterThan(cable.scale[2]);
-  expect(camera.position[1]).toBeGreaterThan(cable.position[1]);
-  expect(cable.position[1]).toBeGreaterThan(board.position[1]);
+  expect(cable.scale[1]).toBeLessThan(cable.scale[2]);
+  expect(model!.primitives.filter((primitive) => primitive.partId === "ribbon" && primitive.kind === "box")).toHaveLength(7);
+  expect(camera.scale[1]).toBeLessThan(camera.scale[2]);
+  expect(camera.position[1]).toBeLessThan(.3);
+  expect(cable.position[1]).toBeLessThan(.6);
+  expect(camera.position[2]).toBeGreaterThan(board.position[2] + 1.5);
   expect(Math.abs(camera.position[0] - cable.position[0])).toBeLessThan(.01);
-  expect(Math.abs(camera.position[2] - cable.position[2])).toBeLessThan(.01);
+  expect(model!.primitives.find((primitive) => primitive.partId === "camera" && primitive.kind === "cylinder")?.rotation).toEqual([0, 0, 0]);
   expect(raspberryPiCameraTemplate({ ...piLesson, title: "Raspberry Pi 4 camera" }, "Pi 4 camera", true)).toBeNull();
   expect(raspberryPiCameraTemplate({ ...piLesson, parts: piLesson.parts.slice(0, 2) }, "Pi 5 camera", true)).toBeNull();
 });

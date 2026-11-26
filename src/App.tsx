@@ -834,7 +834,8 @@ export function App() {
       if (response.autoIllustrate && generation === askGenerationRef.current) void illustrate(true);
     } catch (reason) {
       if (generation !== askGenerationRef.current) return;
-      setError(reason instanceof Error ? reason.message : "Ren couldn’t answer.");
+      const message = reason instanceof Error ? reason.message : "Ren couldn’t answer.";
+      setError(/\bfetch failed\b/i.test(message) ? "The AI request could not be sent. Please try again." : message);
       returnToWakeMode();
     }
     finally { if (generation === askGenerationRef.current) { askingRef.current = false; activeAskTokenRef.current = null; } }
