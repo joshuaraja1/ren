@@ -11,16 +11,26 @@ const lesson: VisualLesson = {
   connections: [{ from: "engine", to: "fan", label: "drives" }],
 };
 
-it("uses aircraft geometry for F-35B and a conceptual 3D scene on explicit orbit requests", () => {
-  expect(interactiveSceneFor(lesson)).toBe("f35b-hover");
-  expect(interactiveSceneFor({ ...lesson, title: "How a phone works", parts: lesson.parts.map((part) => ({ ...part, label: "Keypad" })) })).toBeNull();
-  expect(interactiveSceneFor({ ...lesson, title: "Jet hover thrust balance" })).toBeNull();
-  expect(interactiveSceneFor({ ...lesson, title: "Hover thrust balance", scene: "f35b-hover" })).toBe("f35b-hover");
-  expect(interactiveSceneFor(tagRequestedInteractiveScene({ ...lesson, title: "Hover thrust balance" }, "Draw an F-35B hover model"))).toBe("f35b-hover");
-  expect(interactiveSceneFor({ ...lesson, parts: [...lesson.parts, { id: "inlet", label: "Air inlet", explanation: "Supplies air.", x: .2, y: .4 }] })).toBeNull();
-  const mechanism = tagRequestedInteractiveScene({ ...lesson, title: "How a phone works", parts: lesson.parts.map((part) => ({ ...part, label: "Keypad" })) }, "Make an interactive 3D relationship graph I can rotate");
-  expect(interactiveSceneFor(mechanism)).toBe("conceptual-3d");
-  expect(interactiveSceneFor(tagRequestedInteractiveScene({ ...mechanism, scene: undefined }, "Draw an interactive 3D model of a phone I can rotate"))).toBeNull();
-  expect(answerForInteractiveScene("Here are the parts.", mechanism)).toContain("conceptual 3D schematic");
-  expect(answerForInteractiveScene("I can explain it, but I can't rotate the diagram with your cursor.", lesson)).toBe("Move your cursor to rotate the 3D model.");
+it("never assumes an aircraft model from its title or a flat request", () => {
+  expect(interactiveSceneFor(lesson)).toBeNull();
+  expect(interactiveSceneFor(tagRequestedInteractiveScene(lesson, "Draw an F-35B hover model"))).toBeNull();
+  expect(interactiveSceneFor(tagRequestedInteractiveScene({ ...lesson, scene: "f35b-hover" }, "Draw a flat 2D F-35B hover schematic"))).toBeNull();
+});
+
+it("uses subject-derived geometry for any 3D object and preserves conceptual graphs", () => {
+  const model: NonNullable<VisualLesson["model"]> = {
+    version: 1, subject: "Phone", fidelity: "conceptual",
+    primitives: [
+      { partId: "fan", kind: "box", position: [0, 0, 0], scale: [1, 1, 1], rotation: [0, 0, 0], color: "#334455" },
+      { partId: "engine", kind: "sphere", position: [1, 0, 0], scale: [1, 1, 1], rotation: [0, 0, 0], color: "#334455" },
+    ],
+    anchors: [{ partId: "fan", position: [0, 0, 0] }, { partId: "engine", position: [1, 0, 0] }],
+  };
+  const phone = { ...lesson, title: "Phone components", model };
+  expect(interactiveSceneFor(phone)).toBe("subject-3d");
+  expect(answerForInteractiveScene("Here are the parts.", phone)).toContain("Move your cursor to rotate the 3D model.");
+  const graph = tagRequestedInteractiveScene({ ...lesson, title: "How a phone works" }, "Make an interactive 3D relationship graph I can rotate");
+  expect(interactiveSceneFor(graph)).toBe("conceptual-3d");
+  expect(interactiveSceneFor(tagRequestedInteractiveScene(lesson, "Draw a 3D relationship graph of the immune response"))).toBe("conceptual-3d");
+  expect(answerForInteractiveScene("I can't rotate this.", graph)).toContain("conceptual 3D schematic");
 });

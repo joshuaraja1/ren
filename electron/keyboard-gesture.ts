@@ -4,11 +4,13 @@ export class TripleControlGesture {
   private eligible = false;
   private taps = 0;
   private lastRelease = 0;
+  private pressedAt = 0;
 
   constructor(
     private readonly controlKeys: ReadonlySet<number>,
     private readonly onTripleControl: () => void,
     private readonly maxGapMs = 650,
+    private readonly maxTapMs = 400,
   ) {}
 
   keyDown(event: { keycode: number; altKey: boolean; metaKey: boolean; shiftKey: boolean }, now = Date.now()) {
@@ -21,6 +23,7 @@ export class TripleControlGesture {
     } else {
       if (this.taps && now - this.lastRelease > this.maxGapMs) this.resetSequence();
       this.eligible = true;
+      this.pressedAt = now;
     }
     this.pressed.add(event.keycode);
   }
@@ -28,7 +31,7 @@ export class TripleControlGesture {
   keyUp(event: { keycode: number }, now = Date.now()) {
     if (!this.controlKeys.has(event.keycode)) return;
     if (!this.pressed.delete(event.keycode)) return;
-    if (!this.eligible || this.pressed.size) { this.resetSequence(); return; }
+    if (!this.eligible || this.pressed.size || now - this.pressedAt > this.maxTapMs) { this.resetSequence(); return; }
     this.eligible = false;
     if (this.taps && now - this.lastRelease > this.maxGapMs) this.taps = 0;
     this.taps += 1;
@@ -48,5 +51,6 @@ export class TripleControlGesture {
     this.eligible = false;
     this.taps = 0;
     this.lastRelease = 0;
+    this.pressedAt = 0;
   }
 }

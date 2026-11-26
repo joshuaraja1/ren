@@ -1,7 +1,132 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { VisualLessonOverlay } from "./visual-lesson-overlay";
 import { centerRequestedLesson } from "../electron/visual-presentation";
 import type { VisualLesson } from "../electron/visual-lesson";
+import type { Point, RenBridge } from "./contracts";
+import { vi } from "vitest";
+import { calloutPageSize } from "./visual-lesson-overlay";
+
+it("sizes callout pages for short, medium, and tall diagram areas", () => {
+  expect(calloutPageSize(400)).toBe(2);
+  expect(calloutPageSize(550)).toBe(4);
+  expect(calloutPageSize(700)).toBe(6);
+});
+
+it("shows a projected machine and connected callouts when WebGL is unavailable", async () => {
+  const lesson: VisualLesson = {
+    version: 1, layout: "centered", title: "Pump", placement: { x: .1, y: .1, width: .8, height: .8 },
+    parts: [{ id: "motor", label: "Motor", explanation: "Drives the pump.", x: .3, y: .5 }, { id: "impeller", label: "Impeller", explanation: "Moves water.", x: .7, y: .5 }],
+    connections: [{ from: "motor", to: "impeller", label: "drives" }],
+    model: { version: 1, subject: "Pump", fidelity: "conceptual", primitives: [
+      { partId: "motor", kind: "cylinder", position: [-1, 0, 0], scale: [1, 1, 1], rotation: [0, 0, 0], color: "#4689bb" },
+      { partId: "impeller", kind: "sphere", position: [1, 0, 0], scale: [1, 1, 1], rotation: [0, 0, 0], color: "#d59d4e" },
+    ], anchors: [{ partId: "motor", position: [-1, 0, 0] }, { partId: "impeller", position: [1, 0, 0] }] },
+  };
+  const { container } = render(<VisualLessonOverlay lesson={lesson} />);
+  await waitFor(() => expect(container.querySelector(".scene-fallback")).toBeInTheDocument());
+  expect(container.querySelectorAll(".scene-fallback > g")).toHaveLength(2);
+  expect(container.querySelector(".scene-fallback > line")).toBeInTheDocument();
+  expect(container.querySelectorAll(".interactive-jet-lines line")).toHaveLength(2);
+  expect(container).toHaveTextContent("3D view unavailable");
+});
+
+it("shows a connected vector graph when conceptual 3D cannot start", async () => {
+  const lesson: VisualLesson = {
+    version: 1, layout: "centered", scene: "conceptual-3d", title: "Cycle", placement: { x: .1, y: .1, width: .8, height: .8 },
+    parts: [{ id: "a", label: "Input", explanation: "Starts it.", x: .3, y: .5 }, { id: "b", label: "Output", explanation: "Finishes it.", x: .7, y: .5 }],
+    connections: [{ from: "a", to: "b", label: "flows" }],
+  };
+  const { container } = render(<VisualLessonOverlay lesson={lesson} />);
+  await waitFor(() => expect(container.querySelector(".visual-lesson-vector-fallback")).toBeInTheDocument());
+  expect(container.querySelector(".visual-lesson-vector-fallback line")).toBeInTheDocument();
+  expect(container.querySelectorAll(".interactive-jet-lines line")).toHaveLength(2);
+});
+
+it("shows a 2D vector diagram immediately and after an image fails", () => {
+  const lesson: VisualLesson = {
+    version: 1, dimension: 2, layout: "centered", title: "Water flow", placement: { x: .1, y: .1, width: .8, height: .8 },
+    parts: [{ id: "tap", label: "Tap", explanation: "Controls flow.", x: .3, y: .5 }, { id: "sink", label: "Sink", explanation: "Collects water.", x: .7, y: .5 }],
+    connections: [{ from: "tap", to: "sink", label: "flows to" }],
+  };
+  const { container, rerender } = render(<VisualLessonOverlay lesson={lesson} />);
+  expect(container.querySelector(".visual-lesson-vector-fallback line")).toBeInTheDocument();
+  rerender(<VisualLessonOverlay lesson={lesson} illustration={{ image: "data:image/png;base64,dGVzdA==", preview: false, width: 500, height: 500 }} />);
+  expect(container.querySelector(".visual-lesson-illustration img")).toBeInTheDocument();
+  fireEvent.error(container.querySelector(".visual-lesson-illustration img")!);
+  expect(container.querySelector(".visual-lesson-vector-fallback line")).toBeInTheDocument();
+});
+
+it("reveals an automatic 2D illustration with its labels and pointers in one render", () => {
+  const lesson: VisualLesson = {
+    version: 1, dimension: 2, layout: "centered", pendingIllustration: true, title: "Bicycle power path",
+    placement: { x: .1, y: .1, width: .8, height: .8 },
+    parts: [{ id: "chainring", label: "Chainring", explanation: "Pulls the chain.", x: .3, y: .5 }, { id: "wheel", label: "Wheel", explanation: "Moves the bicycle.", x: .7, y: .5 }],
+    connections: [{ from: "chainring", to: "wheel", label: "drives" }],
+  };
+  const { container, rerender } = render(<VisualLessonOverlay lesson={lesson} />);
+  expect(container).toBeEmptyDOMElement();
+  rerender(<VisualLessonOverlay lesson={lesson} illustration={{ image: "data:image/png;base64,dGVzdA==", preview: false, width: 1024, height: 1024, registration: { chainring: { x: .3, y: .5 }, wheel: { x: .7, y: .5 } } }} />);
+  expect(container.querySelector(".visual-lesson-illustration img")).toBeInTheDocument();
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(2);
+  expect(container.querySelectorAll(".illustrated-lesson-lines line")).toHaveLength(2);
+  rerender(<VisualLessonOverlay lesson={{ ...lesson, pendingIllustration: false }} />);
+  expect(container.querySelector(".visual-lesson-vector-fallback line")).toBeInTheDocument();
+});
+
+it("shows a labeled vector preview while a subject-specific 3D model is planned", () => {
+  const lesson: VisualLesson = {
+    version: 1, dimension: 3, layout: "centered", title: "Heart valves", placement: { x: .1, y: .1, width: .8, height: .8 },
+    parts: [{ id: "atrium", label: "Atrium", explanation: "Receives blood.", x: .3, y: .5 }, { id: "valve", label: "Valve", explanation: "Controls flow.", x: .7, y: .5 }],
+    connections: [{ from: "atrium", to: "valve", label: "feeds" }],
+  };
+  const { container } = render(<VisualLessonOverlay lesson={lesson} />);
+  expect(container.querySelector(".visual-lesson-vector-fallback line")).toBeInTheDocument();
+  expect(container).toHaveTextContent("Building rotatable 3D model");
+  expect(container).toHaveTextContent("Atrium");
+});
+
+it("shows every generated-model part without placing twelve callouts on top of each other", () => {
+  const listeners = new Set<(point: Point) => void>();
+  const previous = window.ren;
+  window.ren = { onOrbitPointer(listener: (point: Point) => void) { listeners.add(listener); return () => { listeners.delete(listener); }; } } as unknown as RenBridge;
+  const parts = Array.from({ length: 12 }, (_, index) => ({ id: `p${index}`, label: `Part ${index + 1}`, explanation: `Explains mechanism ${index + 1}.`, x: .5, y: .5 }));
+  const lesson: VisualLesson = {
+    version: 1, layout: "centered", title: "Twelve part machine", placement: { x: .08, y: .1, width: .84, height: .8 },
+    parts, connections: parts.slice(1).map((_, index) => ({ from: parts[index].id, to: parts[index + 1].id, label: "drives" })),
+    model: {
+      version: 1, subject: "Twelve part machine", fidelity: "conceptual",
+      primitives: parts.map((part, index) => ({ partId: part.id, kind: "box", position: [index / 2 - 3, 0, 0], scale: [.4, .4, .4], rotation: [0, 0, 0], color: "#6699aa" })),
+      anchors: parts.map((part, index) => ({ partId: part.id, position: [index / 2 - 3, 0, 0] })),
+    },
+  };
+  const { container, unmount } = render(<VisualLessonOverlay lesson={lesson} />);
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(6);
+  expect(container).toHaveTextContent("Parts 1–6 of 12");
+  expect(container).toHaveTextContent("Illustrative 3D model · approximate geometry");
+  expect(container).toHaveTextContent("Part 1");
+  vi.useFakeTimers();
+  act(() => { for (const listener of listeners) listener({ x: .9, y: .5 }); });
+  expect(container).toHaveTextContent("Parts 1–6 of 12");
+  act(() => { for (const listener of listeners) listener({ x: .96, y: .04 }); vi.advanceTimersByTime(701); });
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(6);
+  expect(container).toHaveTextContent("Parts 7–12 of 12");
+  expect(container).toHaveTextContent("Part 12");
+  expect(container.querySelectorAll(".illustrated-lesson-part.left")).toHaveLength(3);
+  expect(container.querySelectorAll(".illustrated-lesson-part.right")).toHaveLength(3);
+  const originalHeight = window.innerHeight;
+  Object.defineProperty(window, "innerHeight", { configurable: true, value: 500 });
+  act(() => window.dispatchEvent(new Event("resize")));
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(2);
+  expect(container).toHaveTextContent("Parts 1–2 of 12");
+  Object.defineProperty(window, "innerHeight", { configurable: true, value: 700 });
+  act(() => window.dispatchEvent(new Event("resize")));
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(4);
+  Object.defineProperty(window, "innerHeight", { configurable: true, value: originalHeight });
+  act(() => window.dispatchEvent(new Event("resize")));
+  unmount();
+  window.ren = previous;
+  vi.useRealTimers();
+});
 
 it("draws a connected lesson directly in a normalized screen rectangle", () => {
   const lesson = {
@@ -83,7 +208,10 @@ it("keeps the image and part explanations together when only one anchor is verif
   expect(container).toHaveTextContent("PARTS GUIDE");
 });
 
-it("keeps five essential parts around a centered render through preview and final image", () => {
+it("keeps every part accessible around a centered image through preview and final render", () => {
+  const listeners = new Set<(point: Point) => void>();
+  const previous = window.ren;
+  window.ren = { onOrbitPointer(listener: (point: Point) => void) { listeners.add(listener); return () => { listeners.delete(listener); }; } } as unknown as RenBridge;
   const names = ["Engine", "Lift fan", "Rear nozzle", "Roll posts", "Flight controls", "Air inlet", "Fan doors", "Exhaust"];
   const source: VisualLesson = {
     version: 1, title: "How hover works", placement: { x: .75, y: .5, width: .22, height: .3 },
@@ -92,14 +220,15 @@ it("keeps five essential parts around a centered render through preview and fina
   };
   const lesson = centerRequestedLesson(source, 3456, 2234);
   const image = "data:image/png;base64,dGVzdA==";
-  const { container, rerender } = render(<VisualLessonOverlay lesson={lesson} />);
+  const { container, rerender, unmount } = render(<VisualLessonOverlay lesson={lesson} />);
   expect(container.querySelector(".visual-lesson")).toHaveClass("centered-stage");
-  expect(container).toHaveTextContent("Creating 3D illustration");
-  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(5);
+  expect(container.querySelector(".visual-lesson-vector-fallback")).toBeInTheDocument();
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(2);
+  expect(container).toHaveTextContent("Parts 1–2 of 8");
   const assertSpacing = () => {
     for (const side of ["left", "right"]) {
       const cards = Array.from(container.querySelectorAll<HTMLElement>(`.illustrated-lesson-part.${side}`));
-      expect(cards.length).toBeGreaterThanOrEqual(2);
+      expect(cards.length).toBeGreaterThanOrEqual(1);
       expect(cards.length).toBeLessThanOrEqual(3);
       const slots = cards.map((card) => Number.parseFloat(card.style.top));
       expect(slots.every((slot, index) => index === 0 || slot - slots[index - 1] >= 20)).toBe(true);
@@ -108,20 +237,35 @@ it("keeps five essential parts around a centered render through preview and fina
   assertSpacing();
   rerender(<VisualLessonOverlay lesson={lesson} illustration={{ image, preview: true, width: 1024, height: 1024 }} />);
   expect(container.querySelector(".visual-lesson-illustration img")).toHaveAttribute("src", image);
-  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(5);
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(2);
   assertSpacing();
   const registration = Object.fromEntries(names.map((_, index) => [`part${index}`, { x: index % 2 ? .7 : .3, y: .15 + index * .1 }]));
   rerender(<VisualLessonOverlay lesson={lesson} illustration={{ image, preview: false, width: 1024, height: 1024, registration }} />);
-  expect(container.querySelectorAll(".illustrated-lesson-lines line")).toHaveLength(5);
-  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(5);
+  expect(container.querySelectorAll(".illustrated-lesson-lines line")).toHaveLength(2);
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(2);
   expect(container.querySelector(".visual-lesson-illustration img")).toHaveAttribute("src", image);
-  lesson.parts.forEach((part) => expect(container).toHaveTextContent(part.label));
+  vi.useFakeTimers();
+  act(() => { for (const listener of listeners) listener({ x: .7, y: .5 }); vi.advanceTimersByTime(1400); });
+  expect(container).toHaveTextContent("Parts 1–2 of 8");
+  const seen = new Set<string>();
+  for (let page = 0; page < 4; page++) {
+    if (page) act(() => { for (const listener of listeners) listener({ x: .96, y: .04 }); vi.advanceTimersByTime(701); });
+    for (const part of lesson.parts.slice(page * 2, (page + 1) * 2)) {
+      expect(container).toHaveTextContent(part.label);
+      seen.add(part.id);
+    }
+    if (page < 3) act(() => { for (const listener of listeners) listener({ x: .5, y: .5 }); });
+  }
+  expect(seen.size).toBe(8);
   assertSpacing();
+  unmount();
+  window.ren = previous;
+  vi.useRealTimers();
 });
 
 it("switches between interactive aircraft and ordinary lessons without losing hooks or labels", () => {
   const aircraft: VisualLesson = {
-    version: 1, layout: "centered", title: "F-35B hover", placement: { x: .1, y: .1, width: .8, height: .8 },
+    version: 1, layout: "centered", scene: "f35b-hover", title: "F-35B hover", placement: { x: .1, y: .1, width: .8, height: .8 },
     parts: [
       { id: "fan", label: "Lift fan", explanation: "Pushes air down.", x: .3, y: .4 },
       { id: "engine", label: "Engine", explanation: "Powers the fan.", x: .7, y: .5 },
@@ -139,7 +283,7 @@ it("switches between interactive aircraft and ordinary lessons without losing ho
 
 it("keeps the aircraft explanation visible when WebGL is unavailable", async () => {
   const lesson: VisualLesson = {
-    version: 1, layout: "centered", title: "F-35B hover", placement: { x: .1, y: .1, width: .8, height: .8 },
+    version: 1, layout: "centered", scene: "f35b-hover", title: "F-35B hover", placement: { x: .1, y: .1, width: .8, height: .8 },
     parts: [
       { id: "fan", label: "Lift fan", explanation: "Pushes air down.", x: .3, y: .4 },
       { id: "engine", label: "Engine", explanation: "Powers the fan.", x: .7, y: .5 },

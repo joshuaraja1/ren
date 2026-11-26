@@ -1,9 +1,67 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import type { VisualLesson } from "../electron/visual-lesson";
+import type { SceneSpec } from "../electron/scene-spec";
 import type { Point } from "./contracts";
 
 export type GenericAnchors = Record<string, Point>;
+
+/** Build rotatable geometry supplied by the provider. Anchors are in the same model coordinates. */
+export function makeSubjectScene(spec: SceneSpec, connections: VisualLesson["connections"] = []) {
+  const root = new THREE.Group();
+  root.name = `Illustrative 3D model: ${spec.subject}`;
+  const anchors: Record<string, THREE.Vector3> = {};
+  for (const part of spec.primitives) {
+    let geometry: THREE.BufferGeometry;
+    switch (part.kind) {
+      case "box": geometry = new THREE.BoxGeometry(1, 1, 1); break;
+      case "sphere": geometry = new THREE.SphereGeometry(.5, 24, 16); break;
+      case "cylinder": geometry = new THREE.CylinderGeometry(.5, .5, 1, 24); break;
+      case "cone": geometry = new THREE.ConeGeometry(.5, 1, 24); break;
+      case "torus": geometry = new THREE.TorusGeometry(.5, .14, 10, 32); break;
+      case "capsule": {
+        geometry = new THREE.CapsuleGeometry(.3, .4, 8, 16);
+        geometry.scale(1 / .6, 1, 1 / .6);
+        break;
+      }
+      case "extrusion": {
+        const points = part.outline!;
+        const shape = new THREE.Shape();
+        shape.moveTo(...points[0]);
+        for (const point of points.slice(1)) shape.lineTo(...point);
+        shape.closePath();
+        geometry = new THREE.ExtrudeGeometry(shape, { depth: 1, steps: 1, bevelEnabled: true, bevelSize: .025, bevelThickness: .025, bevelSegments: 1, curveSegments: 4 });
+        geometry.translate(0, 0, -.5);
+        break;
+      }
+      default: geometry = new THREE.BoxGeometry(1, 1, 1);
+    }
+    const material = new THREE.MeshStandardMaterial({ color: part.color, metalness: .28, roughness: .42, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = part.partId;
+    mesh.position.set(...part.position);
+    mesh.scale.set(...part.scale);
+    mesh.rotation.set(...part.rotation);
+    root.add(mesh);
+  }
+  for (const anchor of spec.anchors) anchors[anchor.partId] = new THREE.Vector3(...anchor.position);
+  for (const connection of connections) {
+    const from = anchors[connection.from];
+    const to = anchors[connection.to];
+    if (!from || !to) continue;
+    const direction = to.clone().sub(from);
+    if (direction.length() < .05) continue;
+    const curve = new THREE.QuadraticBezierCurve3(from, from.clone().lerp(to, .5).add(new THREE.Vector3(0, .2, .3)), to);
+    const flow = new THREE.Mesh(new THREE.TubeGeometry(curve, 16, .018, 6, false), new THREE.MeshBasicMaterial({ color: 0x71d4e4, transparent: true, opacity: .76 }));
+    flow.name = `${connection.from} → ${connection.to}: ${connection.label}`;
+    root.add(flow);
+    const arrow = new THREE.Mesh(new THREE.ConeGeometry(.07, .17, 12), new THREE.MeshBasicMaterial({ color: 0xf7be62 }));
+    arrow.position.copy(curve.getPoint(.87));
+    arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), curve.getTangent(.87).normalize());
+    root.add(arrow);
+  }
+  return { root, anchors };
+}
 
 /** A conceptual mechanism graph. Its shapes describe relationships, not the subject's physical form. */
 export function makeGenericScene(lesson: Pick<VisualLesson, "parts" | "connections">) {
@@ -86,9 +144,12 @@ export function GenericScene({ lesson, onAnchors, onUnavailable }: {
     const light = new THREE.DirectionalLight(0xffffff, 2.5);
     light.position.set(-3, 6, 7);
     scene.add(light);
-    const model = makeGenericScene(lesson);
+    const model = lesson.model ? makeSubjectScene(lesson.model, lesson.connections) : makeGenericScene(lesson);
     scene.add(model.root);
     const camera = new THREE.PerspectiveCamera(38, 1, .1, 100);
+    const bounds = new THREE.Box3().setFromObject(model.root);
+    const center = bounds.getCenter(new THREE.Vector3());
+    const size = bounds.getSize(new THREE.Vector3());
     const cursor = { x: .5, y: .5 };
     let azimuth = 0;
     let elevation = .16;
@@ -108,9 +169,10 @@ export function GenericScene({ lesson, onAnchors, onUnavailable }: {
       const targetElevation = .16 + (.5 - cursor.y) * .85;
       azimuth += (targetAzimuth - azimuth) * .1;
       elevation += (targetElevation - elevation) * .1;
-      const distance = lesson.parts.length > 8 ? 11.5 : 9.4;
-      camera.position.set(Math.sin(azimuth) * Math.cos(elevation) * distance, Math.sin(elevation) * distance, Math.cos(azimuth) * Math.cos(elevation) * distance);
-      camera.lookAt(0, 0, 0);
+      const halfVertical = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+      const distance = Math.min(75, Math.max(7, size.x / (2 * halfVertical * camera.aspect), size.y / (2 * halfVertical), size.z / (2 * halfVertical)) * 1.55 + 1);
+      camera.position.set(center.x + Math.sin(azimuth) * Math.cos(elevation) * distance, center.y + Math.sin(elevation) * distance, center.z + Math.cos(azimuth) * Math.cos(elevation) * distance);
+      camera.lookAt(center);
       renderer.render(scene, camera);
       if (time - lastLabels > 40) {
         callbacks.current.onAnchors(projectGenericAnchors(model.anchors, model.root, camera));

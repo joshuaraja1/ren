@@ -12,7 +12,12 @@ function Overlay() {
   const [visualLesson, setVisualLesson] = useState<VisualLesson | null>(null);
   const [illustration, setIllustration] = useState<Illustration | null>(null);
   useEffect(() => window.ren?.onAnnotations(setAnnotations), []);
-  useEffect(() => window.ren?.onVisualLesson(setVisualLesson), []);
+  useEffect(() => window.ren?.onVisualLesson((next) => {
+    // Clear the preceding lesson's image in the same React update. A new
+    // pending lesson must never briefly reveal the previous subject's image.
+    setIllustration(null);
+    setVisualLesson(next);
+  }), []);
   useEffect(() => window.ren?.onIllustration(setIllustration), []);
   return (
     <div className="overlay-canvas">

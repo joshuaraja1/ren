@@ -1,9 +1,9 @@
 import { validateVisualLesson, type VisualLesson } from "./visual-lesson.js";
 import { plainAnswer } from "./plain-answer.js";
-import { wantsVisualCreation } from "./visual-intent.js";
+import { requestedVisualDimension, wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
 
 type Point = { x: number; y: number };
-type Annotation =
+export type Annotation =
   | { id: string; type: "arrow"; from: Point; to: Point; label?: string; color?: string }
   | { id: string; type: "rectangle"; at: Point; width: number; height: number; label?: string; color?: string }
   | { id: string; type: "ellipse"; at: Point; radiusX: number; radiusY: number; label?: string; color?: string }
@@ -18,6 +18,7 @@ type AskRequest = {
   frames: string[];
   history: { role: "user" | "assistant"; content: string }[];
   priorVisualLesson?: VisualLesson;
+  transformPriorVisual?: boolean;
 };
 
 export type ProviderResponse = {
@@ -53,13 +54,13 @@ drawn directly on the learner's current screen.
 If the learner explicitly asks you to create, draw, or render a diagram,
 include a fresh visualLesson in your own explanatory structure. Use a visible
 diagram as factual context, not as a template to copy. Do not just describe
-or relabel the diagram already on screen. Set referenceRegion:null for these
-requests. Only when the learner explicitly asks to recreate a visible object's
-appearance should referenceRegion identify a tight rectangle around that
+or relabel the diagram already on screen. If the learner asks to model or
+transform a visible object's appearance, referenceRegion should identify a
+tight rectangle around that
 object on the FIRST full display image in normalized coordinates
 {x,y,width,height}. Exclude surrounding apps, text, and unrelated content.
 Use version 1, a title, optional assumption, a placement {x,y,width,height}
-in normalized FULL display coordinates, 2-8 parts with unique id, label,
+in normalized FULL display coordinates, 2-12 parts with unique id, label,
 explanation and x,y coordinates relative to placement, and labeled
 connections {from,to,label} connecting every part. Keep the referenced screen
 subject visible when possible. Example:
@@ -91,13 +92,11 @@ Use at most four purposeful visuals. If location is uncertain, prefer a diagram 
 
 const REQUESTED_VISUAL_PROMPT = `The learner explicitly requested a diagram or rendered illustration. visualLesson is REQUIRED.
 Set retainVisual:false; this is a new drawing request.
-For an F-35B hover explanation, Ren has a real interactive 3D teaching model: the learner can move
-the cursor to rotate it. Use these part names for that model: Engine, Lift fan, Swivel nozzle,
-Roll posts, and optionally Flight controls. Tell the learner about cursor rotation briefly
-when relevant; never say the view cannot rotate.
-If the named object is not visible on screen, make a conceptual lesson from the learner's
+If the named object is not visible on screen, derive the subject from the learner's
 request and set referenceRegion:null. Never say that lack of a visible reference prevents
-you from drawing it. Choose 4-5 essential visible parts, not decorative details. For each part,
+you from drawing it. Choose the essential physical or functional parts required to explain
+the requested subject (usually 4-8, up to 12 for a complex system). Do not substitute
+an F-35, phone, or generic relationship graph when a different subject was requested. For each part,
 write a short, specific explanation (about 40-110 characters) of what it does and why
 it matters. Make the title 3-6 words about the mechanism, without words such as
 cutaway, schematic, oblique, or illustration. Trace the causal chain in connections: energy or input, mechanism, output,
@@ -109,8 +108,15 @@ connected visualLesson object even if you cannot place annotations on the live s
 
 const RETRY_VISUAL_PROMPT = `Your response must contain a valid visualLesson object rather than null.
 Return the complete JSON answer again with version 1, valid placement, 4-8 unique
-parts with bounded coordinates, and connections linking every part. Use no more than 5 parts. Do not omit the
+parts with bounded coordinates, and connections linking every part. Do not omit the
 lesson merely because a screen reference is small, moving, or absent.`;
+
+const TRANSFORM_PRIOR_VISUAL_PROMPT = `The learner is asking to turn the preceding on-screen lesson into a rotatable 3D explanation.
+Continue the SAME subject and its established component names and causal relationships.
+Do not infer a new object from the current screen or substitute a generic graph.
+The app retains and models the prior lesson itself, so return visualLesson:null and retainVisual:false.
+Explain how the existing parts work together in 3-5 spoken sentences; mention that the
+learner can move the cursor to inspect the resulting model.`;
 
 const clamp = (value: unknown) => Math.min(1, Math.max(0, typeof value === "number" ? value : 0));
 const point = (value: unknown): Point => {
@@ -186,7 +192,8 @@ export async function askTeacher(request: AskRequest, credentials: VisionCredent
   if (!credentials) return demoAnswer(request.question);
 
   const { apiKey, model, baseUrl: base } = credentials;
-  const requestedVisual = wantsVisualCreation(request.question);
+  const requestedVisual = wantsVisualCreation(request.question) && !request.transformPriorVisual;
+  const visualDimension = requestedVisualDimension(request.question);
   const visualContent = request.frames.slice(0, 3).map((url) => ({ type: "image_url", image_url: { url, detail: "high" } }));
   const history = request.history.slice(-8).map((turn) => ({ role: turn.role, content: turn.content }));
   const priorVisual = request.priorVisualLesson
@@ -203,7 +210,7 @@ export async function askTeacher(request: AskRequest, credentials: VisionCredent
         ...(model === "gpt-6-sol" ? { reasoning_effort: "medium" } : {}),
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: `${TEACHER_PROMPT}${requestedVisual ? `\n${REQUESTED_VISUAL_PROMPT}` : ""}${retryVisual ? `\n${RETRY_VISUAL_PROMPT}` : ""}` },
+          { role: "system", content: `${TEACHER_PROMPT}${request.transformPriorVisual ? `\n${TRANSFORM_PRIOR_VISUAL_PROMPT}` : ""}${requestedVisual ? `\n${REQUESTED_VISUAL_PROMPT}\nThe requested visual is ${visualDimension}D. ${visualDimension === 3 ? "Plan real spatial components for a subject-specific rotatable teaching model. Do not claim exact CAD fidelity." : "Plan a flat 2D teaching diagram and do not describe it as a rotatable model."} ${wantsReferenceRecreation(request.question) ? "Identify a tight referenceRegion around the visible subject if it appears on screen." : "Set referenceRegion:null unless the learner specifically asks to recreate a visible object."}` : ""}${retryVisual ? `\n${RETRY_VISUAL_PROMPT}` : ""}` },
           ...history,
           { role: "user", content: [{ type: "text", text: request.question }, ...priorVisual, ...visualContent] },
         ],
