@@ -52,7 +52,6 @@ let lastVisualLesson: ActiveVisual | null = null;
 let pendingScenePreview: ScenePreview | null = null;
 let screenCaptureBusy = false;
 let pendingAnswerToken: string | null = null;
-let activeCaptureToken: string | null = null;
 let imageRenderAbort: AbortController | null = null;
 let activeAskController: AbortController | null = null;
 let imageRequestBusy = false;
@@ -419,17 +418,9 @@ app.whenReady().then(() => {
       },
       onCancel: cancelFocusPath,
       onScroll: () => {
-        // The answer can finish against its captured frame. Spatial annotations
-        // are checked against the live screen after the answer returns.
-        const token = activeCaptureToken;
-        if (token && captureSession.isCurrent(token)) captureSession.invalidate();
-      },
-      onInteraction: () => {
-        // Do not cancel an explicitly requested diagram while someone browses.
-        const token = activeCaptureToken;
-        if (token && captureSession.isCurrent(token)) captureSession.invalidate();
-        // A user may keep browsing while an explicitly requested illustration renders.
-        // Display removal, a new question, and Clear drawings still cancel it.
+        // A spoken request may arrive while the user is still browsing. Keep
+        // the captured frame for the answer; fresh-frame checks below decide
+        // whether any spatial guidance is still safe to draw.
       },
     });
     return circleInputActive;
@@ -588,7 +579,6 @@ app.whenReady().then(() => {
     lastCaptureData = null;
     if (!preservedVisual) { imageRenderAbort?.abort(); imageRenderAbort = null; }
     const contextToken = captureSession.issue(display.id);
-    activeCaptureToken = contextToken;
     mainWindow?.setOpacity(0);
     if (!preservedVisual) {
       sendOverlayAnnotations([]);
@@ -639,7 +629,6 @@ app.whenReady().then(() => {
     } finally {
       mainWindow?.setOpacity(1);
       if (lastCaptureData?.token === contextToken && showDuringAnswer && lastVisualLesson === preservedVisual && generation === visualGeneration) overlayWindow?.showInactive();
-      if (activeCaptureToken === contextToken) activeCaptureToken = null;
       screenCaptureBusy = false;
     }
   });
