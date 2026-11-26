@@ -12,6 +12,8 @@ export default defineConfig({
       input: {
         main: resolve(import.meta.dirname, "index.html"),
         overlay: resolve(import.meta.dirname, "overlay.html"),
+        graphicsPreview: resolve(import.meta.dirname, "graphics-preview.html"),
+        legacyVisualPreview: resolve(import.meta.dirname, "visual-preview.html"),
       },
     },
   },

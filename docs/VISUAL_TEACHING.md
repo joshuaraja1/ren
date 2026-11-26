@@ -31,6 +31,13 @@ illustrative approximation; it cannot promise a faithful mesh of every object
 or exact internal engineering detail. A separate 3D asset provider would be
 needed for high-fidelity arbitrary meshes.
 
+For a browser check of the actual Three.js renderer, run `npm run preview:graphics`
+and open `http://127.0.0.1:5173/graphics-preview.html`. This builds the renderer
+first and serves the Pi camera and desktop PC fixtures. Pointer orbit, labels,
+and assembly replay work in the page. It is a local renderer preview, not a
+screen capture or model-provider end-to-end test.
+The earlier `/visual-preview.html` link resolves to the same preview.
+
 ## Rendering contract
 
 The answer model returns a small versioned manifest: a title, any assumption,

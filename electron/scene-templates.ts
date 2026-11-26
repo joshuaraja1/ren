@@ -42,6 +42,9 @@ export function raspberryPiCameraTemplate(lesson: VisualLesson, question: string
   box(piId, [1.62, 1.02, .27], [.55, .5, .4], "#9aa7ad");
   box(piId, [1.62, .45, .27], [.55, .5, .4], "#919fa5");
   box(piId, [1.6, -.24, .32], [.61, .65, .48], "#aab4b6");
+  box(piId, [1.91, 1.02, .27], [.03, .35, .23], "#2b6885");
+  box(piId, [1.91, .45, .27], [.03, .35, .23], "#2b6885");
+  box(piId, [1.92, -.24, .32], [.03, .49, .3], "#35464d");
   box(piId, [-.42, -.32, .12], [.38, .28, .11], "#283940");
   box(piId, [.02, .14, .12], [.29, .25, .11], "#34464c");
   box(piId, [-1.15, .65, .19], [.23, .18, .15], "#c3c8bb");
@@ -51,12 +54,14 @@ export function raspberryPiCameraTemplate(lesson: VisualLesson, question: string
   primitives.push({ partId: cableId, kind: "box", position: [.62, 1.18, .7], scale: [.28, 2.13, .035], rotation: [0, 0, 0], color: "#c5d0ca" });
   primitives.push({ partId: cableId, kind: "box", position: [.62, .14, .72], scale: [.24, .12, .025], rotation: [0, 0, 0], color: "#cba55e" });
   primitives.push({ partId: cableId, kind: "box", position: [.62, 2.24, .72], scale: [.24, .12, .025], rotation: [0, 0, 0], color: "#cba55e" });
+  primitives.push({ partId: cableId, kind: "box", position: [.62, .25, .73], scale: [.28, .1, .025], rotation: [0, 0, 0], color: "#2676a5" });
+  primitives.push({ partId: cableId, kind: "box", position: [.62, 2.13, .73], scale: [.28, .1, .025], rotation: [0, 0, 0], color: "#2676a5" });
 
-  primitives.push({ partId: cameraId, kind: "box", position: [.62, 2.56, .7], scale: [.96, .74, .09], rotation: [0, 0, 0], color: "#277e4b" });
-  primitives.push({ partId: cameraId, kind: "box", position: [.62, 2.23, .77], scale: [.32, .13, .12], rotation: [0, 0, 0], color: "#d5ddd5" });
-  primitives.push({ partId: cameraId, kind: "box", position: [.62, 2.58, .84], scale: [.52, .44, .22], rotation: [0, 0, 0], color: "#34383c" });
-  primitives.push({ partId: cameraId, kind: "cylinder", position: [.62, 2.58, 1.01], scale: [.31, .28, .31], rotation: [Math.PI / 2, 0, 0], color: "#1c2429" });
-  primitives.push({ partId: cameraId, kind: "torus", position: [.62, 2.58, 1.18], scale: [.57, .57, .18], rotation: [0, 0, 0], color: "#54616b" });
+  primitives.push({ partId: cameraId, kind: "box", position: [.62, 2.56, .7], scale: [.72, .74, .09], rotation: [0, 0, 0], color: "#277e4b" });
+  primitives.push({ partId: cameraId, kind: "box", position: [.62, 2.23, .77], scale: [.28, .13, .12], rotation: [0, 0, 0], color: "#d5ddd5" });
+  primitives.push({ partId: cameraId, kind: "box", position: [.62, 2.58, .84], scale: [.42, .4, .22], rotation: [0, 0, 0], color: "#34383c" });
+  primitives.push({ partId: cameraId, kind: "cylinder", position: [.62, 2.58, 1.01], scale: [.24, .28, .24], rotation: [Math.PI / 2, 0, 0], color: "#1c2429" });
+  primitives.push({ partId: cameraId, kind: "torus", position: [.62, 2.58, 1.18], scale: [.4, .4, .15], rotation: [0, 0, 0], color: "#54616b" });
 
   return {
     version: 1, subject: "Raspberry Pi 5 with Camera Module (Standard-Mini cable)", fidelity: "conceptual", primitives,

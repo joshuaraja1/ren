@@ -45,6 +45,8 @@ it("uses visible pixels only for appearance recreation, not a new explanatory di
   expect(wantsReferenceRecreation("Draw a new diagram inspired by this page")).toBe(false);
   expect(wantsReferenceRecreation("Show me exactly how to attach a camera to this Raspberry Pi 5")).toBe(true);
   expect(wantsReferenceRecreation("Show me how to attach a camera to the Raspberry Pi 5 on my screen")).toBe(true);
+  expect(wantsReferenceRecreation("Draw a diagram of this circuit and label its parts")).toBe(true);
+  expect(wantsReferenceRecreation("Show me a model of the phone visible on screen")).toBe(true);
   expect(wantsReferenceRecreation("Make a rotatable 3D model of this microscope")).toBe(true);
   expect(wantsReferenceRecreation("Show how to attach the lens to this telescope in 3D")).toBe(true);
   expect(wantsReferenceRecreation("Render the mechanical clock on my screen in 3D")).toBe(true);

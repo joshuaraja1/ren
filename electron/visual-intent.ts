@@ -45,6 +45,10 @@ export function requestedVisualDimension(question: string): 2 | 3 {
 
 /** Only an explicit request to reproduce the visible object's appearance needs its pixels. */
 export function wantsReferenceRecreation(question: string) {
+  // A visual request about a deictic on-screen object should use the located
+  // object crop even when the learner did not say "recreate" or "exactly".
+  if (wantsVisualCreation(question) && !/\b(?:in your own way|inspired by)\b/i.test(question)
+    && /\b(?:this|that|visible|shown|on[- ]screen|in (?:the|this) (?:image|photo|screenshot))\b/i.test(question)) return true;
   if (/\b(?:show|draw|build|make|animate|model|render|generate)\b[^.!?]{0,120}\b(?:this|that|visible|shown)\s+[\w-]+(?:\s+[\w-]+){0,4}\b[^.!?]{0,70}\b(?:3d|model|render|exploded|attach|install|connect)\b/i.test(question)
     && !/\b(?:in your own way|inspired by)\b/i.test(question)) return true;
   if (/\b(?:show|draw|build|make|animate|model|render|generate)\b[^.!?]{0,120}\b(?:3d|model|render|exploded|attach|install|connect)\b[^.!?]{0,90}\b(?:this|that|visible|shown)\s+[\w-]+(?:\s+[\w-]+){0,4}\b/i.test(question)

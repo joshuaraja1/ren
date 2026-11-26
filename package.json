@@ -14,6 +14,7 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"tsc -p tsconfig.electron.json --watch --preserveWatchOutput\" \"wait-on tcp:5173 file:dist-electron/main.js && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "preview:graphics": "npm run build:renderer && vite preview --host 127.0.0.1 --port 5173",
     "build": "npm run build:renderer && npm run build:electron && npm run build:server && npm run verify:assets",
     "build:renderer": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",

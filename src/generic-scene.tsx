@@ -157,15 +157,37 @@ export function orbitCameraDistance(bounds: THREE.Box3, verticalFovDegrees: numb
 
 /** Fit the current angle rather than reserving space for the widest possible orbit. */
 export function cameraDistanceForView(bounds: THREE.Box3, azimuth: number, elevation: number, fov: number, aspect: number): number {
-  const center = bounds.getCenter(new THREE.Vector3());
+  const corners: THREE.Vector3[] = [];
+  for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) corners.push(new THREE.Vector3(x, y, z));
+  return cameraDistanceForPoints(corners, bounds.getCenter(new THREE.Vector3()), azimuth, elevation, fov, aspect);
+}
+
+/** Fit real mesh corners, avoiding empty corners from the union bounding box. */
+export function sceneGeometryCorners(root: THREE.Object3D): THREE.Vector3[] {
+  root.updateMatrixWorld(true);
+  const points: THREE.Vector3[] = [];
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const geometry = object.geometry as THREE.BufferGeometry;
+    if (!geometry.boundingBox) geometry.computeBoundingBox();
+    const box = geometry.boundingBox;
+    if (!box) return;
+    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+      points.push(new THREE.Vector3(x, y, z).applyMatrix4(object.matrixWorld));
+    }
+  });
+  return points;
+}
+
+export function cameraDistanceForPoints(points: THREE.Vector3[], center: THREE.Vector3, azimuth: number, elevation: number, fov: number, aspect: number): number {
   const direction = new THREE.Vector3(Math.sin(azimuth) * Math.cos(elevation), Math.sin(elevation), Math.cos(azimuth) * Math.cos(elevation));
   const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), direction).normalize();
   const up = new THREE.Vector3().crossVectors(direction, right).normalize();
   const tangentY = Math.tan(THREE.MathUtils.degToRad(fov / 2)) * .86;
   const tangentX = tangentY * Math.max(.1, aspect);
   let required = 4;
-  for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) {
-    const corner = new THREE.Vector3(x, y, z).sub(center);
+  for (const point of points) {
+    const corner = point.clone().sub(center);
     required = Math.max(required, corner.dot(direction) + Math.abs(corner.dot(right)) / tangentX,
       corner.dot(direction) + Math.abs(corner.dot(up)) / tangentY);
   }
@@ -244,11 +266,14 @@ export function GenericScene({ lesson, onAnchors, onUnavailable, onAssemblyStep 
       scene.add(floor);
     }
     const camera = new THREE.PerspectiveCamera(38, 1, .1, 100);
-    const assembledBounds = new THREE.Box3().setFromObject(model.root);
+    const assembledPoints = sceneGeometryCorners(model.root);
+    const assembledBounds = new THREE.Box3().setFromPoints(assembledPoints);
     const startingBounds = assembledBounds.clone();
+    let startingPoints = assembledPoints;
     if (lesson.playAssembly && lesson.model?.assembly?.length) {
       applyAssemblyProgress(model as SubjectScene, 0);
-      startingBounds.union(new THREE.Box3().setFromObject(model.root));
+      startingPoints = sceneGeometryCorners(model.root);
+      startingBounds.union(new THREE.Box3().setFromPoints(startingPoints));
       applyAssemblyProgress(model as SubjectScene, lesson.model.assembly.length);
     }
     const assembly = lesson.playAssembly ? lesson.model?.assembly : undefined;
@@ -288,8 +313,8 @@ export function GenericScene({ lesson, onAnchors, onUnavailable, onAssemblyStep 
       elevation += (targetElevation - elevation) * .1;
       const { center } = assemblyCameraFrame(startingBounds, assembledBounds, completion, camera.fov, camera.aspect);
       const distance = THREE.MathUtils.lerp(
-        cameraDistanceForView(startingBounds, azimuth, elevation, camera.fov, camera.aspect),
-        cameraDistanceForView(assembledBounds, azimuth, elevation, camera.fov, camera.aspect), completion);
+        cameraDistanceForPoints(startingPoints, center, azimuth, elevation, camera.fov, camera.aspect),
+        cameraDistanceForPoints(assembledPoints, center, azimuth, elevation, camera.fov, camera.aspect), completion);
       camera.position.set(center.x + Math.sin(azimuth) * Math.cos(elevation) * distance, center.y + Math.sin(elevation) * distance, center.z + Math.cos(azimuth) * Math.cos(elevation) * distance);
       camera.lookAt(center);
       renderer.render(scene, camera);

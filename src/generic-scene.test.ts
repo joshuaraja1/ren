@@ -5,7 +5,7 @@ import { vi } from "vitest";
 import type { VisualLesson } from "../electron/visual-lesson";
 import type { SceneSpec } from "../electron/scene-spec";
 import { raspberryPiCameraTemplate } from "../electron/scene-templates";
-import { GenericScene, applyAssemblyProgress, assemblyCameraFrame, cameraDistanceForView, hasHorizontalBase, makeGenericScene, makeSubjectScene, orbitCameraDistance, projectGenericAnchors } from "./generic-scene";
+import { GenericScene, applyAssemblyProgress, assemblyCameraFrame, cameraDistanceForPoints, cameraDistanceForView, hasHorizontalBase, makeGenericScene, makeSubjectScene, orbitCameraDistance, projectGenericAnchors, sceneGeometryCorners } from "./generic-scene";
 
 const lesson: VisualLesson = {
   version: 1, title: "Camera signal path", placement: { x: 0, y: 0, width: 1, height: 1 },
@@ -84,6 +84,33 @@ it("fits the visible angle more closely while keeping every subject corner in fr
     }
   }
   expect(cameraDistanceForView(bounds, 0, .6, camera.fov, camera.aspect)).toBeLessThan(orbitCameraDistance(bounds, camera.fov, camera.aspect));
+});
+
+it("fits actual Pi geometry without reserving empty corners above the board", () => {
+  const piLesson: VisualLesson = { ...lesson, title: "Raspberry Pi 5 camera setup", parts: [
+    { id: "pi", label: "Raspberry Pi 5", explanation: "Host board", x: .5, y: .2 },
+    { id: "cable", label: "Ribbon cable", explanation: "Adapter", x: .5, y: .5 },
+    { id: "camera", label: "Camera Module 3", explanation: "Image sensor", x: .5, y: .8 },
+  ] };
+  const spec = raspberryPiCameraTemplate(piLesson, "Show a Pi 5 camera", false)!;
+  const { root } = makeSubjectScene(spec);
+  const points = sceneGeometryCorners(root);
+  const bounds = new THREE.Box3().setFromPoints(points);
+  const center = bounds.getCenter(new THREE.Vector3());
+  const camera = new THREE.PerspectiveCamera(38, 1.6, .1, 100);
+  for (const azimuth of [-.2, .38, 1.1]) {
+    const elevation = .62;
+    const distance = cameraDistanceForPoints(points, center, azimuth, elevation, camera.fov, camera.aspect);
+    expect(distance).toBeLessThan(cameraDistanceForView(bounds, azimuth, elevation, camera.fov, camera.aspect));
+    camera.position.set(center.x + Math.sin(azimuth) * Math.cos(elevation) * distance,
+      center.y + Math.sin(elevation) * distance, center.z + Math.cos(azimuth) * Math.cos(elevation) * distance);
+    camera.lookAt(center); camera.updateMatrixWorld(true);
+    for (const point of points) {
+      const projected = point.clone().project(camera);
+      expect(Math.abs(projected.x)).toBeLessThan(1);
+      expect(Math.abs(projected.y)).toBeLessThan(1);
+    }
+  }
 });
 
 it("frames separated parts at first and closes in on the assembled subject", () => {
