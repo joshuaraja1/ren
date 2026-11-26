@@ -501,10 +501,16 @@ app.whenReady().then(() => {
     requireMainRenderer(event);
     const controller = activeAskController;
     if (!controller) return false;
+    // A follow-up may already have issued its own capture by the time this
+    // cancellation arrives. Abort the old answer without invalidating the
+    // newer capture or its visual generation.
+    const ownsCurrentCapture = Boolean(pendingAnswerToken && captureSession.isCurrent(pendingAnswerToken));
     controller.abort();
-    visualGeneration += 1;
-    captureSession.invalidate();
-    overlayWindow?.hide();
+    if (ownsCurrentCapture) {
+      visualGeneration += 1;
+      captureSession.invalidate();
+      overlayWindow?.hide();
+    }
     return true;
   });
   ipcMain.handle("ren:request-permissions", (event) => {
