@@ -64,6 +64,9 @@ describe("generic subject model generation", () => {
     expect(wantsAssemblyAnimation("How do I install memory into a desktop computer?")).toBe(true);
     expect(wantsAssemblyAnimation("Show a static 3D Pi camera connection")).toBe(false);
     expect(wantsAssemblySequence("How do I build a job application agent?")).toBe(false);
+    expect(wantsAssemblySequence("Show how to install RAM into a server")).toBe(true);
+    expect(wantsAssemblySequence("How do I connect a monitor to a server?")).toBe(true);
+    expect(wantsAssemblySequence("How do I connect an app to a server?")).toBe(false);
   });
 
   it("sends bounded lesson data and returns validated physical primitives", async () => {

@@ -1,7 +1,7 @@
 /** A request to demonstrate how physical parts are put together. */
 export function wantsAssemblySequence(question: string): boolean {
   if (/\b(?:wi-?fi|internet|network|api|database|server|account|software|package|dependencies|login|code|program|agent|workflow|website|application|resume|document|form|file|repository|repo|service)\b/i.test(question)
-    && !/\b(?:hardware|cable|camera|board|device|part|component)\b/i.test(question)) return false;
+    && !/\b(?:hardware|cable|camera|board|device|part|component|ram|memory|monitor|cpu|gpu|processor|motherboard|keyboard|display|port|lens|battery|wheel|motor|sensor)\b/i.test(question)) return false;
   return /\b(?:assembl(?:e|y|ing)|put (?:it|them|the parts|this|that) together|connect (?:the )?parts|plug (?:it|them|the parts) in|exploded (?:view|diagram|model)|step.by.step (?:build|assembly|connection))\b/i.test(question)
     || /\b(?:attach(?:ed|ing)?|install(?:ed|ing)?|mount(?:ed|ing)?|connect(?:ed|ing)?|plug(?:ged|ging)?|wire|wiring|insert(?:ed|ing)?|fit(?:ting)?)\b[^.!?]{0,100}\b(?:to|into|onto|on|in)\b/i.test(question)
     || /\b(?:how (?:do|can|should|would) (?:i|we|you)|how to|show (?:me )?how to|walk me through)\b[^.!?]{0,100}\b(?:build|assemble|attach|install|mount|connect|plug|wire|insert|fit)\b/i.test(question)

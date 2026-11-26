@@ -20,6 +20,9 @@ it("renders only when the learner explicitly asks for a visual", () => {
   expect(wantsVisualCreation("How do I connect a camera module to this Pi?")).toBe(true);
   expect(requestedVisualDimension("How do I connect a camera module to this Pi?")).toBe(3);
   expect(wantsVisualCreation("How do I build a job application agent?")).toBe(false);
+  expect(wantsVisualCreation("Show how to install RAM into a server")).toBe(true);
+  expect(requestedVisualDimension("Show how to install RAM into a server")).toBe(3);
+  expect(wantsVisualCreation("How do I connect an app to a server?")).toBe(false);
   expect(wantsPriorAssemblyGuide("How do I do that?")).toBe(true);
   expect(wantsPriorAssemblyGuide("Show me how to do it")).toBe(true);
   expect(wantsPriorAssemblyGuide("Repeat the steps")).toBe(true);

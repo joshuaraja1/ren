@@ -4,7 +4,7 @@ import { render } from "@testing-library/react";
 import { vi } from "vitest";
 import type { VisualLesson } from "../electron/visual-lesson";
 import type { SceneSpec } from "../electron/scene-spec";
-import { raspberryPiCameraTemplate } from "../electron/scene-templates";
+import { desktopComputerTemplate, raspberryPiCameraTemplate } from "../electron/scene-templates";
 import { GenericScene, applyAssemblyProgress, assemblyCameraFrame, assemblyProgressAt, cameraDistanceForPoints, cameraDistanceForView, hasHorizontalBase, makeGenericScene, makeSubjectScene, orbitCameraDistance, projectGenericAnchors, sceneGeometryCorners } from "./generic-scene";
 
 const lesson: VisualLesson = {
@@ -229,6 +229,90 @@ it("holds the exploded view before moving each part through visible assembly ste
   expect(assemblyProgressAt(4200, 2)).toBeCloseTo(1.5);
   expect(assemblyProgressAt(5300, 2)).toBe(2);
   expect(assemblyProgressAt(0, 2, true)).toBe(2);
+});
+
+it("keeps Pi and desktop assemblies in frame during every movement", () => {
+  const piLesson: VisualLesson = { ...lesson, title: "Raspberry Pi 5 camera setup", parts: [
+    { id: "pi", label: "Raspberry Pi 5", explanation: "Host board", x: .5, y: .2 },
+    { id: "cable", label: "Ribbon cable", explanation: "Adapter", x: .5, y: .5 },
+    { id: "camera", label: "Camera Module 3", explanation: "Image sensor", x: .5, y: .8 },
+  ] };
+  const desktopLesson: VisualLesson = { ...lesson, title: "Desktop computer assembly", parts: [
+    "Case", "Motherboard", "CPU", "RAM", "Power supply",
+  ].map((label, index) => ({ id: `part${index}`, label, explanation: label, x: .5, y: .5 })) };
+  for (const spec of [
+    raspberryPiCameraTemplate(piLesson, "Show the camera connection", true)!,
+    desktopComputerTemplate(desktopLesson, "Show desktop assembly", true)!,
+  ]) {
+    const model = makeSubjectScene(spec);
+    const assembledPoints = sceneGeometryCorners(model.root);
+    const assembledBounds = new THREE.Box3().setFromPoints(assembledPoints);
+    applyAssemblyProgress(model, 0);
+    const startingPoints = sceneGeometryCorners(model.root);
+    const startingBounds = assembledBounds.clone().union(new THREE.Box3().setFromPoints(startingPoints));
+    const camera = new THREE.PerspectiveCamera(38, 1.45, .1, 100);
+    const steps = spec.assembly!.length;
+    for (let progress = 0; progress <= steps; progress += .25) {
+      applyAssemblyProgress(model, progress);
+      const completion = progress / steps;
+      const center = assemblyCameraFrame(startingBounds, assembledBounds, completion, camera.fov, camera.aspect).center;
+      for (const azimuth of [.38, .9]) {
+        const elevation = .62;
+        const distance = THREE.MathUtils.lerp(
+          cameraDistanceForPoints(startingPoints, center, azimuth, elevation, camera.fov, camera.aspect),
+          cameraDistanceForPoints(assembledPoints, center, azimuth, elevation, camera.fov, camera.aspect), completion);
+        camera.position.set(center.x + Math.sin(azimuth) * Math.cos(elevation) * distance,
+          center.y + Math.sin(elevation) * distance, center.z + Math.cos(azimuth) * Math.cos(elevation) * distance);
+        camera.lookAt(center); camera.updateMatrixWorld(true);
+        for (const point of sceneGeometryCorners(model.root)) {
+          const projected = point.clone().project(camera);
+          expect(Math.abs(projected.x), `${spec.subject} at step ${progress}`).toBeLessThan(1);
+          expect(Math.abs(projected.y), `${spec.subject} at step ${progress}`).toBeLessThan(1);
+        }
+      }
+    }
+  }
+});
+
+it("replays assembly for other physical subjects without moving their fixed base", () => {
+  const examples: SceneSpec[] = [
+    { version: 1, subject: "Bicycle front wheel", fidelity: "conceptual", primitives: [
+      { partId: "fork", kind: "box", position: [0, 1, 0], scale: [.45, 2, .3], rotation: [0, 0, 0], color: "#555555" },
+      { partId: "axle", kind: "cylinder", position: [0, 0, 0], scale: [.4, .6, .4], rotation: [0, 0, Math.PI / 2], color: "#999999" },
+      { partId: "wheel", kind: "torus", position: [0, 0, 0], scale: [2, 2, .2], rotation: [0, 0, 0], color: "#222222" },
+    ], anchors: [
+      { partId: "fork", position: [0, 1, 0] }, { partId: "axle", position: [0, 0, 0] }, { partId: "wheel", position: [0, -1, 0] },
+    ], assembly: [
+      { partId: "axle", from: [0, 0, 1.4], instruction: "Seat the axle in the fork." },
+      { partId: "wheel", from: [0, -1.3, 1.4], instruction: "Move the wheel onto the axle." },
+    ] },
+    { version: 1, subject: "Desk lamp", fidelity: "conceptual", primitives: [
+      { partId: "stem", kind: "cylinder", position: [0, 0, 0], scale: [.3, 2, .3], rotation: [0, 0, 0], color: "#555555" },
+      { partId: "bulb", kind: "sphere", position: [0, 1.1, 0], scale: [.6, .6, .6], rotation: [0, 0, 0], color: "#ffffcc" },
+      { partId: "shade", kind: "cone", position: [0, 1.6, 0], scale: [1.2, .9, 1.2], rotation: [0, 0, 0], color: "#336699" },
+    ], anchors: [
+      { partId: "stem", position: [0, 0, 0] }, { partId: "bulb", position: [0, 1.1, 0] }, { partId: "shade", position: [0, 1.6, 0] },
+    ], assembly: [
+      { partId: "bulb", from: [1.2, .4, 0], instruction: "Fit the bulb in the socket." },
+      { partId: "shade", from: [0, 1.3, .4], instruction: "Lower the shade onto the stem." },
+    ] },
+  ];
+  for (const spec of examples) {
+    const model = makeSubjectScene(spec);
+    const fixedId = spec.anchors[0].partId;
+    const fixedPosition = model.partMeshes[fixedId][0].position.clone();
+    const movingIds = spec.assembly!.map((step) => step.partId);
+    applyAssemblyProgress(model, 0);
+    expect(model.partMeshes[fixedId][0].position.equals(fixedPosition)).toBe(true);
+    expect(movingIds.every((id) => !model.partMeshes[id][0].position.equals(model.partPositions[id][0]))).toBe(true);
+    applyAssemblyProgress(model, 1);
+    expect(model.partMeshes[movingIds[0]][0].position.equals(model.partPositions[movingIds[0]][0])).toBe(true);
+    expect(model.partMeshes[movingIds[1]][0].position.equals(model.partPositions[movingIds[1]][0])).toBe(false);
+    applyAssemblyProgress(model, 2);
+    expect(movingIds.every((id) => model.partMeshes[id][0].position.equals(model.partPositions[id][0]))).toBe(true);
+    applyAssemblyProgress(model, 0);
+    expect(movingIds.every((id) => !model.partMeshes[id][0].position.equals(model.partPositions[id][0]))).toBe(true);
+  }
 });
 
 it("reports a missing WebGL context for the host to display its 2D fallback", () => {
