@@ -3,7 +3,7 @@ import { plainAnswer } from "./plain-answer.js";
 import { requestedVisualDimension, wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
 
 type Point = { x: number; y: number };
-type Annotation =
+export type Annotation =
   | { id: string; type: "arrow"; from: Point; to: Point; label?: string; color?: string }
   | { id: string; type: "rectangle"; at: Point; width: number; height: number; label?: string; color?: string }
   | { id: string; type: "ellipse"; at: Point; radiusX: number; radiusY: number; label?: string; color?: string }

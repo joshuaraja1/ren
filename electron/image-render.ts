@@ -45,7 +45,7 @@ export async function generateIllustration(lesson: VisualLesson, apiKey: string,
   const response = await fetcher(`https://api.openai.com/v1/images/${editing ? "edits" : "generations"}`, {
     method: "POST",
     headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-    body: JSON.stringify({ model: "gpt-image-2.6-flare", complexity: "medium", ...(referenceImage ? { images: [{ image_url: referenceImage }] } : {}), prompt: imagePrompt(lesson, editing), size: "1024x1024", quality: "medium", background: "transparent", output_format: "png", n: 1, stream: true, partial_images: 1 }),
+    body: JSON.stringify({ model: "gpt-image-2.6-flare", complexity: "medium", ...(referenceImage ? { images: [{ image_url: referenceImage }] } : {}), prompt: imagePrompt(lesson, editing), size: "1024x1024", quality: "medium", background: "transparent", output_format: "png", n: 1, stream: true }),
     redirect: "error",
     signal,
   });

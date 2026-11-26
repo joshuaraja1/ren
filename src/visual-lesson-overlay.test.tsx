@@ -56,6 +56,23 @@ it("shows a 2D vector diagram immediately and after an image fails", () => {
   expect(container.querySelector(".visual-lesson-vector-fallback line")).toBeInTheDocument();
 });
 
+it("reveals an automatic 2D illustration with its labels and pointers in one render", () => {
+  const lesson: VisualLesson = {
+    version: 1, dimension: 2, layout: "centered", pendingIllustration: true, title: "Bicycle power path",
+    placement: { x: .1, y: .1, width: .8, height: .8 },
+    parts: [{ id: "chainring", label: "Chainring", explanation: "Pulls the chain.", x: .3, y: .5 }, { id: "wheel", label: "Wheel", explanation: "Moves the bicycle.", x: .7, y: .5 }],
+    connections: [{ from: "chainring", to: "wheel", label: "drives" }],
+  };
+  const { container, rerender } = render(<VisualLessonOverlay lesson={lesson} />);
+  expect(container).toBeEmptyDOMElement();
+  rerender(<VisualLessonOverlay lesson={lesson} illustration={{ image: "data:image/png;base64,dGVzdA==", preview: false, width: 1024, height: 1024, registration: { chainring: { x: .3, y: .5 }, wheel: { x: .7, y: .5 } } }} />);
+  expect(container.querySelector(".visual-lesson-illustration img")).toBeInTheDocument();
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(2);
+  expect(container.querySelectorAll(".illustrated-lesson-lines line")).toHaveLength(2);
+  rerender(<VisualLessonOverlay lesson={{ ...lesson, pendingIllustration: false }} />);
+  expect(container.querySelector(".visual-lesson-vector-fallback line")).toBeInTheDocument();
+});
+
 it("shows a labeled vector preview while a subject-specific 3D model is planned", () => {
   const lesson: VisualLesson = {
     version: 1, dimension: 3, layout: "centered", title: "Heart valves", placement: { x: .1, y: .1, width: .8, height: .8 },

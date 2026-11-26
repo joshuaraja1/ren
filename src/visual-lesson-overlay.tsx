@@ -50,6 +50,7 @@ function usePartPaging(lesson: VisualLesson, enabled = true) {
 }
 
 export function VisualLessonOverlay({ lesson, illustration }: { lesson: VisualLesson; illustration?: Illustration | null }) {
+  if (lesson.pendingIllustration && !illustration) return null;
   if (lesson.layout === "centered" && lesson.model) return <InteractiveGenericLesson lesson={lesson} />;
   if (lesson.layout === "centered" && interactiveSceneFor(lesson) === "f35b-hover") return <InteractiveJetLesson lesson={lesson} />;
   if (lesson.layout === "centered" && interactiveSceneFor(lesson) === "conceptual-3d") return <InteractiveGenericLesson lesson={lesson} />;
@@ -198,7 +199,7 @@ function IllustratedLesson({ lesson, illustration, box }: { lesson: VisualLesson
       <svg className="visual-lesson-lines illustrated-lesson-lines" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
         {verified.map(({ part, side, slot, anchor }) => <g key={part.id}><line x1={side === "left" ? 170 : 830} y1={slot * 1000} x2={anchor!.x * 1000} y2={anchor!.y * 1000} /><circle cx={anchor!.x * 1000} cy={anchor!.y * 1000} r="4" /></g>)}
       </svg>
-      {mapped.map(({ part, side, slot, anchor }, index) => <div key={part.id} className={`visual-lesson-part illustrated-lesson-part ${side}${anchor ? " is-located" : " is-unlocated"}`} aria-hidden="true" style={{ left: side === "left" ? "0%" : "83%", top: `${slot * 100}%`, animationDelay: `${index * 55}ms` }}><strong>{part.label}</strong><small>{part.explanation}</small></div>)}
+      {mapped.map(({ part, side, slot, anchor }) => <div key={part.id} className={`visual-lesson-part illustrated-lesson-part ${side}${anchor ? " is-located" : " is-unlocated"}`} aria-hidden="true" style={{ left: side === "left" ? "0%" : "83%", top: `${slot * 100}%` }}><strong>{part.label}</strong><small>{part.explanation}</small></div>)}
     </>
     {(pageCount > 1 || (vectorReady && lesson.dimension === 3)) && <div className="interactive-jet-note" aria-hidden="true">{vectorReady && lesson.dimension === 3 ? "Building rotatable 3D model · " : ""}{pageCount > 1 ? `Parts ${page * pageSize + 1}–${Math.min((page + 1) * pageSize, lesson.parts.length)} of ${lesson.parts.length} · hold cursor in a top corner for more` : "Part guide preview"}</div>}
   </section>;

@@ -32,7 +32,7 @@ describe("illustration adapter", () => {
       expect(body.stream).toBe(true);
       expect(body.model).toBe("gpt-image-2.6-flare");
       expect(body.complexity).toBe("medium");
-      expect(body.partial_images).toBe(1);
+      expect(body.partial_images).toBeUndefined();
       expect(body.background).toBe("transparent");
       expect(body.prompt).not.toContain("data:image");
       return new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(event("image_generation.partial_image") + event("image_generation.completed"))); controller.close(); } }), { status: 200 });

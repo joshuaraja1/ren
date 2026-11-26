@@ -8,6 +8,17 @@ const down = (keycode: number, overrides: Partial<{ altKey: boolean; metaKey: bo
   ({ keycode, altKey: false, metaKey: false, shiftKey: false, ...overrides });
 
 describe("TripleControlGesture", () => {
+  it("does not count a long Control hold as a tap", () => {
+    const toggle = vi.fn();
+    const gesture = new TripleControlGesture(controlKeys, toggle);
+    gesture.keyDown({ keycode: CTRL, altKey: false, metaKey: false, shiftKey: false }, 100);
+    gesture.keyUp({ keycode: CTRL }, 1_000);
+    for (const start of [1_100, 1_250]) {
+      gesture.keyDown({ keycode: CTRL, altKey: false, metaKey: false, shiftKey: false }, start);
+      gesture.keyUp({ keycode: CTRL }, start + 50);
+    }
+    expect(toggle).not.toHaveBeenCalled();
+  });
   it("toggles after three released Control taps and can toggle again", () => {
     const toggle = vi.fn();
     const gesture = new TripleControlGesture(controlKeys, toggle);

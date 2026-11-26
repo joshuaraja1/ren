@@ -17,6 +17,8 @@ export type VisualConnection = {
 export type VisualLesson = {
   version: 1;
   dimension?: 2 | 3;
+  /** Renderer-only: reveal the lesson after its requested image is complete. */
+  pendingIllustration?: boolean;
   layout?: "centered";
   scene?: "f35b-hover" | "conceptual-3d";
   model?: SceneSpec;

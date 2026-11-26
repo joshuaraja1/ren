@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld("ren", {
   enableCircleInput: () => ipcRenderer.invoke("ren:enable-circle-input"),
   requestPermissions: () => ipcRenderer.invoke("ren:request-permissions"),
   openPermissionSettings: (kind?: "screen" | "microphone") => ipcRenderer.invoke("ren:open-permission-settings", kind),
-  setExpanded: (expanded: boolean) => ipcRenderer.invoke("ren:set-expanded", expanded),
+  setExpanded: (expanded: boolean, tall?: boolean) => ipcRenderer.invoke("ren:set-expanded", expanded, tall),
   setCompanionVisible: (visible: boolean) => ipcRenderer.invoke("ren:set-companion-visible", visible),
   captureContext: (preserveVisual?: boolean, question?: string) => ipcRenderer.invoke("ren:capture-context", preserveVisual === true, question),
   wakeAvailable: () => ipcRenderer.invoke("ren:wake-available"),

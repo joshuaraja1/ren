@@ -39,7 +39,7 @@ html, body, #overlay-root { width: 100%; height: 100%; margin: 0; overflow: hidd
 .illustrated-lesson .visual-lesson-illustration { opacity: 1; }
 .illustrated-lesson-lines { z-index: 1; }
 .illustrated-lesson-lines circle { fill: #f4c372; stroke: #173438; stroke-width: 3; vector-effect: non-scaling-stroke; }
-.illustrated-lesson-part { z-index: 2; box-sizing: border-box; width: 17%; min-width: 0; max-width: none; transform: translateY(-50%); overflow-wrap: anywhere; }
+.illustrated-lesson-part { z-index: 2; box-sizing: border-box; width: 17%; min-width: 0; max-width: none; transform: translateY(-50%); overflow-wrap: anywhere; animation: none; }
 .illustrated-lesson-part i { display: none; }
 .illustrated-lesson-part.is-unlocated { opacity: .82; border-color: rgba(244,195,114,.45); }
 .centered-stage::before { content: ""; position: absolute; inset: 5% 17%; border-radius: 50%; background: radial-gradient(ellipse at center, rgba(9,24,27,.56), rgba(9,24,27,.24) 55%, transparent 78%); }
