@@ -107,8 +107,10 @@ const REQUESTED_VISUAL_PROMPT = `The learner explicitly requested a diagram or r
 Set retainVisual:false; this is a new drawing request.
 If the named object is not visible on screen, derive the subject from the learner's
 request and set referenceRegion:null. Never say that lack of a visible reference prevents
-you from drawing it. Choose the essential physical or functional parts required to explain
-the requested subject (usually 4-8, up to 12 for a complex system). Do not substitute
+you from drawing it. When the learner names the components to label, use those
+components as the visualLesson parts; add another only when it is necessary to
+understand a connection they asked about. Choose the essential physical or functional
+parts required to explain the requested subject (usually 4-8, up to 12 for a complex system). Do not substitute
 an F-35, phone, or generic relationship graph when a different subject was requested. For each part,
 write a short, specific explanation (about 40-110 characters) of what it does and why
 it matters. Make the title 3-6 words about the mechanism, without words such as

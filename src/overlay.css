@@ -67,7 +67,12 @@ html, body, #overlay-root { width: 100%; height: 100%; margin: 0; overflow: hidd
 .interactive-jet-lines { z-index: 1; }
 .interactive-jet-lines circle { fill: #f4c372; stroke: #173438; stroke-width: 3; vector-effect: non-scaling-stroke; }
 .interactive-jet-note { position: absolute; bottom: 1%; left: 50%; transform: translateX(-50%); color: #d1e0dc; background: rgba(18,37,40,.7); border-radius: 5px; padding: 3px 7px; font: 10px/1.2 "Avenir Next", sans-serif; white-space: nowrap; }
+.interactive-assembly-step { position: absolute; z-index: 3; bottom: 5%; left: 50%; display: grid; gap: 3px; width: min(42%, 360px); transform: translateX(-50%); padding: 8px 12px; border: 1px solid rgba(244,195,114,.65); border-radius: 9px; background: rgba(18,37,40,.92); color: #f7f0dc; text-align: center; font: 11px/1.3 "Avenir Next", sans-serif; }
+.interactive-assembly-step strong { color: #f4c372; font-size: 12px; }
 .interactive-jet-lesson .visual-lesson-part { background: rgba(18,37,40,.82); }
+.interactive-model-lesson .visual-lesson-part { padding: 5px 8px; min-height: 0; }
+.interactive-model-lesson .visual-lesson-part strong { font-size: 12px; line-height: 1.2; }
+.interactive-model-lesson .interactive-jet-heading { max-width: 82%; white-space: normal; }
 .interactive-jet-lesson .visual-lesson-part.is-hidden-part { opacity: .72; }
 .interactive-jet-lesson .visual-lesson-part em { color: #f4c372; font: 700 10px/1.2 "Avenir Next", sans-serif; font-style: normal; }
 .jet-fallback { fill: #6e8190; stroke: #bed5d9; stroke-width: 5; }

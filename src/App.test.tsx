@@ -47,6 +47,46 @@ describe("Ren voice interface", () => {
     } finally { window.ren = undefined; }
   });
 
+  it("does not turn background audio into dictation while a typed visual request is processing", async () => {
+    let processAudio: ((event: { inputBuffer: { getChannelData(channel: number): Float32Array } }) => void) | null = null;
+    const originalAudioContext = globalThis.AudioContext;
+    const originalMediaDevices = navigator.mediaDevices;
+    class FakeAudioContext {
+      sampleRate = 48_000;
+      state = "running";
+      destination = {};
+      createMediaStreamSource() { return { connect() {} }; }
+      createScriptProcessor() { return { connect() {}, disconnect() {}, set onaudioprocess(listener: typeof processAudio) { processAudio = listener; } }; }
+      async close() {}
+    }
+    globalThis.AudioContext = FakeAudioContext as unknown as typeof AudioContext;
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } });
+    const speechStart = vi.fn(async () => true);
+    const ask = vi.fn(async () => new Promise<never>(() => {}));
+    window.ren = {
+      platform: "darwin", permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
+      wakeAvailable: async () => true, wakeStart: async () => true, wakeFeed: async () => false, wakeStop: async () => {},
+      speechAvailable: async () => true, speechStart, speechStop: async () => {},
+      onFocusSelection: () => () => {}, setExpanded: async () => {}, setCompanionVisible: async () => {},
+      captureContext: async () => ({ frames: [], pointer: { x: .5, y: .5 }, contextToken: "visual-1" }), ask,
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      await waitFor(() => expect(processAudio).toBeTypeOf("function"));
+      fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
+      fireEvent.change(screen.getByRole("textbox", { name: /ask ren/i }), { target: { value: "Show a 3D computer assembly" } });
+      fireEvent.click(screen.getByRole("button", { name: /send ren prompt/i }));
+      await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({ question: "Show a 3D computer assembly" })));
+      act(() => { for (let index = 0; index < 7; index++) processAudio?.({ inputBuffer: { getChannelData: () => new Float32Array(2048).fill(.04) } }); });
+      expect(speechStart).not.toHaveBeenCalled();
+      expect(ask).toHaveBeenCalledTimes(1);
+    } finally {
+      window.ren = undefined;
+      globalThis.AudioContext = originalAudioContext;
+      Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: originalMediaDevices });
+    }
+  });
+
   it("keeps Chat visible for a typed follow-up and routes Agent mode to a job", async () => {
     const setExpanded = vi.fn(async () => {});
     const ask = vi.fn(async () => ({ answer: "Here is the answer.", annotations: [], provider: "demo" as const }));

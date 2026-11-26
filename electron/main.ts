@@ -18,7 +18,7 @@ import { hasMeaningfulMotion } from "./frame-motion.js";
 import { isSameStableScreen } from "./screen-continuity.js";
 import { canPlaceSpatialVisual } from "./visual-safety.js";
 import { generateIllustration, imageManifest, imagePrompt } from "./image-render.js";
-import { generateSceneSpec } from "./scene-generation.js";
+import { generateSceneSpec, wantsAssemblySequence } from "./scene-generation.js";
 import { generateHostedIllustration } from "./hosted-image-render.js";
 import { filterOpaquePositions, locateImageParts, type ImageRegistration } from "./image-registration.js";
 import { validateVisualLesson } from "./visual-lesson.js";
@@ -35,7 +35,6 @@ import { wantsCurrentScreen, wantsSpatialGuidance } from "./screen-intent.js";
 
 type Illustration = { image: string; preview: boolean; width: number; height: number; registration?: ImageRegistration };
 type ActiveVisual = { lesson: VisualLesson; displayId: number; createdAt: number; referenceImage?: string };
-type ScenePreview = { lesson: VisualLesson; displayId: number; owner: string; generation: number };
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 let mainWindow: BrowserWindow | null = null;
@@ -51,7 +50,6 @@ let circleInputActive = false;
 const captureSession = new CaptureSession();
 let lastCaptureData: { token: string; generation: number; frames: string[]; pointer: { x: number; y: number }; focus?: { x: number; y: number; width: number; height: number }; firstSample: Uint8Array; secondSample: Uint8Array; dynamicContent: boolean; thumbnailSize: { width: number; height: number } } | null = null;
 let lastVisualLesson: ActiveVisual | null = null;
-let pendingScenePreview: ScenePreview | null = null;
 let screenCaptureBusy = false;
 let imageRenderAbort: AbortController | null = null;
 let activeAskRequest: ActiveAskRequest | null = null;
@@ -70,7 +68,6 @@ let focusOverlaySnapshot: {
   lesson: VisualLesson | null;
   illustration: Illustration | null;
   visual: ActiveVisual | null;
-  scenePreview: ScenePreview | null;
   bounds: Electron.Rectangle;
   visible: boolean;
   generation: number;
@@ -302,7 +299,7 @@ app.whenReady().then(() => {
   });
   let lastOrbitPointer = "";
   const orbitCursorTimer = setInterval(() => {
-    const visual = pendingScenePreview?.generation === visualGeneration ? pendingScenePreview : lastVisualLesson;
+    const visual = lastVisualLesson;
     if (!visual || visual.lesson.layout !== "centered" || !overlayWindow?.isVisible()) return;
     const display = screen.getAllDisplays().find((item) => item.id === visual.displayId);
     if (!display) return;
@@ -322,7 +319,6 @@ app.whenReady().then(() => {
       lesson: overlayLesson,
       illustration: overlayIllustration,
       visual: lastVisualLesson,
-      scenePreview: pendingScenePreview,
       bounds: overlayWindow.getBounds(),
       visible: overlayWindow.isVisible(),
       generation: visualGeneration,
@@ -345,7 +341,6 @@ app.whenReady().then(() => {
     if (!snapshot) return;
     if (snapshot.generation !== visualGeneration) return;
     lastVisualLesson = snapshot.visual;
-    pendingScenePreview = snapshot.scenePreview;
     overlayWindow.setBounds(snapshot.bounds);
     if (overlayLesson !== snapshot.lesson) sendOverlayLesson(snapshot.lesson);
     if (overlayIllustration !== snapshot.illustration) sendOverlayIllustration(snapshot.illustration);
@@ -361,10 +356,6 @@ app.whenReady().then(() => {
       lastVisualLesson = null;
       sendOverlayIllustration(null);
     }
-    if (pendingScenePreview && pendingScenePreview.displayId !== displayId) {
-      visualGeneration += 1;
-      pendingScenePreview = null;
-    }
     focusOverlaySnapshot = null;
   }
   function invalidateSpatialContext() {
@@ -378,7 +369,6 @@ app.whenReady().then(() => {
     captureSession.invalidate();
     lastCaptureData = null;
     lastVisualLesson = null;
-    pendingScenePreview = null;
     sendOverlayAnnotations([]);
     sendOverlayLesson(null);
     sendOverlayIllustration(null);
@@ -689,18 +679,10 @@ app.whenReady().then(() => {
     let lesson = reuseVisual ? priorVisualLesson! : !explicitVisual ? null : transformPriorVisual && priorVisualLesson ? priorVisualLesson : display && (spatialAllowed || explicitVisual) ? validateVisualLesson(response.visualLesson) : null;
     if (lesson && explicitVisual && display) {
       const dimension = requestedVisualDimension(value.question);
-      lesson = { ...lesson, dimension };
+      lesson = { ...lesson, dimension, playAssembly: /\b(?:play|replay|animate)\s+(?:the\s+)?(?:assembly|assembly steps)\b/i.test(value.question) };
       lesson = tagRequestedInteractiveScene(lesson, value.question);
-      if (dimension === 3 && !interactiveSceneFor(lesson) && credentials) {
-        // The subject and parts are already known. Show a vector preview now,
-        // while the separate geometry request builds the rotatable model.
-        const preview = centerRequestedLesson(lesson, display.bounds.width, display.bounds.height);
-        overlayWindow?.setBounds(display.bounds);
-        sendOverlayAnnotations([]);
-        sendOverlayIllustration(null);
-        sendOverlayLesson(preview);
-        overlayWindow?.showInactive();
-        pendingScenePreview = { lesson: preview, displayId, owner: value.contextToken, generation: visualGeneration };
+      if (dimension === 3 && (!interactiveSceneFor(lesson) || (wantsAssemblySequence(value.question) && !lesson.model?.assembly)) && credentials) {
+        // Keep the overlay hidden until geometry and labels are ready together.
         try {
           const model = await generateSceneSpec(lesson, value.question, credentials, askController.signal);
           lesson = { ...lesson, model };
@@ -775,7 +757,6 @@ app.whenReady().then(() => {
       if (pendingVisualDecision && lastVisualLesson && capture.generation === visualGeneration) overlayWindow?.showInactive();
       throw error;
     } finally {
-      if (pendingScenePreview?.owner === value.contextToken) pendingScenePreview = null;
       if (activeAskRequest?.controller === askController) activeAskRequest = null;
       pendingVisualDecision = false;
     }
@@ -863,7 +844,6 @@ app.whenReady().then(() => {
     captureSession.invalidate();
     lastCaptureData = null;
     lastVisualLesson = null;
-    pendingScenePreview = null;
     sendOverlayAnnotations([]);
     sendOverlayLesson(null);
     sendOverlayIllustration(null);

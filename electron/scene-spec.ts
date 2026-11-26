@@ -6,6 +6,8 @@ export type ScenePrimitive = {
   scale: [number, number, number];
   rotation: [number, number, number];
   color: string;
+  /** Translucent housings can expose internal parts without removing them. */
+  opacity?: number;
   /** Local XY outline for an extruded silhouette, normalized around its center. */
   outline?: [number, number][];
 };
@@ -16,6 +18,8 @@ export type SceneSpec = {
   fidelity: "conceptual";
   primitives: ScenePrimitive[];
   anchors: { partId: string; position: [number, number, number] }[];
+  /** Ordered illustrative assembly. `from` is an offset from the final position. */
+  assembly?: { partId: string; from: [number, number, number]; instruction: string }[];
 };
 
 const record = (value: unknown): Record<string, unknown> | null =>
@@ -73,10 +77,12 @@ export function validateSceneSpec(value: unknown, partIds: Iterable<string>): Sc
     const scale = vector(primitive.scale, .02, 5);
     const rotation = vector(primitive.rotation, -Math.PI * 2, Math.PI * 2);
     if (!position || !scale || !rotation || typeof primitive.color !== "string" || !/^#[0-9a-f]{6}$/i.test(primitive.color)) return null;
+    const opacity = primitive.opacity === undefined ? undefined : primitive.opacity;
+    if (opacity !== undefined && (typeof opacity !== "number" || !Number.isFinite(opacity) || opacity < .15 || opacity > 1)) return null;
     const shape = primitive.kind === "extrusion" ? outline(primitive.outline) : null;
     if (primitive.kind === "extrusion" && !shape) return null;
     represented.add(primitive.partId);
-    primitives.push({ partId: primitive.partId, kind: primitive.kind as ScenePrimitive["kind"], position, scale, rotation, color: primitive.color, ...(shape ? { outline: shape } : {}) });
+    primitives.push({ partId: primitive.partId, kind: primitive.kind as ScenePrimitive["kind"], position, scale, rotation, color: primitive.color, ...(opacity !== undefined ? { opacity } : {}), ...(shape ? { outline: shape } : {}) });
   }
   if (represented.size !== ids.size) return null;
   const center = primitives[0].position;
@@ -96,5 +102,20 @@ export function validateSceneSpec(value: unknown, partIds: Iterable<string>): Sc
     anchors.push({ partId: anchor.partId, position });
   }
   if (anchored.size !== ids.size) return null;
-  return { version: 1, subject, fidelity: "conceptual", primitives, anchors };
+  let assembly: SceneSpec["assembly"];
+  if (Array.isArray(raw.assembly) && raw.assembly.length === ids.size - 1) {
+    const steps: NonNullable<SceneSpec["assembly"]> = [];
+    const seen = new Set<string>();
+    for (const item of raw.assembly) {
+      const step = record(item);
+      if (!step || typeof step.partId !== "string" || !ids.has(step.partId) || seen.has(step.partId)) break;
+      const from = vector(step.from, -5, 5);
+      const instruction = typeof step.instruction === "string" ? step.instruction.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 140) : "";
+      if (!from || Math.hypot(...from) < .3 || !instruction) break;
+      seen.add(step.partId);
+      steps.push({ partId: step.partId, from, instruction });
+    }
+    if (steps.length === raw.assembly.length) assembly = steps;
+  }
+  return { version: 1, subject, fidelity: "conceptual", primitives, anchors, ...(assembly ? { assembly } : {}) };
 }

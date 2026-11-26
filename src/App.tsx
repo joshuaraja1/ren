@@ -303,7 +303,7 @@ export function App() {
       if (!transcript || disposed || voicePausedRef.current || Date.now() < suppressSpeechUntilRef.current) return;
       if (alwaysOnRef.current) {
         if (/^(?:stop listening|that(?:'|’)s all|goodbye|bye(?: ren)?|cancel)[.!\s]*$/i.test(transcript)) void endVoiceConversation();
-        else void askQuestion(transcript);
+        else void askQuestion(transcript, true);
       }
       else handleAmbientTranscript(transcript);
     };
@@ -523,7 +523,7 @@ export function App() {
       const transcript = (await window.ren.speechFinish()).replace(/^(?:hey\s+)?(?:ren|run)\b[.,:;\s-]*/i, "").trim();
       if (session !== dictationSessionRef.current) return;
       if (/^(?:stop listening|that(?:'|’)s all|goodbye|bye(?: ren)?|cancel)[.!\s]*$/i.test(transcript)) { await endVoiceConversation(); return; }
-      if (transcript) await askQuestion(transcript);
+      if (transcript) await askQuestion(transcript, true);
       else {
         returnToWakeMode();
         if (!automatic || voicedFramesRef.current >= 2) setError("I didn't catch that. Tap the microphone and try again.");
@@ -754,7 +754,7 @@ export function App() {
     showCompanion();
     keepAwake(); setVoiceState("listening");
     const remainder = wakeMatch ? transcript.slice((wakeMatch.index ?? 0) + wakeMatch[0].length).replace(/^[,.:;\s-]+/, "") : transcript;
-    if (remainder) void askQuestion(remainder);
+    if (remainder) void askQuestion(remainder, true);
     else if (nativeWakeRef.current && nativeSpeechRef.current) void startNativeDictation();
     else greet(nativeWakeRef.current ? "Hey, I'm here. Ask me about what you're pointing at." : undefined);
   }
@@ -770,7 +770,7 @@ export function App() {
     finally { if (captureInFlightRef.current === capture) captureInFlightRef.current = null; }
   }
 
-  async function askQuestion(rawQuestion: string) {
+  async function askQuestion(rawQuestion: string, fromVoice = false) {
     const clean = rawQuestion.trim(); if (!clean) return;
     if (/^(?:cancel|stop) (?:the |my )?(?:agent )?job[.!?]*$/i.test(clean) && agentJobIdRef.current && window.ren?.cancelAgentJob) {
       interruptCurrentResponse();
@@ -788,7 +788,9 @@ export function App() {
     const history = messagesRef.current.slice(-8).map(({ role, content }) => ({ role, content }));
     queuedIllustrationRef.current = false;
     askingRef.current = true;
-    if (nativeSpeechRef.current && !voicePausedRef.current) conversationOpenRef.current = true;
+    // Room audio may be playing while the user types. Only an active voice
+    // conversation can use voice activity to interrupt an in-flight answer.
+    conversationOpenRef.current = fromVoice && nativeSpeechRef.current && !voicePausedRef.current;
     showCompanion();
     if (expandedRef.current && !visionOpenRef.current && promptMode !== "chat") void setExpanded(false);
     awaitingFollowUpRef.current = false;

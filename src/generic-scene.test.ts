@@ -4,7 +4,7 @@ import { render } from "@testing-library/react";
 import { vi } from "vitest";
 import type { VisualLesson } from "../electron/visual-lesson";
 import type { SceneSpec } from "../electron/scene-spec";
-import { GenericScene, makeGenericScene, makeSubjectScene, projectGenericAnchors } from "./generic-scene";
+import { GenericScene, applyAssemblyProgress, makeGenericScene, makeSubjectScene, projectGenericAnchors } from "./generic-scene";
 
 const lesson: VisualLesson = {
   version: 1, title: "Camera signal path", placement: { x: 0, y: 0, width: 1, height: 1 },
@@ -79,6 +79,31 @@ it("renders subject geometry from the model spec and keeps labels tied to its re
   const otherSide = projectGenericAnchors(anchors, root, camera);
   expect(Object.keys(front)).toEqual(["lens", "sensor", "processor"]);
   expect(front.lens.x).not.toBe(otherSide.lens.x);
+});
+
+it("moves a phone display into place step by step while preserving its final anchor and a translucent housing", () => {
+  const spec: SceneSpec = {
+    version: 1, subject: "Phone", fidelity: "conceptual",
+    primitives: [
+      { partId: "body", kind: "box", position: [0, 0, 0], scale: [2, 3, .4], rotation: [0, 0, 0], color: "#445566", opacity: .4 },
+      { partId: "display", kind: "box", position: [0, .4, .3], scale: [1.5, 1.8, .1], rotation: [0, 0, 0], color: "#aaccdd" },
+    ],
+    anchors: [{ partId: "body", position: [0, 0, 0] }, { partId: "display", position: [0, .4, .3] }],
+    assembly: [{ partId: "display", from: [0, 0, 2], instruction: "Lower the display into the housing." }],
+  };
+  const model = makeSubjectScene(spec, [{ from: "body", to: "display", label: "holds" }]);
+  const display = model.partMeshes.display[0];
+  applyAssemblyProgress(model, 0);
+  expect(display.position.z).toBeCloseTo(2.3);
+  expect(model.anchors.display.z).toBeCloseTo(2.3);
+  expect(model.connectionObjects.every((object) => !object.visible)).toBe(true);
+  applyAssemblyProgress(model, .5);
+  expect(display.position.z).toBeCloseTo(1.3);
+  applyAssemblyProgress(model, 1);
+  expect(display.position.z).toBeCloseTo(.3);
+  expect(model.anchors.display.z).toBeCloseTo(.3);
+  expect(model.connectionObjects.every((object) => object.visible)).toBe(true);
+  expect((model.partMeshes.body[0].material as THREE.MeshStandardMaterial).opacity).toBe(.4);
 });
 
 it("reports a missing WebGL context for the host to display its 2D fallback", () => {

@@ -48,4 +48,17 @@ describe("subject 3D scene contract", () => {
     expect(validateSceneSpec({ ...scene, primitives: [{ ...shaped, outline: [[-1, 0], [0, 0], [0, .5]] }, scene.primitives[1]] }, ["body", "display"])).toBeNull();
     expect(validateSceneSpec({ ...scene, primitives: [{ ...shaped, outline: [[-.5, -.5], [.5, .5], [.5, -.5], [-.5, .5]] }, scene.primitives[1]] }, ["body", "display"])).toBeNull();
   });
+
+  it("keeps a bounded assembly sequence and translucent housing without accepting arbitrary commands", () => {
+    const scene = valid();
+    const result = validateSceneSpec({ ...scene,
+      primitives: [{ ...scene.primitives[0], opacity: .32 }, scene.primitives[1]],
+      assembly: [{ partId: "display", from: [0, 0, 2], instruction: "Lower the display into the housing.", command: "run this" }],
+    }, ["body", "display"]);
+    expect(result?.primitives[0].opacity).toBe(.32);
+    expect(result?.assembly).toEqual([{ partId: "display", from: [0, 0, 2], instruction: "Lower the display into the housing." }]);
+    expect(result?.assembly?.[0]).not.toHaveProperty("command");
+    expect(validateSceneSpec({ ...scene, primitives: [{ ...scene.primitives[0], opacity: 0 }, scene.primitives[1]] }, ["body", "display"])).toBeNull();
+    expect(validateSceneSpec({ ...scene, assembly: [{ partId: "display", from: [20, 0, 0], instruction: "Wrong" }] }, ["body", "display"])?.assembly).toBeUndefined();
+  });
 });

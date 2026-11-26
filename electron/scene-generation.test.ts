@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { generateSceneSpec, wantsSubject3D } from "./scene-generation.js";
+import { generateSceneSpec, wantsAssemblySequence, wantsSubject3D } from "./scene-generation.js";
 import { validateVisualLesson } from "./visual-lesson.js";
 
 const lesson = validateVisualLesson({
@@ -27,6 +27,20 @@ describe("generic subject model generation", () => {
     expect(wantsSubject3D("Show a three-dimensional heart diagram")).toBe(true);
     expect(wantsSubject3D("Draw a diagram of this phone")).toBe(false);
     expect(wantsSubject3D("Draw a 2D flat diagram, not 3D")).toBe(false);
+  });
+
+  it("recognizes assembly and requires a usable step sequence", async () => {
+    expect(wantsAssemblySequence("Show the phone assembly step by step in 3D")).toBe(true);
+    expect(wantsAssemblySequence("Draw a phone diagram")).toBe(false);
+    const withAssembly = { ...model, assembly: [{ partId: "display", from: [0, 0, 2], instruction: "Place the display in the housing." }] };
+    const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      expect(body.messages[1].content).toContain('"assemblyRequested":true');
+      return reply(fetcher.mock.calls.length === 1 ? model : withAssembly);
+    }) as unknown as typeof fetch;
+    const result = await generateSceneSpec(lesson, "Show the phone assembly step by step in 3D", credentials, new AbortController().signal, fetcher);
+    expect(result.assembly).toHaveLength(1);
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
   it("sends bounded lesson data and returns validated physical primitives", async () => {

@@ -20,7 +20,8 @@ it("shows a projected machine and connected callouts when WebGL is unavailable",
     model: { version: 1, subject: "Pump", fidelity: "conceptual", primitives: [
       { partId: "motor", kind: "cylinder", position: [-1, 0, 0], scale: [1, 1, 1], rotation: [0, 0, 0], color: "#4689bb" },
       { partId: "impeller", kind: "sphere", position: [1, 0, 0], scale: [1, 1, 1], rotation: [0, 0, 0], color: "#d59d4e" },
-    ], anchors: [{ partId: "motor", position: [-1, 0, 0] }, { partId: "impeller", position: [1, 0, 0] }] },
+    ], anchors: [{ partId: "motor", position: [-1, 0, 0] }, { partId: "impeller", position: [1, 0, 0] }],
+    assembly: [{ partId: "impeller", from: [0, 0, 2], instruction: "Seat the impeller." }] },
   };
   const { container } = render(<VisualLessonOverlay lesson={lesson} />);
   await waitFor(() => expect(container.querySelector(".scene-fallback")).toBeInTheDocument());
@@ -28,6 +29,7 @@ it("shows a projected machine and connected callouts when WebGL is unavailable",
   expect(container.querySelector(".scene-fallback > line")).toBeInTheDocument();
   expect(container.querySelectorAll(".interactive-jet-lines line")).toHaveLength(2);
   expect(container).toHaveTextContent("3D view unavailable");
+  expect(container.querySelector(".interactive-assembly-step")).not.toBeInTheDocument();
 });
 
 it("shows a connected vector graph when conceptual 3D cannot start", async () => {
@@ -85,7 +87,7 @@ it("shows a labeled vector preview while a subject-specific 3D model is planned"
   expect(container).toHaveTextContent("Atrium");
 });
 
-it("shows every generated-model part without placing twelve callouts on top of each other", () => {
+it("shows every generated-model label together without sequential paging", () => {
   const listeners = new Set<(point: Point) => void>();
   const previous = window.ren;
   window.ren = { onOrbitPointer(listener: (point: Point) => void) { listeners.add(listener); return () => { listeners.delete(listener); }; } } as unknown as RenBridge;
@@ -100,27 +102,24 @@ it("shows every generated-model part without placing twelve callouts on top of e
     },
   };
   const { container, unmount } = render(<VisualLessonOverlay lesson={lesson} />);
-  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(6);
-  expect(container).toHaveTextContent("Parts 1–6 of 12");
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(12);
   expect(container).toHaveTextContent("Illustrative 3D model · approximate geometry");
   expect(container).toHaveTextContent("Part 1");
   vi.useFakeTimers();
   act(() => { for (const listener of listeners) listener({ x: .9, y: .5 }); });
-  expect(container).toHaveTextContent("Parts 1–6 of 12");
-  act(() => { for (const listener of listeners) listener({ x: .96, y: .04 }); vi.advanceTimersByTime(701); });
-  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(6);
-  expect(container).toHaveTextContent("Parts 7–12 of 12");
   expect(container).toHaveTextContent("Part 12");
-  expect(container.querySelectorAll(".illustrated-lesson-part.left")).toHaveLength(3);
-  expect(container.querySelectorAll(".illustrated-lesson-part.right")).toHaveLength(3);
+  act(() => { for (const listener of listeners) listener({ x: .96, y: .04 }); vi.advanceTimersByTime(701); });
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(12);
+  expect(container).toHaveTextContent("Part 12");
+  expect(container.querySelectorAll(".illustrated-lesson-part.left")).toHaveLength(6);
+  expect(container.querySelectorAll(".illustrated-lesson-part.right")).toHaveLength(6);
   const originalHeight = window.innerHeight;
   Object.defineProperty(window, "innerHeight", { configurable: true, value: 500 });
   act(() => window.dispatchEvent(new Event("resize")));
-  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(2);
-  expect(container).toHaveTextContent("Parts 1–2 of 12");
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(12);
   Object.defineProperty(window, "innerHeight", { configurable: true, value: 700 });
   act(() => window.dispatchEvent(new Event("resize")));
-  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(4);
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(12);
   Object.defineProperty(window, "innerHeight", { configurable: true, value: originalHeight });
   act(() => window.dispatchEvent(new Event("resize")));
   unmount();

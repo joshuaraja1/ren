@@ -60,19 +60,25 @@ export function VisualLessonOverlay({ lesson, illustration }: { lesson: VisualLe
 function InteractiveGenericLesson({ lesson }: { lesson: VisualLesson }) {
   const [anchors, setAnchors] = useState<Record<string, { x: number; y: number }>>({});
   const [unavailable, setUnavailable] = useState(false);
-  const { page, pageSize, pageCount, visibleParts } = usePartPaging(lesson);
+  const [assemblyStep, setAssemblyStep] = useState(0);
+  useLayoutEffect(() => { setAssemblyStep(0); setUnavailable(false); setAnchors({}); }, [lesson]);
+  const { page, pageSize, pageCount, visibleParts } = usePartPaging(lesson, !lesson.model);
   const placement = { left: `${lesson.placement.x * 100}%`, top: `${lesson.placement.y * 100}%`, width: `${lesson.placement.width * 100}%`, height: `${lesson.placement.height * 100}%` };
   const rows = Math.ceil(visibleParts.length / 2);
   const cards = visibleParts.map((part, index) => ({ part, side: index % 2 ? "right" as const : "left" as const, slot: .17 + .66 * (Math.floor(index / 2) + .5) / rows }));
   const kind = lesson.model ? "Illustrative 3D model" : "Conceptual 3D schematic";
+  const assembly = lesson.playAssembly ? lesson.model?.assembly : undefined;
+  const currentAssembly = assembly && assemblyStep > 0 && assemblyStep <= assembly.length ? assembly[assemblyStep - 1] : null;
   const shownAnchors = unavailable ? lesson.model ? sceneFallbackProjection(lesson.model).anchors : lessonVectorPositions(lesson) : anchors;
-  return <section className="visual-lesson interactive-jet-lesson centered-stage" style={placement} role="img" aria-label={`${lesson.title}. ${kind}. Move your cursor to rotate and inspect all parts. ${lesson.parts.map((part) => `${part.label}: ${part.explanation}`).join(" ")}`}>
-    {unavailable ? lesson.model ? <SceneFallback spec={lesson.model} connections={lesson.connections} /> : <div className="jet-scene"><LessonVectorFallback lesson={lesson} /></div> : <Suspense fallback={<div className="jet-scene" aria-hidden="true" />}><GenericScene lesson={lesson} onAnchors={setAnchors} onUnavailable={() => setUnavailable(true)} /></Suspense>}
+  const ready = unavailable || !lesson.model || lesson.parts.every((part) => Boolean(shownAnchors[part.id]));
+  return <section className={`visual-lesson interactive-jet-lesson centered-stage${lesson.model ? " interactive-model-lesson" : ""}`} style={{ ...placement, visibility: ready ? "visible" : "hidden" }} role="img" aria-label={`${lesson.title}. ${kind}. Move your cursor to rotate and inspect all parts. ${lesson.parts.map((part) => `${part.label}: ${part.explanation}`).join(" ")}`}>
+    {unavailable ? lesson.model ? <SceneFallback spec={lesson.model} connections={lesson.connections} /> : <div className="jet-scene"><LessonVectorFallback lesson={lesson} /></div> : <Suspense fallback={<div className="jet-scene" aria-hidden="true" />}><GenericScene lesson={lesson} onAnchors={setAnchors} onUnavailable={() => setUnavailable(true)} onAssemblyStep={setAssemblyStep} /></Suspense>}
     <div className="interactive-jet-heading" aria-hidden="true"><span>REN EXPLAINS</span><strong>{lesson.title}</strong><small>{unavailable ? "2D part guide · 3D view unavailable" : "Move your cursor to rotate and inspect parts"}</small></div>
     <svg className="visual-lesson-lines interactive-jet-lines" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
       {cards.map(({ part, side, slot }) => shownAnchors[part.id] && <g key={part.id}><line x1={side === "left" ? 180 : 820} y1={slot * 1000} x2={(.17 + .66 * shownAnchors[part.id].x) * 1000} y2={(.13 + .76 * shownAnchors[part.id].y) * 1000} /><circle cx={(.17 + .66 * shownAnchors[part.id].x) * 1000} cy={(.13 + .76 * shownAnchors[part.id].y) * 1000} r="4" /></g>)}
     </svg>
-    {cards.map(({ part, side, slot }) => <div key={part.id} className={`visual-lesson-part illustrated-lesson-part ${side}`} style={{ left: side === "left" ? "0%" : "82%", top: `${slot * 100}%` }} aria-hidden="true"><strong>{part.label}</strong><small>{part.explanation}</small></div>)}
+    {cards.map(({ part, side, slot }) => <div key={part.id} className={`visual-lesson-part illustrated-lesson-part ${side}`} style={{ left: side === "left" ? "0%" : "82%", top: `${slot * 100}%` }} aria-hidden="true"><strong>{part.label}</strong>{!lesson.model && <small>{part.explanation}</small>}</div>)}
+    {assembly && <div className="interactive-assembly-step" aria-live="polite">{unavailable ? "Assembly animation requires 3D graphics" : currentAssembly ? <><strong>Step {assemblyStep} of {assembly.length}</strong><span>{currentAssembly.instruction}</span></> : assemblyStep > assembly.length ? <><strong>Assembly complete</strong><span>Rotate to inspect the connected parts.</span></> : <><strong>Preparing assembly</strong><span>Parts will move into place in sequence.</span></>}</div>}
     <div className="interactive-jet-note" aria-hidden="true">{lesson.model ? "Illustrative 3D model · approximate geometry" : "Conceptual 3D schematic · relationships"}{pageCount > 1 ? ` · Parts ${page * pageSize + 1}–${Math.min((page + 1) * pageSize, lesson.parts.length)} of ${lesson.parts.length}; hold cursor in a top corner for more` : ""}</div>
   </section>;
 }

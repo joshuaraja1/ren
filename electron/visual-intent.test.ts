@@ -51,6 +51,12 @@ it("keeps 2D requests flat and routes arbitrary object models to 3D", () => {
   expect(requestedVisualDimension("Draw a diagram of an unknown machine")).toBe(2);
   expect(requestedVisualDimension("Model the circulatory system in 3D and let me turn it around")).toBe(3);
   expect(requestedVisualDimension("A 3D cutaway of a steam engine")).toBe(3);
+  expect(wantsVisualCreation("Show the phone assembly step by step")).toBe(true);
+  expect(requestedVisualDimension("Show the phone assembly step by step")).toBe(3);
+  expect(wantsPriorVisualIn3D("Show how to assemble it step by step")).toBe(true);
+  expect(wantsVisualCreation("Replay the assembly")).toBe(true);
+  expect(wantsPriorVisualIn3D("Replay the assembly")).toBe(true);
+  expect(requestedVisualDimension("Replay the assembly")).toBe(3);
 });
 
 it("keeps a referenced diagram visible while a follow-up is prepared", () => {

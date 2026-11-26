@@ -6,11 +6,33 @@ import type { Point } from "./contracts";
 
 export type GenericAnchors = Record<string, Point>;
 
+export type SubjectScene = ReturnType<typeof makeSubjectScene>;
+
+/** Move each part from an exploded position to its validated teaching position. */
+export function applyAssemblyProgress(model: SubjectScene, progress: number) {
+  const steps = model.assembly;
+  if (!steps?.length) return;
+  for (const [partId, meshes] of Object.entries(model.partMeshes)) {
+    const index = steps.findIndex((step) => step.partId === partId);
+    const step = steps[index];
+    const fraction = index < 0 ? 1 : Math.max(0, Math.min(1, progress - index));
+    const eased = fraction * fraction * (3 - 2 * fraction);
+    const offset = step ? new THREE.Vector3(...step.from).multiplyScalar(1 - eased) : new THREE.Vector3();
+    meshes.forEach((mesh, meshIndex) => mesh.position.copy(model.partPositions[partId][meshIndex]).add(offset));
+    model.anchors[partId].copy(model.anchorPositions[partId]).add(offset);
+  }
+  const assembled = progress >= steps.length;
+  model.connectionObjects.forEach((object) => { object.visible = assembled; });
+}
+
 /** Build rotatable geometry supplied by the provider. Anchors are in the same model coordinates. */
 export function makeSubjectScene(spec: SceneSpec, connections: VisualLesson["connections"] = []) {
   const root = new THREE.Group();
   root.name = `Illustrative 3D model: ${spec.subject}`;
   const anchors: Record<string, THREE.Vector3> = {};
+  const partMeshes: Record<string, THREE.Mesh[]> = {};
+  const partPositions: Record<string, THREE.Vector3[]> = {};
+  const connectionObjects: THREE.Object3D[] = [];
   for (const part of spec.primitives) {
     let geometry: THREE.BufferGeometry;
     switch (part.kind) {
@@ -36,15 +58,18 @@ export function makeSubjectScene(spec: SceneSpec, connections: VisualLesson["con
       }
       default: geometry = new THREE.BoxGeometry(1, 1, 1);
     }
-    const material = new THREE.MeshStandardMaterial({ color: part.color, metalness: .28, roughness: .42, side: THREE.DoubleSide });
+    const material = new THREE.MeshStandardMaterial({ color: part.color, metalness: .28, roughness: .42, side: THREE.DoubleSide, transparent: part.opacity !== undefined && part.opacity < 1, opacity: part.opacity ?? 1, depthWrite: part.opacity === undefined || part.opacity === 1 });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = part.partId;
     mesh.position.set(...part.position);
     mesh.scale.set(...part.scale);
     mesh.rotation.set(...part.rotation);
     root.add(mesh);
+    (partMeshes[part.partId] ??= []).push(mesh);
+    (partPositions[part.partId] ??= []).push(mesh.position.clone());
   }
   for (const anchor of spec.anchors) anchors[anchor.partId] = new THREE.Vector3(...anchor.position);
+  const anchorPositions = Object.fromEntries(Object.entries(anchors).map(([id, position]) => [id, position.clone()])) as Record<string, THREE.Vector3>;
   for (const connection of connections) {
     const from = anchors[connection.from];
     const to = anchors[connection.to];
@@ -55,12 +80,14 @@ export function makeSubjectScene(spec: SceneSpec, connections: VisualLesson["con
     const flow = new THREE.Mesh(new THREE.TubeGeometry(curve, 16, .018, 6, false), new THREE.MeshBasicMaterial({ color: 0x71d4e4, transparent: true, opacity: .76 }));
     flow.name = `${connection.from} → ${connection.to}: ${connection.label}`;
     root.add(flow);
+    connectionObjects.push(flow);
     const arrow = new THREE.Mesh(new THREE.ConeGeometry(.07, .17, 12), new THREE.MeshBasicMaterial({ color: 0xf7be62 }));
     arrow.position.copy(curve.getPoint(.87));
     arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), curve.getTangent(.87).normalize());
     root.add(arrow);
+    connectionObjects.push(arrow);
   }
-  return { root, anchors };
+  return { root, anchors, partMeshes, partPositions, anchorPositions, connectionObjects, assembly: spec.assembly };
 }
 
 /** A conceptual mechanism graph. Its shapes describe relationships, not the subject's physical form. */
@@ -120,14 +147,15 @@ export function projectGenericAnchors(anchors: Record<string, THREE.Vector3>, ro
   return result;
 }
 
-export function GenericScene({ lesson, onAnchors, onUnavailable }: {
+export function GenericScene({ lesson, onAnchors, onUnavailable, onAssemblyStep }: {
   lesson: VisualLesson;
   onAnchors: (anchors: GenericAnchors) => void;
   onUnavailable: () => void;
+  onAssemblyStep?: (step: number) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
-  const callbacks = useRef({ onAnchors, onUnavailable });
-  callbacks.current = { onAnchors, onUnavailable };
+  const callbacks = useRef({ onAnchors, onUnavailable, onAssemblyStep: undefined as ((step: number) => void) | undefined });
+  callbacks.current = { onAnchors, onUnavailable, onAssemblyStep };
   useEffect(() => {
     const element = host.current;
     if (!element) return;
@@ -144,12 +172,23 @@ export function GenericScene({ lesson, onAnchors, onUnavailable }: {
     const light = new THREE.DirectionalLight(0xffffff, 2.5);
     light.position.set(-3, 6, 7);
     scene.add(light);
-    const model = lesson.model ? makeSubjectScene(lesson.model, lesson.connections) : makeGenericScene(lesson);
+    // Part callouts identify physical components; semantic edges are not literal cables.
+    const model = lesson.model ? makeSubjectScene(lesson.model) : makeGenericScene(lesson);
     scene.add(model.root);
     const camera = new THREE.PerspectiveCamera(38, 1, .1, 100);
     const bounds = new THREE.Box3().setFromObject(model.root);
+    if (lesson.playAssembly && lesson.model?.assembly?.length) {
+      applyAssemblyProgress(model as SubjectScene, 0);
+      bounds.union(new THREE.Box3().setFromObject(model.root));
+      applyAssemblyProgress(model as SubjectScene, lesson.model.assembly.length);
+    }
     const center = bounds.getCenter(new THREE.Vector3());
     const size = bounds.getSize(new THREE.Vector3());
+    const assembly = lesson.playAssembly ? lesson.model?.assembly : undefined;
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    let assemblyStarted = 0;
+    let reportedStep = -1;
+    if (lesson.model && assembly?.length) applyAssemblyProgress(model as SubjectScene, reducedMotion ? assembly.length : 0);
     const cursor = { x: .5, y: .5 };
     let azimuth = 0;
     let elevation = .16;
@@ -165,6 +204,13 @@ export function GenericScene({ lesson, onAnchors, onUnavailable }: {
     };
     const draw = (time: number) => {
       frame = 0;
+      if (lesson.model && assembly?.length) {
+        if (!assemblyStarted) assemblyStarted = time;
+        const progress = reducedMotion ? assembly.length : Math.min(assembly.length, Math.max(0, (time - assemblyStarted - 450) / 2600));
+        applyAssemblyProgress(model as SubjectScene, progress);
+        const step = progress >= assembly.length ? assembly.length + 1 : Math.floor(progress) + 1;
+        if (step !== reportedStep) { reportedStep = step; callbacks.current.onAssemblyStep?.(step); }
+      }
       const targetAzimuth = (cursor.x - .5) * Math.PI * 1.35;
       const targetElevation = .16 + (.5 - cursor.y) * .85;
       azimuth += (targetAzimuth - azimuth) * .1;
@@ -178,7 +224,7 @@ export function GenericScene({ lesson, onAnchors, onUnavailable }: {
         callbacks.current.onAnchors(projectGenericAnchors(model.anchors, model.root, camera));
         lastLabels = time;
       }
-      if (Math.abs(targetAzimuth - azimuth) > .001 || Math.abs(targetElevation - elevation) > .001) schedule();
+      if (Math.abs(targetAzimuth - azimuth) > .001 || Math.abs(targetElevation - elevation) > .001 || Boolean(assembly?.length && !reducedMotion && reportedStep <= assembly.length)) schedule();
     };
     const updatePointer = (point: Point) => {
       if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y)) return;
