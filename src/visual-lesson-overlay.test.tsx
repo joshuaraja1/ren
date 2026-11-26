@@ -4,7 +4,7 @@ import { centerRequestedLesson } from "../electron/visual-presentation";
 import type { VisualLesson } from "../electron/visual-lesson";
 import type { Point, RenBridge } from "./contracts";
 import { vi } from "vitest";
-import { calloutPageSize, modelCalloutSlots } from "./visual-lesson-overlay";
+import { calloutPageSize, modelCalloutLayout } from "./visual-lesson-overlay";
 
 it("sizes callout pages for short, medium, and tall diagram areas", () => {
   expect(calloutPageSize(400)).toBe(2);
@@ -12,14 +12,16 @@ it("sizes callout pages for short, medium, and tall diagram areas", () => {
   expect(calloutPageSize(700)).toBe(6);
 });
 
-it("orders general 3D callouts by their actual part positions on each side", () => {
+it("places general 3D callouts on their nearest side and in vertical part order", () => {
   const parts = ["frame", "screen", "battery", "board", "camera", "port"].map((id) => ({ id }));
-  const anchors = { frame: { x: .5, y: .5 }, screen: { x: .5, y: .7 }, battery: { x: .5, y: .8 }, board: { x: .5, y: .2 }, camera: { x: .5, y: .1 }, port: { x: .5, y: .9 } };
-  const slots = modelCalloutSlots(parts, anchors);
-  expect(slots.camera).toBeLessThan(slots.frame);
-  expect(slots.frame).toBeLessThan(slots.battery);
-  expect(slots.board).toBeLessThan(slots.screen);
-  expect(slots.screen).toBeLessThan(slots.port);
+  const anchors = { frame: { x: .2, y: .5 }, screen: { x: .7, y: .7 }, battery: { x: .3, y: .8 }, board: { x: .8, y: .2 }, camera: { x: .1, y: .1 }, port: { x: .9, y: .9 } };
+  const layout = modelCalloutLayout(parts, anchors);
+  expect(layout.camera.side).toBe("left");
+  expect(layout.board.side).toBe("right");
+  expect(layout.camera.slot).toBeLessThan(layout.frame.slot);
+  expect(layout.frame.slot).toBeLessThan(layout.battery.slot);
+  expect(layout.board.slot).toBeLessThan(layout.screen.slot);
+  expect(layout.screen.slot).toBeLessThan(layout.port.slot);
 });
 
 it("shows a projected machine and connected callouts when WebGL is unavailable", async () => {
