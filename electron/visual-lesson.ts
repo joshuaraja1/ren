@@ -24,6 +24,8 @@ export type VisualLesson = {
   layout?: "centered";
   scene?: "f35b-hover" | "conceptual-3d";
   model?: SceneSpec;
+  /** Ephemeral crop of the visible object, kept only for the current lesson. */
+  referenceImage?: string;
   title: string;
   assumption?: string;
   placement: { x: number; y: number; width: number; height: number };

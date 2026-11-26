@@ -73,6 +73,8 @@ describe("subject 3D scene contract", () => {
     expect(result?.primitives[0].opacity).toBe(.32);
     expect(result?.assembly).toEqual([{ partId: "display", from: [0, 0, 2], instruction: "Lower the display into the housing." }]);
     expect(result?.assembly?.[0]).not.toHaveProperty("command");
+    const longInstruction = "Open the socket latch, seat the ribbon cable with its contacts toward the board, and close the latch. Then power on and test the camera before fastening the case.";
+    expect(validateSceneSpec({ ...scene, assembly: [{ partId: "display", from: [0, 0, 2], instruction: longInstruction }] }, ["body", "display"])?.assembly?.[0].instruction).toBe(longInstruction);
     expect(validateSceneSpec({ ...scene, primitives: [{ ...scene.primitives[0], opacity: 0 }, scene.primitives[1]] }, ["body", "display"])).toBeNull();
     expect(validateSceneSpec({ ...scene, assembly: [{ partId: "display", from: [20, 0, 0], instruction: "Wrong" }] }, ["body", "display"])?.assembly).toBeUndefined();
   });

@@ -110,7 +110,9 @@ request and set referenceRegion:null. Never say that lack of a visible reference
 you from drawing it. When the learner names the components to label, use those
 components as the visualLesson parts; add another only when it is necessary to
 understand a connection they asked about. Choose the essential physical or functional
-parts required to explain the requested subject (usually 4-8, up to 12 for a complex system). Do not substitute
+parts required to explain the requested subject (usually 4-8, up to 12 for a complex system).
+For a peripheral attachment lesson, prefer the host device, the compatible cable or adapter, and the peripheral as three parts. Describe sockets and latches within those parts instead of making each a separate part. Identify the device revision before giving physical connection instructions; if unknown, state the assumption. A simplified 3D animation cannot prove exact pin geometry or compatibility.
+Do not substitute
 an F-35, phone, or generic relationship graph when a different subject was requested. For each part,
 write a short, specific explanation (about 40-110 characters) of what it does and why
 it matters. Make the title 3-6 words about the mechanism, without words such as

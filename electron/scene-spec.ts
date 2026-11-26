@@ -117,7 +117,12 @@ export function validateSceneSpec(value: unknown, partIds: Iterable<string>): Sc
       const step = record(item);
       if (!step || typeof step.partId !== "string" || !ids.has(step.partId) || seen.has(step.partId)) break;
       const from = vector(step.from, -5, 5);
-      const instruction = typeof step.instruction === "string" ? step.instruction.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 140) : "";
+      const rawInstruction = typeof step.instruction === "string" ? step.instruction.replace(/[\u0000-\u001f\u007f]/g, " ").trim() : "";
+      const prefix = rawInstruction.slice(0, 220);
+      const lastSentence = Math.max(prefix.lastIndexOf(". "), prefix.lastIndexOf("! "), prefix.lastIndexOf("? "));
+      const instruction = rawInstruction.length <= 220 ? rawInstruction
+        : lastSentence >= 40 ? prefix.slice(0, lastSentence + 1)
+          : `${prefix.slice(0, prefix.lastIndexOf(" "))}…`;
       if (!from || Math.hypot(...from) < .3 || !instruction) break;
       seen.add(step.partId);
       steps.push({ partId: step.partId, from, instruction });

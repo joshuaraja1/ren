@@ -18,7 +18,7 @@ import { hasMeaningfulMotion } from "./frame-motion.js";
 import { isSameStableScreen } from "./screen-continuity.js";
 import { canPlaceSpatialVisual } from "./visual-safety.js";
 import { generateIllustration, imageManifest, imagePrompt } from "./image-render.js";
-import { generateSceneSpec, wantsAssemblySequence } from "./scene-generation.js";
+import { generateSceneSpec, wantsAssemblyAnimation, wantsAssemblySequence } from "./scene-generation.js";
 import { generateHostedIllustration } from "./hosted-image-render.js";
 import { filterOpaquePositions, locateImageParts, type ImageRegistration } from "./image-registration.js";
 import { validateVisualLesson } from "./visual-lesson.js";
@@ -677,23 +677,49 @@ app.whenReady().then(() => {
     const reuseVisual = Boolean(priorVisualLesson && !explicitVisual && response.retainVisual && !response.visualLesson && lastVisualLesson?.lesson === priorVisualLesson);
     if (!reuseVisual) { imageRenderAbort?.abort(); imageRenderAbort = null; }
     let lesson = reuseVisual ? priorVisualLesson! : !explicitVisual ? null : transformPriorVisual && priorVisualLesson ? priorVisualLesson : display && (spatialAllowed || explicitVisual) ? validateVisualLesson(response.visualLesson) : null;
+    let referenceImage: string | undefined;
+    if (lesson && explicitVisual && wantsReferenceRecreation(value.question)) {
+      const bounds = response.referenceRegion ?? focus;
+      if (bounds) {
+        const first = nativeImage.createFromDataURL(capture.frames[0]);
+        const size = first.getSize();
+        const rect = {
+          x: Math.floor(bounds.x * size.width), y: Math.floor(bounds.y * size.height),
+          width: Math.max(1, Math.floor(bounds.width * size.width)),
+          height: Math.max(1, Math.floor(bounds.height * size.height)),
+        };
+        const cropped = first.crop(rect);
+        if (!cropped.isEmpty()) {
+          const cropSize = cropped.getSize();
+          const image = Math.max(cropSize.width, cropSize.height) > 1024
+            ? cropped.resize({ width: Math.round(cropSize.width * 1024 / Math.max(cropSize.width, cropSize.height)) }) : cropped;
+          const dataUrl = image.toDataURL();
+          if (dataUrl.length < 10_000_000) referenceImage = dataUrl;
+        }
+      }
+    }
     if (lesson && explicitVisual && display) {
       const dimension = requestedVisualDimension(value.question);
-      lesson = { ...lesson, dimension, playAssembly: /\b(?:play|replay|animate)\s+(?:the\s+)?(?:assembly|assembly steps)\b/i.test(value.question) };
+      lesson = { ...lesson, dimension, playAssembly: wantsAssemblyAnimation(value.question) };
       lesson = tagRequestedInteractiveScene(lesson, value.question);
       if (dimension === 3 && (!interactiveSceneFor(lesson) || (wantsAssemblySequence(value.question) && !lesson.model?.assembly)) && credentials) {
         // Keep the overlay hidden until geometry and labels are ready together.
         try {
-          const model = await generateSceneSpec(lesson, value.question, credentials, askController.signal);
+          const model = await generateSceneSpec(lesson, value.question, credentials, askController.signal, fetch, referenceImage);
           lesson = { ...lesson, model };
         } catch (error) {
           if (askController.signal.aborted || voicePaused) throw error;
           const reason = error instanceof Error ? error.message : "The model planner failed.";
-          response.answer = `I couldn't build a reliable rotatable 3D model of ${lesson.title} right now. ${reason}`;
-          lesson = null;
+          if (referenceImage && directImageAvailable) {
+            response.answer = `I couldn't build a reliable rotatable 3D model of ${lesson.title} right now. ${reason} I'll show a reference-guided illustration instead.`;
+            lesson = { ...lesson, model: undefined, playAssembly: false };
+          } else {
+            response.answer = `I couldn't build a reliable rotatable 3D model of ${lesson.title} right now. ${reason}`;
+            lesson = null;
+          }
         }
       }
-      if (lesson) lesson = centerRequestedLesson(lesson, display.bounds.width, display.bounds.height);
+      if (lesson) lesson = centerRequestedLesson({ ...lesson, ...(referenceImage ? { referenceImage } : {}) }, display.bounds.width, display.bounds.height);
     }
     let annotations = spatialAllowed && (focus || wantsSpatialGuidance(value.question)) && !explicitVisual && !reuseVisual ? response.annotations : [];
     if (spatialAllowed && focus && !explicitVisual && !reuseVisual) {
@@ -719,38 +745,18 @@ app.whenReady().then(() => {
     }
     if (capture.generation !== visualGeneration) return { ...response, annotations: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false };
     if (display) overlayWindow?.setBounds(display.bounds);
-    const autoIllustrate = Boolean(lesson && explicitVisual && !interactiveSceneFor(lesson)
-      && (directImageAvailable || hostedImageAvailable));
+    const autoIllustrate = Boolean(lesson && explicitVisual && (
+      (!interactiveSceneFor(lesson) && (directImageAvailable || hostedImageAvailable))
+      || (lesson.model && referenceImage && directImageAvailable)));
     if (!reuseVisual) {
       const sketch = userSketch;
       sendOverlayAnnotations(sketch && sketch.displayId === display?.id
         ? [{ id: "user-sketch", type: "path", points: sketch.points, color: "#327d87" }, ...annotations] : annotations);
-      sendOverlayLesson(autoIllustrate && lesson ? { ...lesson, pendingIllustration: true } : lesson);
+      sendOverlayLesson(autoIllustrate && lesson && !lesson.model ? { ...lesson, pendingIllustration: true } : lesson);
       sendOverlayIllustration(null);
     }
     if (annotations.length || lesson) overlayWindow?.showInactive();
     else overlayWindow?.hide();
-    let referenceImage: string | undefined;
-    if (lesson && explicitVisual && wantsReferenceRecreation(value.question)) {
-      const bounds = response.referenceRegion ?? focus;
-      if (bounds) {
-        const first = nativeImage.createFromDataURL(capture.frames[0]);
-        const size = first.getSize();
-        const rect = {
-          x: Math.floor(bounds.x * size.width), y: Math.floor(bounds.y * size.height),
-          width: Math.max(1, Math.floor(bounds.width * size.width)),
-          height: Math.max(1, Math.floor(bounds.height * size.height)),
-        };
-        const cropped = first.crop(rect);
-        if (!cropped.isEmpty()) {
-          const cropSize = cropped.getSize();
-          const image = Math.max(cropSize.width, cropSize.height) > 1024
-            ? cropped.resize({ width: Math.round(cropSize.width * 1024 / Math.max(cropSize.width, cropSize.height)) }) : cropped;
-          const dataUrl = image.toDataURL();
-          if (dataUrl.length < 10_000_000) referenceImage = dataUrl;
-        }
-      }
-    }
     if (reuseVisual && lastVisualLesson) lastVisualLesson.createdAt = Date.now();
     else lastVisualLesson = lesson ? { lesson, displayId, createdAt: Date.now(), referenceImage } : null;
     return { ...response, answer: lesson ? answerForInteractiveScene(response.answer, lesson) : response.answer, annotations, visualLesson: reuseVisual ? undefined : lesson ?? undefined, reusedVisual: reuseVisual, autoIllustrate };

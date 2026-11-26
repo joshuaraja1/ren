@@ -4,7 +4,8 @@ import { render } from "@testing-library/react";
 import { vi } from "vitest";
 import type { VisualLesson } from "../electron/visual-lesson";
 import type { SceneSpec } from "../electron/scene-spec";
-import { GenericScene, applyAssemblyProgress, makeGenericScene, makeSubjectScene, orbitCameraDistance, projectGenericAnchors } from "./generic-scene";
+import { raspberryPiCameraTemplate } from "../electron/scene-templates";
+import { GenericScene, applyAssemblyProgress, assemblyCameraFrame, hasHorizontalBase, makeGenericScene, makeSubjectScene, orbitCameraDistance, projectGenericAnchors } from "./generic-scene";
 
 const lesson: VisualLesson = {
   version: 1, title: "Camera signal path", placement: { x: 0, y: 0, width: 1, height: 1 },
@@ -66,6 +67,30 @@ it("keeps a wide subject fully framed while orbiting through diagonal views", ()
   }
 });
 
+it("frames separated parts at first and closes in on the assembled subject", () => {
+  const assembled = new THREE.Box3(new THREE.Vector3(-1, -1, -1), new THREE.Vector3(1, 1, 1));
+  const starting = new THREE.Box3(new THREE.Vector3(-5, -1, -1), new THREE.Vector3(1, 3, 3));
+  const first = assemblyCameraFrame(starting, assembled, 0, 38, 1.4);
+  const middle = assemblyCameraFrame(starting, assembled, .5, 38, 1.4);
+  const final = assemblyCameraFrame(starting, assembled, 1, 38, 1.4);
+  expect(first.center.equals(starting.getCenter(new THREE.Vector3()))).toBe(true);
+  expect(final.center.equals(assembled.getCenter(new THREE.Vector3()))).toBe(true);
+  expect(first.distance).toBeGreaterThan(middle.distance);
+  expect(middle.distance).toBeGreaterThan(final.distance);
+});
+
+it("uses a tabletop camera for arbitrary flat subjects without tilting upright subjects", () => {
+  const primitive = (partId: string, position: [number, number, number], scale: [number, number, number]) =>
+    ({ partId, kind: "box" as const, position, scale, rotation: [0, 0, 0] as [number, number, number], color: "#336699" });
+  const base: SceneSpec = { version: 1, subject: "Tablet repair", fidelity: "conceptual", primitives: [
+    primitive("body", [0, 0, 0], [3, .12, 2]), primitive("screen", [0, .12, 0], [2.8, .06, 1.8]),
+  ], anchors: [{ partId: "body", position: [0, 0, 0] }, { partId: "screen", position: [0, .12, 0] }] };
+  expect(hasHorizontalBase(base)).toBe(true);
+  expect(hasHorizontalBase({ ...base, subject: "Desktop tower", primitives: [
+    primitive("body", [0, 0, 0], [3, 4, .2]), primitive("screen", [0, 2, 0], [2, .2, 1.5]),
+  ] })).toBe(false);
+});
+
 it("renders subject geometry from the model spec and keeps labels tied to its real part anchors", () => {
   const spec: SceneSpec = {
     version: 1, subject: "Camera", fidelity: "conceptual",
@@ -123,6 +148,32 @@ it("moves a phone display into place step by step while preserving its final anc
   expect(model.anchors.display.z).toBeCloseTo(.3);
   expect(model.connectionObjects.every((object) => object.visible)).toBe(true);
   expect((model.partMeshes.body[0].material as THREE.MeshStandardMaterial).opacity).toBe(.4);
+});
+
+it("moves the Pi camera cable before the camera and leaves the board fixed", () => {
+  const piLesson: VisualLesson = {
+    ...lesson, title: "Raspberry Pi 5 camera setup",
+    parts: [
+      { id: "pi", label: "Raspberry Pi 5", explanation: "Host board", x: .5, y: .2 },
+      { id: "cable", label: "Ribbon cable", explanation: "Adapter", x: .5, y: .5 },
+      { id: "camera", label: "Camera Module 3", explanation: "Image sensor", x: .5, y: .8 },
+    ],
+  };
+  const spec = raspberryPiCameraTemplate(piLesson, "Animate a Pi 5 camera assembly", true)!;
+  const model = makeSubjectScene(spec);
+  const boardFinal = model.partMeshes.pi[0].position.clone();
+  const cableFinal = model.partPositions.cable[0].clone();
+  const cameraFinal = model.partPositions.camera[0].clone();
+  applyAssemblyProgress(model, 0);
+  expect(model.partMeshes.pi[0].position.equals(boardFinal)).toBe(true);
+  expect(model.partMeshes.cable[0].position.y).toBeGreaterThan(cableFinal.y);
+  expect(model.partMeshes.camera[0].position.y).toBeGreaterThan(cameraFinal.y);
+  applyAssemblyProgress(model, 1);
+  expect(model.partMeshes.cable[0].position.equals(cableFinal)).toBe(true);
+  expect(model.partMeshes.camera[0].position.y).toBeGreaterThan(cameraFinal.y);
+  applyAssemblyProgress(model, 2);
+  expect(model.partMeshes.camera[0].position.equals(cameraFinal)).toBe(true);
+  expect(model.anchors.camera.y).toBeCloseTo(spec.anchors.find((item) => item.partId === "camera")!.position[1]);
 });
 
 it("reports a missing WebGL context for the host to display its 2D fallback", () => {

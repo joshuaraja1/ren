@@ -29,16 +29,21 @@ it("shows a projected machine and connected callouts when WebGL is unavailable",
     version: 1, layout: "centered", title: "Pump", placement: { x: .1, y: .1, width: .8, height: .8 },
     parts: [{ id: "motor", label: "Motor", explanation: "Drives the pump.", x: .3, y: .5 }, { id: "impeller", label: "Impeller", explanation: "Moves water.", x: .7, y: .5 }],
     connections: [{ from: "motor", to: "impeller", label: "drives" }],
+    referenceImage: "data:image/png;base64,dGVzdA==",
     model: { version: 1, subject: "Pump", fidelity: "conceptual", primitives: [
       { partId: "motor", kind: "cylinder", position: [-1, 0, 0], scale: [1, 1, 1], rotation: [0, 0, 0], color: "#4689bb" },
       { partId: "impeller", kind: "sphere", position: [1, 0, 0], scale: [1, 1, 1], rotation: [0, 0, 0], color: "#d59d4e" },
     ], anchors: [{ partId: "motor", position: [-1, 0, 0] }, { partId: "impeller", position: [1, 0, 0] }],
     assembly: [{ partId: "impeller", from: [0, 0, 2], instruction: "Seat the impeller." }] },
   };
-  const { container } = render(<VisualLessonOverlay lesson={lesson} />);
+  const { container, rerender } = render(<VisualLessonOverlay lesson={lesson} />);
   await waitFor(() => expect(container.querySelector(".scene-fallback")).toBeInTheDocument());
   expect(container.querySelectorAll(".scene-fallback > g")).toHaveLength(2);
   expect(container.querySelector(".scene-fallback > line")).toBeInTheDocument();
+  expect(container.querySelector(".interactive-source-reference img")).toHaveAttribute("src", lesson.referenceImage);
+  rerender(<VisualLessonOverlay lesson={lesson} illustration={{ image: "data:image/png;base64,bWF0Y2hlZA==", preview: false, width: 500, height: 500 }} />);
+  expect(container.querySelector(".interactive-source-reference img")).toHaveAttribute("src", "data:image/png;base64,bWF0Y2hlZA==");
+  expect(container).toHaveTextContent("Reference-guided illustration");
   expect(container.querySelectorAll(".interactive-jet-lines line")).toHaveLength(2);
   expect(container).toHaveTextContent("3D view unavailable");
   expect(container.querySelector(".interactive-assembly-step")).not.toBeInTheDocument();

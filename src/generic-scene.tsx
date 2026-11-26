@@ -155,6 +155,32 @@ export function orbitCameraDistance(bounds: THREE.Box3, verticalFovDegrees: numb
   return Math.min(75, Math.max(7, radius / Math.sin(Math.min(halfVertical, halfHorizontal)) * 1.2 + 1));
 }
 
+/** Start wide enough for separated parts, then settle on the finished object. */
+export function assemblyCameraFrame(startingBounds: THREE.Box3, assembledBounds: THREE.Box3, completion: number, fov: number, aspect: number) {
+  const fraction = THREE.MathUtils.clamp(completion, 0, 1);
+  const eased = fraction * fraction * (3 - 2 * fraction);
+  return {
+    center: startingBounds.getCenter(new THREE.Vector3()).lerp(assembledBounds.getCenter(new THREE.Vector3()), eased),
+    distance: THREE.MathUtils.lerp(orbitCameraDistance(startingBounds, fov, aspect), orbitCameraDistance(assembledBounds, fov, aspect), eased),
+  };
+}
+
+/** Use a tabletop view for any wide, thin subject with a horizontal base. */
+export function hasHorizontalBase(spec: SceneSpec): boolean {
+  const bounds = new THREE.Box3();
+  for (const part of spec.primitives) {
+    const half = new THREE.Vector3(...part.scale).multiplyScalar(.5);
+    const center = new THREE.Vector3(...part.position);
+    bounds.expandByPoint(center.clone().sub(half));
+    bounds.expandByPoint(center.add(half));
+  }
+  const size = bounds.getSize(new THREE.Vector3());
+  return size.y < Math.max(size.x, size.z) * .8
+    && spec.primitives.some((part) => part.kind === "box" && part.scale[0] > 1 && part.scale[2] > 1
+      && part.scale[1] < Math.min(part.scale[0], part.scale[2]) * .2
+      && part.position[1] < bounds.min.y + size.y * .35);
+}
+
 export function GenericScene({ lesson, onAnchors, onUnavailable, onAssemblyStep }: {
   lesson: VisualLesson;
   onAnchors: (anchors: GenericAnchors) => void;
@@ -175,30 +201,47 @@ export function GenericScene({ lesson, onAnchors, onUnavailable, onAssemblyStep 
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.5;
     element.appendChild(renderer.domElement);
+    const horizontalSubject = lesson.model ? hasHorizontalBase(lesson.model) : false;
+    renderer.shadowMap.enabled = horizontalSubject;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     const scene = new THREE.Scene();
     scene.add(new THREE.HemisphereLight(0xe8f5ff, 0x223d49, 2.5));
     const light = new THREE.DirectionalLight(0xffffff, 2.5);
     light.position.set(-3, 6, 7);
+    light.castShadow = horizontalSubject;
+    light.shadow.mapSize.set(256, 256);
+    light.shadow.radius = 6;
+    light.shadow.camera.left = -6; light.shadow.camera.right = 6;
+    light.shadow.camera.top = 6; light.shadow.camera.bottom = -6;
     scene.add(light);
     // Part callouts identify physical components; semantic edges are not literal cables.
     const model = lesson.model ? makeSubjectScene(lesson.model) : makeGenericScene(lesson);
     scene.add(model.root);
+    let floor: THREE.Mesh<THREE.PlaneGeometry, THREE.ShadowMaterial> | undefined;
+    if (horizontalSubject) {
+      model.root.traverse((object) => { if (object instanceof THREE.Mesh) object.castShadow = true; });
+      floor = new THREE.Mesh(new THREE.PlaneGeometry(8, 8), new THREE.ShadowMaterial({ opacity: .1 }));
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.y = new THREE.Box3().setFromObject(model.root).min.y - .05;
+      floor.receiveShadow = true;
+      scene.add(floor);
+    }
     const camera = new THREE.PerspectiveCamera(38, 1, .1, 100);
-    const bounds = new THREE.Box3().setFromObject(model.root);
+    const assembledBounds = new THREE.Box3().setFromObject(model.root);
+    const startingBounds = assembledBounds.clone();
     if (lesson.playAssembly && lesson.model?.assembly?.length) {
       applyAssemblyProgress(model as SubjectScene, 0);
-      bounds.union(new THREE.Box3().setFromObject(model.root));
+      startingBounds.union(new THREE.Box3().setFromObject(model.root));
       applyAssemblyProgress(model as SubjectScene, lesson.model.assembly.length);
     }
-    const center = bounds.getCenter(new THREE.Vector3());
     const assembly = lesson.playAssembly ? lesson.model?.assembly : undefined;
     const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     let assemblyStarted = 0;
     let reportedStep = -1;
     if (lesson.model && assembly?.length) applyAssemblyProgress(model as SubjectScene, reducedMotion ? assembly.length : 0);
     const cursor = { x: .5, y: .5 };
-    let azimuth = 0;
-    let elevation = .16;
+    let azimuth = horizontalSubject ? .38 : 0;
+    let elevation = horizontalSubject ? .62 : .16;
     let frame = 0;
     let lastLabels = -Infinity;
     const schedule = () => { if (!frame) frame = requestAnimationFrame(draw); };
@@ -211,18 +254,22 @@ export function GenericScene({ lesson, onAnchors, onUnavailable, onAssemblyStep 
     };
     const draw = (time: number) => {
       frame = 0;
+      let completion = 1;
       if (lesson.model && assembly?.length) {
         if (!assemblyStarted) assemblyStarted = time;
         const progress = reducedMotion ? assembly.length : Math.min(assembly.length, Math.max(0, (time - assemblyStarted - 450) / 2600));
+        completion = progress / assembly.length;
         applyAssemblyProgress(model as SubjectScene, progress);
         const step = progress >= assembly.length ? assembly.length + 1 : Math.floor(progress) + 1;
         if (step !== reportedStep) { reportedStep = step; callbacks.current.onAssemblyStep?.(step); }
       }
-      const targetAzimuth = (cursor.x - .5) * Math.PI * 1.35;
-      const targetElevation = .16 + (.5 - cursor.y) * .85;
+      const targetAzimuth = (horizontalSubject ? .38 : 0) + (cursor.x - .5) * Math.PI * (horizontalSubject ? .95 : 1.35);
+      const targetElevation = horizontalSubject
+        ? Math.max(.22, Math.min(1.18, .62 + (.5 - cursor.y) * .95))
+        : .16 + (.5 - cursor.y) * .85;
       azimuth += (targetAzimuth - azimuth) * .1;
       elevation += (targetElevation - elevation) * .1;
-      const distance = orbitCameraDistance(bounds, camera.fov, camera.aspect);
+      const { center, distance } = assemblyCameraFrame(startingBounds, assembledBounds, completion, camera.fov, camera.aspect);
       camera.position.set(center.x + Math.sin(azimuth) * Math.cos(elevation) * distance, center.y + Math.sin(elevation) * distance, center.z + Math.cos(azimuth) * Math.cos(elevation) * distance);
       camera.lookAt(center);
       renderer.render(scene, camera);
@@ -252,6 +299,7 @@ export function GenericScene({ lesson, onAnchors, onUnavailable, onAssemblyStep 
         const materials = Array.isArray(object.material) ? object.material : [object.material];
         materials.forEach((material) => material.dispose());
       });
+      floor?.geometry.dispose(); floor?.material.dispose();
       renderer.dispose(); renderer.domElement.remove();
     };
   }, [lesson]);

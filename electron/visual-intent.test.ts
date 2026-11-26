@@ -10,6 +10,11 @@ it("renders only when the learner explicitly asks for a visual", () => {
   expect(wantsVisualCreation("Model the circulatory system in 3D")).toBe(true);
   expect(wantsVisualCreation("A 3D model of the solar system, please")).toBe(true);
   expect(wantsVisualCreation("Can you build out a 3D diagram showing the engine and parts?")).toBe(true);
+  expect(wantsVisualCreation("Animate attaching a mini camera to a Raspberry Pi 5")).toBe(true);
+  expect(wantsVisualCreation("Show me exactly how to attach a camera to this Raspberry Pi 5")).toBe(true);
+  expect(wantsVisualCreation("Animate attaching a bicycle wheel to its fork")).toBe(true);
+  expect(wantsVisualCreation("Show installing a desk lamp shade onto its stem")).toBe(true);
+  expect(wantsVisualCreation("Animate connecting a turbine to a generator")).toBe(true);
   expect(wantsVisualCreation("How does this diagram work?")).toBe(false);
   expect(wantsVisualCreation("How does this jet work? ")).toBe(false);
 });
@@ -38,6 +43,12 @@ it("uses visible pixels only for appearance recreation, not a new explanatory di
   expect(wantsReferenceRecreation("Draw a 3D exploded view of this phone on my screen")).toBe(true);
   expect(wantsReferenceRecreation("Turn this turbine into a diagram")).toBe(true);
   expect(wantsReferenceRecreation("Draw a new diagram inspired by this page")).toBe(false);
+  expect(wantsReferenceRecreation("Show me exactly how to attach a camera to this Raspberry Pi 5")).toBe(true);
+  expect(wantsReferenceRecreation("Show me how to attach a camera to the Raspberry Pi 5 on my screen")).toBe(true);
+  expect(wantsReferenceRecreation("Make a rotatable 3D model of this microscope")).toBe(true);
+  expect(wantsReferenceRecreation("Show how to attach the lens to this telescope in 3D")).toBe(true);
+  expect(wantsReferenceRecreation("Render the mechanical clock on my screen in 3D")).toBe(true);
+  expect(wantsReferenceRecreation("Draw a diagram explaining this microscope in your own way")).toBe(false);
 });
 
 it("keeps 2D requests flat and routes arbitrary object models to 3D", () => {
@@ -57,6 +68,9 @@ it("keeps 2D requests flat and routes arbitrary object models to 3D", () => {
   expect(wantsVisualCreation("Replay the assembly")).toBe(true);
   expect(wantsPriorVisualIn3D("Replay the assembly")).toBe(true);
   expect(requestedVisualDimension("Replay the assembly")).toBe(3);
+  expect(requestedVisualDimension("Animate attaching a mini camera to a Raspberry Pi 5")).toBe(3);
+  expect(requestedVisualDimension("Show me exactly how to attach a camera to this Raspberry Pi 5")).toBe(3);
+  expect(requestedVisualDimension("Animate attaching a bicycle wheel to its fork")).toBe(3);
 });
 
 it("keeps a referenced diagram visible while a follow-up is prepared", () => {

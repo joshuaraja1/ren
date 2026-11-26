@@ -3,6 +3,9 @@ export function wantsVisualCreation(question: string) {
   return /\b(?:create|recreate|draw|render|illustrate|sketch|visuali[sz]e|generate)\b/i.test(question)
     || /\b(?:play|replay|animate)\s+(?:the\s+)?(?:assembly|assembly steps)\b/i.test(question)
     || /\b(?:show|animate|walk me through)\b[^.!?]{0,90}\b(?:assembl(?:e|y|ing)|putting .{0,25} together|connecting (?:the )?parts|plugging .{0,20} in)\b/i.test(question)
+    || /\b(?:show|animate|render|draw)\b[^.!?]{0,100}\b(?:attach(?:ing)?|install(?:ing)?|mount(?:ing)?)\b[^.!?]{0,100}\b(?:to|into|onto|on|in)\b/i.test(question)
+    || /\banimat(?:e|ing)\b[^.!?]{0,100}\bconnect(?:ing)?\b[^.!?]{0,100}\b(?:to|into|onto)\b/i.test(question)
+    || /\b(?:show|animate|render|draw)\b[^.!?]{0,100}\bconnect(?:ing)?\b[^.!?]{0,60}\b(?:camera|module|component|part|cable|sensor|display)\b/i.test(question)
     || /\b(?:model|diagram)\s+(?:me\s+)?(?:the|this|that|a|an)\s+[a-z]/i.test(question)
     || /\b(?:2d|3d|two[ -]dimensional|three[ -]dimensional)\s+(?:model|diagram|render|illustration|cutaway)\s+of\b/i.test(question)
     || /\bdiagram\s+(?:the|this|how|why)\b/i.test(question)
@@ -33,17 +36,22 @@ export function wantsPriorVisualIn3D(question: string): boolean {
 export function requestedVisualDimension(question: string): 2 | 3 {
   if (/\b(?:play|replay|animate)\s+(?:the\s+)?(?:assembly|assembly steps)\b/i.test(question)) return 3;
   if (/\b(?:2d|two[ -]dimensional)\b|\bflat\s+(?:diagram|drawing|schematic|model|illustration)\b/i.test(question)) return 2;
-  if (/\b(?:exploded (?:view|model)|animate\b[^.!?]{0,50}\bassembl(?:e|y|ing)|show\b[^.!?]{0,50}\b(?:parts? (?:moving|connecting)|assembl(?:e|y|ing)))\b/i.test(question)) return 3;
+  if (/\b(?:show|walk me through)\b[^.!?]{0,100}\battach\b[^.!?]{0,70}\bcamera\b[^.!?]{0,100}\b(?:raspberry\s*pi|pi\s*5)\b/i.test(question)
+    || /\b(?:show|walk me through)\b[^.!?]{0,100}\b(?:raspberry\s*pi|pi\s*5)\b[^.!?]{0,100}\battach\b[^.!?]{0,70}\bcamera\b/i.test(question)) return 3;
+  if (/\b(?:exploded (?:view|model)|animate\b[^.!?]{0,80}\b(?:assembl(?:e|y|ing)|attach(?:ing)?|install(?:ing)?|connect(?:ing)?)|show\b[^.!?]{0,50}\b(?:parts? (?:moving|connecting)|assembl(?:e|y|ing)))\b/i.test(question)) return 3;
   if (/\b(?:3d|three[ -]dimensional)\s+(?:model|render|diagram|view|illustration|drawing|scene|version|cutaway)\b|\b(?:model|render|diagram|view|illustration|drawing|scene|cutaway)\s+(?:in\s+)?3d\b|\b(?:draw|make|show|render|generate|build|create|model)\b[\s\S]{0,35}\b3d\b(?!\s+printer\b)|\b(?:rotat(?:e|able|ing)|orbit|spin|turn (?:it|the model) around|move (?:it|the model) around|inspect (?:it|the model) from all sides|exploded (?:view|model))\b/i.test(question)) return 3;
   return 2;
 }
 
 /** Only an explicit request to reproduce the visible object's appearance needs its pixels. */
 export function wantsReferenceRecreation(question: string) {
+  if (/\b(?:show|draw|build|make|animate|model|render|generate)\b[^.!?]{0,120}\b(?:this|that|visible|shown)\s+[\w-]+(?:\s+[\w-]+){0,4}\b[^.!?]{0,70}\b(?:3d|model|render|exploded|attach|install|connect)\b/i.test(question)
+    && !/\b(?:in your own way|inspired by)\b/i.test(question)) return true;
+  if (/\b(?:show|draw|build|make|animate|model|render|generate)\b[^.!?]{0,120}\b(?:3d|model|render|exploded|attach|install|connect)\b[^.!?]{0,90}\b(?:this|that|visible|shown)\s+[\w-]+(?:\s+[\w-]+){0,4}\b/i.test(question)
+    && !/\b(?:in your own way|inspired by)\b/i.test(question)) return true;
+  if (/\b(?:show|draw|build|make|animate|model|render|generate)\b[^.!?]{0,120}\b(?:on|in)\s+(?:my|the)\s+screen\b/i.test(question)) return true;
   return /\b(?:recreate|replicate|copy|match)\b[\s\S]{0,100}\b(?:this|that|visible|shown|screen|image|photo|picture|object)\b/i.test(question)
-    || /\b(?:draw|make|show|build)\b[\s\S]{0,80}\b(?:3d|exploded|model|render)\b[\s\S]{0,80}\b(?:this|that|visible|shown)\s+(?:phone|jet|plane|turbine|device|object|machine|engine|item|part)\b/i.test(question)
-    || /\b(?:draw|make|show|build|turn|convert)\b[\s\S]{0,80}\b(?:this|that|visible|shown)\s+(?:phone|jet|plane|turbine|device|object|machine|engine|item|part)\b[\s\S]{0,60}\b(?:3d|model|exploded|diagram|render|into|as)\b/i.test(question)
-    || /\b(?:turn|convert)\s+this\s+(?:phone|jet|plane|turbine|device|object|machine|engine|item|part)\s+into\s+(?:a\s+)?(?:diagram|model)\b/i.test(question)
+    || /\b(?:turn|convert)\s+(?:this|that|the visible)\s+[\w-]+(?:\s+[\w-]+){0,4}\s+into\s+(?:a\s+)?(?:diagram|model)\b/i.test(question)
     || /\b(?:this|that|visible|shown|screen|image|photo|picture|object)\b[\s\S]{0,100}\b(?:exactly|faithfully|as[ -]is)\b/i.test(question);
 }
 
