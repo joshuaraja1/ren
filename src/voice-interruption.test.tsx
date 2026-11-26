@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { AskResponse, RenBridge, VoiceMode } from "./contracts";
@@ -122,6 +122,19 @@ afterEach(() => {
 });
 
 describe("voice interruption and follow-ups", () => {
+  it("uses a second voice shortcut press to finish dictation without enabling Always On", async () => {
+    const harness = makeHarness([""], vi.fn(async () => response("unused")) as RenBridge["ask"]);
+    harness.renderApp();
+    await waitFor(() => expect(harness.processAudio).toBeTypeOf("function"));
+    harness.activate();
+    await waitFor(() => expect(harness.speechStart).toHaveBeenCalledOnce());
+    harness.activate();
+    await waitFor(() => expect(harness.speechFinish).toHaveBeenCalledOnce());
+    expect(harness.speechStart).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: /open ren/i }));
+    expect(await screen.findByText(/hey ren only/i)).toBeVisible();
+  });
+
   it("leaves Speaking and exposes an error if Deepgram never sends audio", async () => {
     let now = 8_000;
     vi.spyOn(Date, "now").mockImplementation(() => now);

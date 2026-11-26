@@ -23,6 +23,7 @@ describe("Ren voice interface", () => {
       expect(screen.getByRole("button", { name: /collapse ren/i })).toBeVisible();
       expect(screen.getByRole("button", { name: /tap control three times to talk/i })).toBeVisible();
       expect(screen.getByRole("button", { name: /summarise screen/i })).toBeVisible();
+      expect(screen.getByText(/hey ren only/i)).toBeVisible();
       expect(screen.queryByLabelText("Ren conversation")).not.toBeInTheDocument();
     } finally { window.ren = undefined; }
   });
@@ -324,7 +325,7 @@ describe("Ren voice interface", () => {
     }
   });
 
-  it("keeps diagram context for a spoken follow-up and starts listening after the answer", async () => {
+  it("returns to wake-only mode after an answer and retains context after Hey Ren", async () => {
     let now = 10_000;
     const dateNow = vi.spyOn(Date, "now").mockImplementation(() => now);
     let speechListener: ((data: { id: string; chunk?: string; done?: boolean }) => void) | undefined;
@@ -349,7 +350,7 @@ describe("Ren voice interface", () => {
     Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } });
     const speechStart = vi.fn(async () => true);
     const setCompanionVisible = vi.fn(async () => {});
-    const wakeFeed = vi.fn(async () => true);
+    const wakeFeed = vi.fn(async () => false).mockResolvedValueOnce(true);
     const generateIllustration = vi.fn(async () => true);
     const captureContext = vi.fn(async () => ({ frames: [], pointer: { x: .5, y: .5 } }));
     const ask = vi.fn(async ({ question }: { question: string }) => ({
@@ -394,9 +395,12 @@ describe("Ren voice interface", () => {
       expect(speechStart).toHaveBeenCalledTimes(1);
       now += 400;
       act(() => { for (let index = 0; index < 5; index += 1) processor?.onaudioprocess?.(quietFollowUpFrame); });
+      await waitFor(() => expect(wakeFeed).toHaveBeenCalledTimes(2));
+      expect(speechStart).toHaveBeenCalledTimes(1);
+      wakeFeed.mockResolvedValueOnce(true);
+      act(() => processor?.onaudioprocess?.(voiceFrame));
       await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(2));
       await waitFor(() => expect(setCompanionVisible).toHaveBeenLastCalledWith(true));
-      expect(wakeFeed).toHaveBeenCalledTimes(1);
       now += 2_100;
       act(() => processor?.onaudioprocess?.(silentFrame));
       await waitFor(() => expect(ask).toHaveBeenCalledTimes(2));
@@ -406,12 +410,10 @@ describe("Ren voice interface", () => {
       expect(speechStart).toHaveBeenCalledTimes(2);
       now += 400;
       act(() => { for (let index = 0; index < 5; index += 1) processor?.onaudioprocess?.(voiceFrame); });
-      await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(3));
-      now += 2_100;
-      act(() => processor?.onaudioprocess?.(silentFrame));
+      await waitFor(() => expect(wakeFeed).toHaveBeenCalledTimes(4));
+      expect(speechStart).toHaveBeenCalledTimes(2);
       await waitFor(() => expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible());
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-      expect(wakeFeed).toHaveBeenCalledTimes(1);
       expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: /open ren/i })).toHaveClass("ren-pebble");
     } finally {

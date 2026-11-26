@@ -136,7 +136,10 @@ export function App() {
   }), []);
   useEffect(() => window.ren?.onActivateVoice?.(() => {
     if (voicePausedRef.current) return;
-    if (nativeSpeechRef.current) void startNativeDictation();
+    if (nativeSpeechRef.current) {
+      if (dictationActiveRef.current) void finishNativeDictation();
+      else void startNativeDictation();
+    }
     else showVoiceError("Voice is unavailable. Check the microphone and Deepgram settings.");
   }), []);
   useEffect(() => window.ren?.onOpenPanel?.(() => { openVisionSettings(); }), []);
@@ -354,6 +357,13 @@ export function App() {
     }
   }
 
+  function returnToWakeMode() {
+    conversationOpenRef.current = alwaysOnRef.current && !voicePausedRef.current;
+    awaitingFollowUpRef.current = conversationOpenRef.current;
+    setVoiceState("idle");
+    hideCompanionSoon();
+  }
+
   async function endVoiceConversation() {
     interruptCurrentResponse();
     stopNativeDictation();
@@ -382,11 +392,7 @@ export function App() {
     setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: answer, sources: job.sources }]);
     if (voicePausedRef.current) { setVoiceState("idle"); return; }
     setVoiceState("responding");
-    void speak(answer, () => {
-      if (conversationOpenRef.current && nativeSpeechRef.current) { awaitingFollowUpRef.current = true; setVoiceState("idle"); }
-      else setVoiceState("idle");
-      hideCompanionSoon();
-    });
+    void speak(answer, returnToWakeMode);
   }
 
   async function setExpanded(value: boolean) {
@@ -519,16 +525,8 @@ export function App() {
       if (/^(?:stop listening|that(?:'|’)s all|goodbye|bye(?: ren)?|cancel)[.!\s]*$/i.test(transcript)) { await endVoiceConversation(); return; }
       if (transcript) await askQuestion(transcript);
       else {
-        if (conversationOpenRef.current) {
-          awaitingFollowUpRef.current = true;
-          setVoiceState("idle");
-          hideCompanionSoon();
-        } else {
-          setVoiceState("idle");
-          if (!automatic || voicedFramesRef.current >= 2) setError("I didn't catch that. Tap the microphone and try again.");
-          keepAwake();
-          hideCompanionSoon();
-        }
+        returnToWakeMode();
+        if (!automatic || voicedFramesRef.current >= 2) setError("I didn't catch that. Tap the microphone and try again.");
       }
     } catch (reason) {
       if (session !== dictationSessionRef.current) return;
@@ -747,13 +745,12 @@ export function App() {
     setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: text }]);
     setVoiceState("responding"); keepAwake();
     suppressSpeechUntilRef.current = Date.now() + 2_500;
-    void speak(text, () => { setVoiceState(nativeWakeRef.current ? "idle" : "listening"); if (nativeWakeRef.current) hideCompanionSoon(); });
+    void speak(text, returnToWakeMode);
   }
 
   function handleAmbientTranscript(transcript: string) {
-    const wakeMatch = transcript.match(/\b(?:hey\s+(?:ren|run)|ren)\b/i);
-    const alreadyAwake = Date.now() < awakeUntilRef.current;
-    if (!wakeMatch && !alreadyAwake) return;
+    const wakeMatch = transcript.match(/\bhey[\s,.-]+ren\b/i);
+    if (!wakeMatch) return;
     showCompanion();
     keepAwake(); setVoiceState("listening");
     const remainder = wakeMatch ? transcript.slice((wakeMatch.index ?? 0) + wakeMatch[0].length).replace(/^[,.:;\s-]+/, "") : transcript;
@@ -791,6 +788,7 @@ export function App() {
     const history = messagesRef.current.slice(-8).map(({ role, content }) => ({ role, content }));
     queuedIllustrationRef.current = false;
     askingRef.current = true;
+    if (nativeSpeechRef.current && !voicePausedRef.current) conversationOpenRef.current = true;
     showCompanion();
     if (expandedRef.current && !visionOpenRef.current && promptMode !== "chat") void setExpanded(false);
     awaitingFollowUpRef.current = false;
@@ -826,22 +824,13 @@ export function App() {
       setVoiceState("responding"); suppressSpeechUntilRef.current = Date.now() + Math.min(12_000, response.answer.length * 45);
       void speak(response.answer, () => {
         if (generation !== askGenerationRef.current) return;
-        if (nativeSpeechRef.current && conversationOpenRef.current && !visionOpenRef.current) {
-          awaitingFollowUpRef.current = true;
-          setVoiceState("idle");
-          hideCompanionSoon();
-        }
-        else { setVoiceState("idle"); keepAwake(); hideCompanionSoon(); }
+        returnToWakeMode();
       });
       if (response.autoIllustrate && generation === askGenerationRef.current) void illustrate(true);
     } catch (reason) {
       if (generation !== askGenerationRef.current) return;
       setError(reason instanceof Error ? reason.message : "Ren couldn’t answer.");
-      if (conversationOpenRef.current && nativeSpeechRef.current) {
-        awaitingFollowUpRef.current = true;
-        setVoiceState("idle");
-        hideCompanionSoon();
-      } else { setVoiceState("idle"); hideCompanionSoon(); }
+      returnToWakeMode();
     }
     finally { if (generation === askGenerationRef.current) { askingRef.current = false; activeAskTokenRef.current = null; } }
   }
@@ -900,12 +889,12 @@ export function App() {
           <div className="prompt-modes"><button type="button" className={promptMode === "ask" ? "active" : ""} aria-pressed={promptMode === "ask"} onClick={() => setPromptMode("ask")}>✦ Ask</button><button type="button" className={promptMode === "agent" ? "active" : ""} aria-pressed={promptMode === "agent"} onClick={() => setPromptMode("agent")}>◈ Agent</button><button type="button" className={promptMode === "chat" ? "active" : ""} aria-pressed={promptMode === "chat"} onClick={() => setPromptMode("chat")}>▤ Chat</button></div>
           </div>
         </div>
-        <div className="panel-status"><span>◈ {agentJob?.status === "running" ? "1 running" : "Agents ready"}</span><span>◇ {permission?.microphone === "granted" ? "Permissions" : "Needs permissions"}</span><span>◉ {stripStatus}</span></div>
+        <div className="panel-status"><span>◈ {agentJob?.status === "running" ? "1 running" : "Agents ready"}</span><span>◇ {voiceMode.alwaysOn ? "Always on" : "Hey Ren only"}</span><span>◉ {stripStatus}</span></div>
         {error && <p className="panel-error" role="alert">{error}</p>}
       </section>}
       {!visionOpen && panelTab === "agents" && <section className="panel-list"><div className="list-heading"><span className="hero-kicker">AGENT WORK</span><h1>Agents</h1><p>Longer tasks appear here while Ren works.</p></div>{agentJob ? <article className="agent-summary"><span className="agent-status">{agentJob.status}</span><h2>{agentJob.task || "Current task"}</h2><p>{agentJob.answer || agentJob.error || "Ren is working on this task."}</p>{agentJob.status === "running" && <button onClick={() => { if (agentJobIdRef.current) void window.ren?.cancelAgentJob?.(agentJobIdRef.current); }}>Stop task</button>}</article> : <div className="panel-empty"><span>◈</span><strong>No agent tasks yet</strong><p>Ask Ren to research, build, or work on a larger task.</p></div>}</section>}
       {!visionOpen && panelTab === "connections" && <section className="panel-list"><div className="list-heading"><span className="hero-kicker">LOCAL CONNECTIONS</span><h1>Connections</h1><p>Connect the services Ren uses for voice and screen-aware answers.</p></div><button className="connection-row" onClick={openVisionSettings}><span>◉</span><span><strong>Deepgram voice</strong><small>{deepgram.mode === "connected" ? "Connected" : "Connect to use voice"}</small></span><b>↗</b></button><button className="connection-row" onClick={openVisionSettings}><span>✦</span><span><strong>OpenAI vision</strong><small>{vision.mode === "connected" ? "Connected" : "Connect for screen-aware answers"}</small></span><b>↗</b></button></section>}
-      {visionOpen ? <form className="vision-settings" onSubmit={(event) => void saveVision(event)}><span className="step-kicker">CLOUD VOICE</span><h2>Connect Deepgram</h2><p>Ren keeps the small “Hey Ren” detector on your Mac. After it wakes, Ren streams your spoken question to Deepgram for transcription and sends reply text to Deepgram for speech. While the conversation stays open, Ren detects follow-ups locally and streams audio only when you speak. Deepgram may charge for usage.</p><label>Deepgram API key<input aria-label="Deepgram API key" type="password" value={deepgramInput} onChange={(event) => setDeepgramInput(event.target.value)} placeholder={deepgram.mode === "demo" ? "Enter your Deepgram key" : "Deepgram key saved"} autoComplete="off" /></label><div className="vision-actions"><button type="button" className="allow-button" onClick={() => void saveDeepgram()}>Save Deepgram key</button>{deepgram.mode === "connected" && <button type="button" onClick={() => void clearDeepgram()}>Remove Deepgram key</button>}</div><span className="step-kicker">SCREEN-AWARE ANSWERS</span><h2>Connect OpenAI</h2><p>When you ask about your screen, Ren sends your question and an on-demand screen snapshot to OpenAI. OpenAI may charge for requests.</p><label>Model<input aria-label="Vision model" value={visionModel} onChange={(event) => setVisionModel(event.target.value)} spellCheck={false} /></label><label>OpenAI API key<input aria-label="OpenAI API key" type="password" value={visionKey} onChange={(event) => setVisionKey(event.target.value)} placeholder={vision.mode === "connected" ? "Leave blank to keep saved key" : "Enter your OpenAI key"} autoComplete="off" /></label><div className="vision-actions"><button type="submit" className="allow-button">Save OpenAI key</button><button type="button" onClick={() => { setDeepgramInput(""); setError(""); void setExpanded(false); }}>Back to Ren</button>{vision.mode === "connected" && <button type="button" onClick={() => void clearVision()}>Remove OpenAI key</button>}</div><div className="hosted-settings"><span className="step-kicker">REALISTIC ON-SCREEN IMAGES</span><h2>Ren image service</h2><p>{hosted.mode === "demo" ? "Connect the Ren hosted image service once. Your validated lesson part names and connections go to this service when you approve an illustration; no screen screenshot is sent. The service uses your Ren illustration allowance." : `Connected to ${hosted.host}. Illustration requests use your Ren allowance; no screen screenshot is sent.`}</p><label>Ren image service URL<input aria-label="Ren image service URL" value={hostedUrl} onChange={(event) => setHostedUrl(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void saveHosted(); } }} placeholder="https://images.ren.example/v1" spellCheck={false} /></label><label>Ren access token<input aria-label="Ren access token" type="password" value={hostedToken} onChange={(event) => setHostedToken(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void saveHosted(); } }} placeholder={hosted.mode === "connected" ? "Leave blank to keep saved token" : "Enter your Ren access token"} autoComplete="off" /></label><div className="vision-actions"><button type="button" className="allow-button" onClick={() => void saveHosted()}>Save image service</button>{hosted.mode === "connected" && <button type="button" onClick={() => void clearHosted()}>Disconnect service</button>}</div></div></form>
+      {visionOpen ? <form className="vision-settings" onSubmit={(event) => void saveVision(event)}><span className="step-kicker">CLOUD VOICE</span><h2>Connect Deepgram</h2><p>Ren keeps the small “Hey Ren” detector on your Mac. After it wakes, Ren streams your spoken question to Deepgram for transcription and sends reply text to Deepgram for speech. While Ren answers, you can interrupt by speaking. After the answer, say “Hey Ren” again for a follow-up. Deepgram may charge for usage.</p><label>Deepgram API key<input aria-label="Deepgram API key" type="password" value={deepgramInput} onChange={(event) => setDeepgramInput(event.target.value)} placeholder={deepgram.mode === "demo" ? "Enter your Deepgram key" : "Deepgram key saved"} autoComplete="off" /></label><div className="vision-actions"><button type="button" className="allow-button" onClick={() => void saveDeepgram()}>Save Deepgram key</button>{deepgram.mode === "connected" && <button type="button" onClick={() => void clearDeepgram()}>Remove Deepgram key</button>}</div><span className="step-kicker">SCREEN-AWARE ANSWERS</span><h2>Connect OpenAI</h2><p>When you ask about your screen, Ren sends your question and an on-demand screen snapshot to OpenAI. OpenAI may charge for requests.</p><label>Model<input aria-label="Vision model" value={visionModel} onChange={(event) => setVisionModel(event.target.value)} spellCheck={false} /></label><label>OpenAI API key<input aria-label="OpenAI API key" type="password" value={visionKey} onChange={(event) => setVisionKey(event.target.value)} placeholder={vision.mode === "connected" ? "Leave blank to keep saved key" : "Enter your OpenAI key"} autoComplete="off" /></label><div className="vision-actions"><button type="submit" className="allow-button">Save OpenAI key</button><button type="button" onClick={() => { setDeepgramInput(""); setError(""); void setExpanded(false); }}>Back to Ren</button>{vision.mode === "connected" && <button type="button" onClick={() => void clearVision()}>Remove OpenAI key</button>}</div><div className="hosted-settings"><span className="step-kicker">REALISTIC ON-SCREEN IMAGES</span><h2>Ren image service</h2><p>{hosted.mode === "demo" ? "Connect the Ren hosted image service once. Your validated lesson part names and connections go to this service when you approve an illustration; no screen screenshot is sent. The service uses your Ren illustration allowance." : `Connected to ${hosted.host}. Illustration requests use your Ren allowance; no screen screenshot is sent.`}</p><label>Ren image service URL<input aria-label="Ren image service URL" value={hostedUrl} onChange={(event) => setHostedUrl(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void saveHosted(); } }} placeholder="https://images.ren.example/v1" spellCheck={false} /></label><label>Ren access token<input aria-label="Ren access token" type="password" value={hostedToken} onChange={(event) => setHostedToken(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void saveHosted(); } }} placeholder={hosted.mode === "connected" ? "Leave blank to keep saved token" : "Enter your Ren access token"} autoComplete="off" /></label><div className="vision-actions"><button type="button" className="allow-button" onClick={() => void saveHosted()}>Save image service</button>{hosted.mode === "connected" && <button type="button" onClick={() => void clearHosted()}>Disconnect service</button>}</div></div></form>
       : null}
       {visionOpen && <section className="shortcut-settings"><span className="step-kicker">MAC SHORTCUTS</span><h2>Voice and screen access</h2><div className="permission-row"><span>Accessibility · triple Control and circle</span><b>{permission?.interaction ?? "checking"}</b></div><div className="permission-row"><span>Screen Recording · on-demand context</span><b>{permission?.screen ?? "checking"}</b></div><div className="vision-actions">{permission?.interaction !== "granted" && <button type="button" className="allow-button" onClick={() => void enableCircle()}>Enable keyboard shortcut</button>}{permission?.screen !== "granted" && <button type="button" onClick={() => void openPermissionSettings()}>Enable screen context</button>}</div></section>}
     </>}

@@ -393,8 +393,8 @@ app.whenReady().then(() => {
     if (process.platform === "darwin" && !systemPreferences.isTrustedAccessibilityClient(false)) return false;
     circleInputActive = startCircleInput({
       onTripleControl: () => {
-        if (voicePaused) { setVoicePaused(false); setAlwaysOnVoice(true); }
-        else setAlwaysOnVoice(!alwaysOnVoice);
+        if (voicePaused) setVoicePaused(false);
+        mainWindow?.webContents.send("ren:activate-voice");
       },
       onSketchProgress: (displayId, points) => { if (!voicePaused) showFocusPath(displayId, points); },
       onSketchComplete: (displayId, points) => {
