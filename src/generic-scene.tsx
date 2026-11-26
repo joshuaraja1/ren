@@ -147,6 +147,14 @@ export function projectGenericAnchors(anchors: Record<string, THREE.Vector3>, ro
   return result;
 }
 
+/** Fit the whole subject through a full cursor orbit, including diagonal views. */
+export function orbitCameraDistance(bounds: THREE.Box3, verticalFovDegrees: number, aspect: number): number {
+  const radius = bounds.getBoundingSphere(new THREE.Sphere()).radius;
+  const halfVertical = THREE.MathUtils.degToRad(verticalFovDegrees / 2);
+  const halfHorizontal = Math.atan(Math.tan(halfVertical) * Math.max(.1, aspect));
+  return Math.min(75, Math.max(7, radius / Math.sin(Math.min(halfVertical, halfHorizontal)) * 1.2 + 1));
+}
+
 export function GenericScene({ lesson, onAnchors, onUnavailable, onAssemblyStep }: {
   lesson: VisualLesson;
   onAnchors: (anchors: GenericAnchors) => void;
@@ -183,7 +191,6 @@ export function GenericScene({ lesson, onAnchors, onUnavailable, onAssemblyStep 
       applyAssemblyProgress(model as SubjectScene, lesson.model.assembly.length);
     }
     const center = bounds.getCenter(new THREE.Vector3());
-    const size = bounds.getSize(new THREE.Vector3());
     const assembly = lesson.playAssembly ? lesson.model?.assembly : undefined;
     const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     let assemblyStarted = 0;
@@ -215,8 +222,7 @@ export function GenericScene({ lesson, onAnchors, onUnavailable, onAssemblyStep 
       const targetElevation = .16 + (.5 - cursor.y) * .85;
       azimuth += (targetAzimuth - azimuth) * .1;
       elevation += (targetElevation - elevation) * .1;
-      const halfVertical = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
-      const distance = Math.min(75, Math.max(7, size.x / (2 * halfVertical * camera.aspect), size.y / (2 * halfVertical), size.z / (2 * halfVertical)) * 1.55 + 1);
+      const distance = orbitCameraDistance(bounds, camera.fov, camera.aspect);
       camera.position.set(center.x + Math.sin(azimuth) * Math.cos(elevation) * distance, center.y + Math.sin(elevation) * distance, center.z + Math.cos(azimuth) * Math.cos(elevation) * distance);
       camera.lookAt(center);
       renderer.render(scene, camera);

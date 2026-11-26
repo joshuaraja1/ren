@@ -75,7 +75,7 @@ describe("generic subject model generation", () => {
   });
 
   it("retries an incomplete model once and fails clearly if still invalid", async () => {
-    const fetcher = vi.fn(async () => reply({ ...model, anchors: model.anchors.slice(0, 1) })) as unknown as typeof fetch;
+    const fetcher = vi.fn(async () => reply({ ...model, primitives: model.primitives.slice(0, 1) })) as unknown as typeof fetch;
     await expect(generateSceneSpec(lesson, "Make a 3D phone", credentials, new AbortController().signal, fetcher)).rejects.toThrow("could not construct a coherent 3D model");
     expect(fetcher).toHaveBeenCalledTimes(2);
   });

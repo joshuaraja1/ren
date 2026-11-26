@@ -688,11 +688,12 @@ app.whenReady().then(() => {
           lesson = { ...lesson, model };
         } catch (error) {
           if (askController.signal.aborted || voicePaused) throw error;
-          lesson = { ...lesson, dimension: 2 };
-          response.answer = `${response.answer} I couldn't build a rotatable model this time, so I'm drawing a flat explanation instead.`;
+          const reason = error instanceof Error ? error.message : "The model planner failed.";
+          response.answer = `I couldn't build a reliable rotatable 3D model of ${lesson.title} right now. ${reason}`;
+          lesson = null;
         }
       }
-      lesson = centerRequestedLesson(lesson, display.bounds.width, display.bounds.height);
+      if (lesson) lesson = centerRequestedLesson(lesson, display.bounds.width, display.bounds.height);
     }
     let annotations = spatialAllowed && (focus || wantsSpatialGuidance(value.question)) && !explicitVisual && !reuseVisual ? response.annotations : [];
     if (spatialAllowed && focus && !explicitVisual && !reuseVisual) {

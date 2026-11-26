@@ -16,6 +16,18 @@ export function calloutPageSize(stageHeight: number): 2 | 4 | 6 {
   return 6;
 }
 
+/** Keep each side's leader lines in vertical order, then hold that layout through orbiting. */
+export function modelCalloutSlots(parts: Pick<VisualLesson["parts"][number], "id">[], anchors: Record<string, { x: number; y: number }>): Record<string, number> {
+  const slots: Record<string, number> = {};
+  const rows = Math.ceil(parts.length / 2);
+  for (const side of [0, 1]) {
+    parts.filter((_, index) => index % 2 === side)
+      .sort((first, second) => anchors[first.id].y - anchors[second.id].y)
+      .forEach((part, rank) => { slots[part.id] = .17 + .66 * (rank + .5) / rows; });
+  }
+  return slots;
+}
+
 function usePartPaging(lesson: VisualLesson, enabled = true) {
   const pageSizeForViewport = () => enabled ? calloutPageSize(window.innerHeight * lesson.placement.height) : Math.max(1, lesson.parts.length);
   const [pageSize, setPageSize] = useState(pageSizeForViewport);
@@ -61,16 +73,20 @@ function InteractiveGenericLesson({ lesson }: { lesson: VisualLesson }) {
   const [anchors, setAnchors] = useState<Record<string, { x: number; y: number }>>({});
   const [unavailable, setUnavailable] = useState(false);
   const [assemblyStep, setAssemblyStep] = useState(0);
-  useLayoutEffect(() => { setAssemblyStep(0); setUnavailable(false); setAnchors({}); }, [lesson]);
+  const [modelSlots, setModelSlots] = useState<Record<string, number> | null>(null);
+  useLayoutEffect(() => { setAssemblyStep(0); setUnavailable(false); setAnchors({}); setModelSlots(null); }, [lesson]);
   const { page, pageSize, pageCount, visibleParts } = usePartPaging(lesson, !lesson.model);
+  useLayoutEffect(() => {
+    if (lesson.model && !modelSlots && lesson.parts.every((part) => anchors[part.id])) setModelSlots(modelCalloutSlots(lesson.parts, anchors));
+  }, [lesson, anchors, modelSlots]);
   const placement = { left: `${lesson.placement.x * 100}%`, top: `${lesson.placement.y * 100}%`, width: `${lesson.placement.width * 100}%`, height: `${lesson.placement.height * 100}%` };
   const rows = Math.ceil(visibleParts.length / 2);
-  const cards = visibleParts.map((part, index) => ({ part, side: index % 2 ? "right" as const : "left" as const, slot: .17 + .66 * (Math.floor(index / 2) + .5) / rows }));
-  const kind = lesson.model ? "Illustrative 3D model" : "Conceptual 3D schematic";
+  const cards = visibleParts.map((part, index) => ({ part, side: index % 2 ? "right" as const : "left" as const, slot: modelSlots?.[part.id] ?? .17 + .66 * (Math.floor(index / 2) + .5) / rows }));
+  const kind = unavailable ? "2D part guide; 3D graphics unavailable" : lesson.model ? "Illustrative 3D model" : "Conceptual 3D schematic";
   const assembly = lesson.playAssembly ? lesson.model?.assembly : undefined;
   const currentAssembly = assembly && assemblyStep > 0 && assemblyStep <= assembly.length ? assembly[assemblyStep - 1] : null;
   const shownAnchors = unavailable ? lesson.model ? sceneFallbackProjection(lesson.model).anchors : lessonVectorPositions(lesson) : anchors;
-  const ready = unavailable || !lesson.model || lesson.parts.every((part) => Boolean(shownAnchors[part.id]));
+  const ready = unavailable || !lesson.model || Boolean(modelSlots && lesson.parts.every((part) => shownAnchors[part.id]));
   return <section className={`visual-lesson interactive-jet-lesson centered-stage${lesson.model ? " interactive-model-lesson" : ""}`} style={{ ...placement, visibility: ready ? "visible" : "hidden" }} role="img" aria-label={`${lesson.title}. ${kind}. Move your cursor to rotate and inspect all parts. ${lesson.parts.map((part) => `${part.label}: ${part.explanation}`).join(" ")}`}>
     {unavailable ? lesson.model ? <SceneFallback spec={lesson.model} connections={lesson.connections} /> : <div className="jet-scene"><LessonVectorFallback lesson={lesson} /></div> : <Suspense fallback={<div className="jet-scene" aria-hidden="true" />}><GenericScene lesson={lesson} onAnchors={setAnchors} onUnavailable={() => setUnavailable(true)} onAssemblyStep={setAssemblyStep} /></Suspense>}
     <div className="interactive-jet-heading" aria-hidden="true"><span>REN EXPLAINS</span><strong>{lesson.title}</strong><small>{unavailable ? "2D part guide · 3D view unavailable" : "Move your cursor to rotate and inspect parts"}</small></div>

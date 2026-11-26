@@ -4,7 +4,7 @@ import { render } from "@testing-library/react";
 import { vi } from "vitest";
 import type { VisualLesson } from "../electron/visual-lesson";
 import type { SceneSpec } from "../electron/scene-spec";
-import { GenericScene, applyAssemblyProgress, makeGenericScene, makeSubjectScene, projectGenericAnchors } from "./generic-scene";
+import { GenericScene, applyAssemblyProgress, makeGenericScene, makeSubjectScene, orbitCameraDistance, projectGenericAnchors } from "./generic-scene";
 
 const lesson: VisualLesson = {
   version: 1, title: "Camera signal path", placement: { x: 0, y: 0, width: 1, height: 1 },
@@ -43,6 +43,25 @@ it("keeps projected part anchors on screen as the camera orbits", () => {
       expect(point.x).toBeLessThanOrEqual(1);
       expect(point.y).toBeGreaterThanOrEqual(0);
       expect(point.y).toBeLessThanOrEqual(1);
+    }
+  }
+});
+
+it("keeps a wide subject fully framed while orbiting through diagonal views", () => {
+  const bounds = new THREE.Box3(new THREE.Vector3(-5, -1, -1), new THREE.Vector3(5, 1, 1));
+  const camera = new THREE.PerspectiveCamera(38, 1.25, .1, 100);
+  const distance = orbitCameraDistance(bounds, camera.fov, camera.aspect);
+  for (const azimuth of [0, Math.PI / 4, Math.PI / 2, Math.PI]) {
+    camera.position.set(Math.sin(azimuth) * distance, distance * .15, Math.cos(azimuth) * distance);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld(true);
+    for (const corner of [
+      [-5, -1, -1], [-5, -1, 1], [-5, 1, -1], [-5, 1, 1],
+      [5, -1, -1], [5, -1, 1], [5, 1, -1], [5, 1, 1],
+    ]) {
+      const projected = new THREE.Vector3(corner[0], corner[1], corner[2]).project(camera);
+      expect(Math.abs(projected.x)).toBeLessThan(1);
+      expect(Math.abs(projected.y)).toBeLessThan(1);
     }
   }
 });
