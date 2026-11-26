@@ -334,7 +334,7 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--listen);
   border: 1px solid rgba(138,175,237,.18);
   border-radius: 27px;
   color: #f5f6fa;
-  background: linear-gradient(155deg, rgba(32,42,62,.98), rgba(13,16,23,.99) 44%, rgba(8,11,16,.99));
+  background: linear-gradient(155deg, rgba(31,34,39,.98), rgba(14,16,20,.99) 44%, rgba(8,9,12,.99));
   box-shadow: 0 24px 70px rgba(0,0,0,.48), inset 0 1px rgba(255,255,255,.07);
 }
 .ambient-header {
@@ -366,28 +366,38 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--listen);
 .panel-chrome { border-radius: 50%; font-size: 17px; }
 .panel-tab:hover, .panel-chrome:hover { color: white; background: rgba(255,255,255,.12); }
 .panel-home { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 9px; padding: 4px 14px 14px; }
-.panel-hero { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 20px; border: 1px solid rgba(255,255,255,.09); border-radius: 21px; background: linear-gradient(155deg, rgba(49,61,85,.41), rgba(13,17,25,.75) 50%, rgba(11,15,22,.8)); box-shadow: inset 0 1px rgba(255,255,255,.06); }
+.panel-hero { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 20px; border: 1px solid rgba(255,255,255,.09); border-radius: 21px; background: linear-gradient(155deg, rgba(32,36,43,.62), rgba(13,15,19,.8) 50%, rgba(9,11,15,.88)); box-shadow: inset 0 1px rgba(255,255,255,.06); }
 .hero-heading { display: flex; align-items: center; justify-content: space-between; }
 .hero-kicker, .step-kicker { color: #80aeff; font-size: 10px; font-weight: 800; letter-spacing: .16em; }
 .hero-symbol { color: #8dbbff; font-size: 22px; }
 .panel-hero h1, .list-heading h1 { margin: 12px 0 5px; color: #f6f8ff; font-size: 26px; font-weight: 650; letter-spacing: -.04em; }
 .panel-hero > p, .list-heading p { margin: 0; color: #aab3c2; font-size: 12px; line-height: 1.4; }
-.panel-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 9px; overflow-y: auto; margin: 20px 0 16px; }
+.panel-conversation { max-height: 238px; min-height: 0; display: flex; flex-direction: column; gap: 9px; overflow-y: auto; margin: 16px 0 8px; }
 .panel-conversation article { max-width: 95%; padding: 10px 12px; border: 1px solid rgba(255,255,255,.08); border-radius: 13px; background: rgba(255,255,255,.05); }
 .panel-conversation article.user { align-self: flex-end; background: rgba(78,131,215,.2); }
 .panel-conversation article b { color: #9ebcf0; font-size: 9px; letter-spacing: .11em; }
 .panel-conversation article p { margin: 5px 0 0; color: #e4e9f3; font-size: 11px; line-height: 1.45; }
 .panel-followups { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .panel-followups button { padding: 5px 8px; border: 1px solid rgba(118,165,238,.3); border-radius: 12px; color: #c9dcff; background: rgba(96,141,214,.12); font-size: 10px; cursor: pointer; }
-.panel-suggestions { margin-top: auto; display: grid; gap: 8px; }
+.chat-empty { color: #8994a3; font-size: 12px; }
+.home-actions { flex: 1; display: flex; flex-direction: column; justify-content: flex-start; gap: 22px; min-height: 0; padding-top: 22px; }
+.voice-guide { display: grid; grid-template-columns: 46px 1fr 14px; align-items: center; gap: 12px; width: 100%; padding: 16px 14px; border: 1px solid rgba(255,255,255,.09); border-radius: 15px; color: #e9edf3; background: rgba(255,255,255,.045); text-align: left; cursor: pointer; }
+.voice-guide:hover { background: rgba(255,255,255,.075); }
+.voice-guide-icon { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 1px solid rgba(255,255,255,.11); border-radius: 12px; background: #252a31; color: #fff; font-size: 24px; }
+.voice-guide strong { display: block; font-size: 13px; font-weight: 700; }
+.voice-guide small { display: block; margin-top: 4px; color: #9ea8b6; font-size: 10px; line-height: 1.4; }
+.panel-suggestions { display: grid; gap: 9px; padding: 12px; border: 1px solid rgba(255,255,255,.07); border-radius: 15px; background: rgba(255,255,255,.035); }
 .panel-suggestions > span { color: #8391a9; font-size: 9px; font-weight: 780; letter-spacing: .13em; }
-.panel-suggestions button { display: flex; justify-content: space-between; width: 100%; padding: 11px 12px; border: 1px solid rgba(255,255,255,.07); border-radius: 11px; color: #e4e9f3; background: rgba(255,255,255,.045); text-align: left; font-size: 11px; cursor: pointer; }
+.suggestion-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.panel-suggestions button { display: flex; align-items: center; width: 100%; padding: 8px 10px; border: 1px solid rgba(255,255,255,.07); border-radius: 999px; color: #e4e9f3; background: rgba(255,255,255,.045); text-align: left; font-size: 10px; cursor: pointer; }
 .panel-suggestions button:hover { background: rgba(102,151,231,.12); }
 .panel-suggestions b { color: #8fb9ff; }
-.panel-prompt { display: grid; grid-template-columns: 1fr 31px 31px; align-items: center; gap: 5px; padding: 8px; border: 1px solid rgba(255,255,255,.13); border-radius: 15px; background: rgba(0,0,0,.32); }
+.home-prompt-dock { margin-top: auto; }
+.panel-prompt { display: grid; grid-template-columns: 21px 1fr 31px 31px; align-items: center; gap: 5px; padding: 7px 9px; border: 1px solid rgba(255,255,255,.13); border-radius: 15px; background: rgba(0,0,0,.32); }
 .panel-prompt:focus-within { border-color: rgba(121,170,247,.65); }
-.panel-prompt textarea { min-width: 0; min-height: 36px; max-height: 90px; padding: 6px 5px; border: 0; outline: 0; resize: vertical; color: #f8faff; background: none; font: 12px/1.35 -apple-system, BlinkMacSystemFont, sans-serif; }
-.panel-prompt textarea::placeholder { color: #8791a3; }
+.prompt-symbol { color: #8cb4f0; text-align: center; font-size: 15px; }
+.panel-prompt input { min-width: 0; min-height: 30px; padding: 5px 3px; border: 0; outline: 0; color: #f8faff; background: none; font: 12px/1.35 -apple-system, BlinkMacSystemFont, sans-serif; }
+.panel-prompt input::placeholder { color: #8791a3; }
 .panel-prompt button { width: 30px; height: 30px; border: 0; border-radius: 9px; color: #f8fbff; background: rgba(255,255,255,.08); cursor: pointer; }
 .panel-prompt button svg { width: 17px; height: 17px; vertical-align: middle; }
 .panel-prompt button:last-child { background: #437fe1; }

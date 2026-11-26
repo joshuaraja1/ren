@@ -189,7 +189,7 @@ describe("voice interruption and follow-ups", () => {
     await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
 
     harness.feedFrames(5);
-    await waitFor(() => expect(harness.cancelAsk).toHaveBeenCalledOnce());
+    await waitFor(() => expect(harness.cancelAsk).toHaveBeenCalledExactlyOnceWith("test-context"));
     await waitFor(() => expect(harness.speechStart).toHaveBeenCalledTimes(2));
     await act(async () => { firstAnswer.resolve(response("A stale answer that must never speak.")); });
     expect(harness.speak).not.toHaveBeenCalled();

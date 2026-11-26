@@ -21,6 +21,9 @@ describe("Ren voice interface", () => {
       expect(screen.getByRole("button", { name: /agents/i })).toBeVisible();
       expect(screen.getByRole("button", { name: /connect/i })).toBeVisible();
       expect(screen.getByRole("button", { name: /collapse ren/i })).toBeVisible();
+      expect(screen.getByRole("button", { name: /tap control three times to talk/i })).toBeVisible();
+      expect(screen.getByRole("button", { name: /summarise screen/i })).toBeVisible();
+      expect(screen.queryByLabelText("Ren conversation")).not.toBeInTheDocument();
     } finally { window.ren = undefined; }
   });
 
@@ -37,13 +40,19 @@ describe("Ren voice interface", () => {
     try {
       render(<App />);
       fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
+      expect(screen.queryByLabelText("Ren conversation")).not.toBeInTheDocument();
       fireEvent.click(await screen.findByRole("button", { name: /chat/i }));
+      expect(screen.getByLabelText("Ren conversation")).toBeVisible();
       fireEvent.change(screen.getByRole("textbox", { name: /ask ren/i }), { target: { value: "Tell me more" } });
       fireEvent.click(screen.getByRole("button", { name: /send ren prompt/i }));
       await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({ question: "Tell me more" })));
       expect(screen.getByRole("textbox", { name: /ask ren/i })).toBeVisible();
       expect(setExpanded).not.toHaveBeenCalledWith(false, false);
-      fireEvent.click(screen.getByRole("button", { name: /agent$/i }));
+      await waitFor(() => expect(screen.getByText("Here is the answer.")).toBeVisible());
+      fireEvent.click(screen.getByRole("button", { name: /✦ Ask/i }));
+      expect(screen.queryByLabelText("Ren conversation")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /summarise screen/i })).toBeVisible();
+      fireEvent.click(screen.getByRole("button", { name: /^◈ Agent$/i }));
       fireEvent.change(screen.getByRole("textbox", { name: /ask ren/i }), { target: { value: "Compare two learning tools" } });
       fireEvent.click(screen.getByRole("button", { name: /send ren prompt/i }));
       await waitFor(() => expect(startAgentJob).toHaveBeenCalledWith(expect.objectContaining({ task: "Compare two learning tools" })));

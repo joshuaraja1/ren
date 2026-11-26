@@ -91,6 +91,8 @@ export function App() {
   const expandedRef = useRef(false);
   const askingRef = useRef(false);
   const askGenerationRef = useRef(0);
+  const activeAskTokenRef = useRef<string | null>(null);
+  const captureInFlightRef = useRef<Promise<ScreenContext> | null>(null);
   const visionOpenRef = useRef(false);
 
   useEffect(() => { messagesRef.current = messages; }, [messages]);
@@ -147,6 +149,7 @@ export function App() {
     visionOpenRef.current = false;
     setVisionOpen(false);
     setPanelTab("home");
+    setPromptMode("ask");
     void setExpanded(true);
   }), []);
   useEffect(() => window.ren?.onAgentJobUpdate?.(handleAgentJobUpdate), []);
@@ -418,10 +421,12 @@ export function App() {
 
   function interruptCurrentResponse() {
     const wasAsking = askingRef.current;
+    const oldAskToken = activeAskTokenRef.current;
     const currentJob = agentJobIdRef.current;
     askGenerationRef.current += 1;
     askingRef.current = false;
-    if (wasAsking) void window.ren?.cancelAsk?.();
+    activeAskTokenRef.current = null;
+    if (wasAsking && oldAskToken) void window.ren?.cancelAsk?.(oldAskToken);
     if (currentJob) {
       agentJobIdRef.current = null;
       ignoredAgentJobIdsRef.current.add(currentJob);
@@ -724,7 +729,14 @@ export function App() {
   }
 
   async function captureBurst(question: string) {
-    return window.ren ? window.ren.captureContext(!wantsVisualCreation(question), question) : { frames: [], pointer: { x: .5, y: .5 }, contextToken: undefined } satisfies ScreenContext;
+    if (!window.ren) return { frames: [], pointer: { x: .5, y: .5 }, contextToken: undefined } satisfies ScreenContext;
+    // A spoken interruption can arrive while the prior screenshot is still in
+    // flight. Let it finish before issuing the replacement capture.
+    if (captureInFlightRef.current) await captureInFlightRef.current.catch(() => {});
+    const capture = window.ren.captureContext(!wantsVisualCreation(question), question);
+    captureInFlightRef.current = capture;
+    try { return await capture; }
+    finally { if (captureInFlightRef.current === capture) captureInFlightRef.current = null; }
   }
 
   async function askQuestion(rawQuestion: string) {
@@ -763,7 +775,7 @@ export function App() {
         setVoiceState("processing");
         return;
       }
-      const response = window.ren ? await (async () => { const context = await captureBurst(clean); if (generation !== askGenerationRef.current) return null; return window.ren!.ask({ question: clean, ...context, history }); })() : { answer: "I can see the interaction working in preview mode. The packaged desktop app will use your current screen and cursor as context.", annotations: [], provider: "demo" as const };
+      const response = window.ren ? await (async () => { const context = await captureBurst(clean); if (generation !== askGenerationRef.current) return null; activeAskTokenRef.current = context.contextToken ?? null; return window.ren!.ask({ question: clean, ...context, history }); })() : { answer: "I can see the interaction working in preview mode. The packaged desktop app will use your current screen and cursor as context.", annotations: [], provider: "demo" as const };
       if (!response || generation !== askGenerationRef.current) return;
       if (!response.reusedVisual) setImageAvailable(!!response.visualLesson && !interactiveSceneFor(response.visualLesson));
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: response.answer, provider: response.provider, followUps: response.followUps }]);
@@ -787,7 +799,7 @@ export function App() {
         hideCompanionSoon();
       } else { setVoiceState("idle"); hideCompanionSoon(); }
     }
-    finally { if (generation === askGenerationRef.current) askingRef.current = false; }
+    finally { if (generation === askGenerationRef.current) { askingRef.current = false; activeAskTokenRef.current = null; } }
   }
 
   async function illustrate(automatic = false) {
@@ -830,7 +842,7 @@ export function App() {
     : permission?.microphone !== "granted" ? "Mic off"
     : voiceLabels[voiceState].title;
 
-  if (!expanded) return <button className={`ren-pebble state-${voiceState}`} onClick={() => { if (dictationActive || voiceState !== "idle") toggleListening(); else void setExpanded(true); }} onContextMenu={(event) => { event.preventDefault(); openVisionSettings(); }} aria-label={dictationActive ? "Finish speaking to Ren" : voiceState === "idle" ? "Open Ren" : "Start speaking to Ren"} title={error || "Open Ren. Right-click for connections."}><span className="pebble-mark"><span className="clicky-triangle" /></span><span className="pebble-copy"><strong>{stripStatus}</strong></span><VoiceMeter active={dictationActive || voiceState === "processing" || voiceState === "responding" || imageRendering} /></button>;
+  if (!expanded) return <button className={`ren-pebble state-${voiceState}`} onClick={() => { if (dictationActive || voiceState !== "idle") toggleListening(); else { setPanelTab("home"); setPromptMode("ask"); void setExpanded(true); } }} onContextMenu={(event) => { event.preventDefault(); openVisionSettings(); }} aria-label={dictationActive ? "Finish speaking to Ren" : voiceState === "idle" ? "Open Ren" : "Start speaking to Ren"} title={error || "Open Ren. Right-click for connections."}><span className="pebble-mark"><span className="clicky-triangle" /></span><span className="pebble-copy"><strong>{stripStatus}</strong></span><VoiceMeter active={dictationActive || voiceState === "processing" || voiceState === "responding" || imageRendering} /></button>;
 
   const needsSetup = Boolean(window.ren) ? permission?.microphone !== "granted" : !permission?.ready;
   return <main className="ambient-panel">
@@ -838,10 +850,11 @@ export function App() {
 
     {needsSetup ? <section className="onboarding-card"><span className="step-kicker">ONE-TIME SETUP</span><h2>Give Ren permission once.</h2><p>Allow microphone, screen recording, and pointer access now. After that, Ren starts quietly with your computer and only captures the screen when you ask a question.</p><div className="permission-row"><span>Microphone</span><b>{permission?.microphone ?? "checking"}</b></div><div className="permission-row"><span>Screen recording</span><b>{permission?.screen ?? "checking"}</b></div><div className="permission-row"><span>Circle shortcut</span><b>{permission?.interaction ?? "checking"}</b></div>{permission?.ready && permission.microphone !== "granted" ? <button className="allow-button" onClick={() => void enableMicrophone()}>Enable microphone</button> : <button className="allow-button" onClick={() => void requestOneTimePermissions()}>Allow and continue</button>}{permission && !permission.ready && <button className="settings-link" onClick={() => void openPermissionSettings()}>Request access and open system settings</button>}</section> : <>
       {!visionOpen && panelTab === "home" && <section className="panel-home">
-        <div className="panel-hero"><div className="hero-heading"><span className="hero-kicker">ASK REN</span><span className="hero-symbol" aria-hidden="true">✦</span></div><h1>What can I help with?</h1><p>Ask about what’s on your screen, or start a conversation.</p>
-          <div className="panel-conversation">{messages.length ? messages.slice(-4).map((message) => <article key={message.id} className={message.role}><b>{message.role === "user" ? "YOU" : "REN"}</b><p>{message.content}</p>{message.role === "assistant" && message.followUps?.length ? <div className="panel-followups">{message.followUps.slice(0, 2).map((followUp) => <button key={followUp} onClick={() => void askQuestion(followUp)}>{followUp} ↗</button>)}</div> : null}</article>) : <div className="panel-suggestions"><span>TRY ASKING</span><button onClick={() => { setHomePrompt("Explain what’s on my screen"); }}>Explain what’s on my screen <b>↗</b></button><button onClick={() => { setHomePrompt("Help me understand this step by step"); }}>Help me understand this step by step <b>↗</b></button></div>}</div>
-          <form className="panel-prompt" onSubmit={(event) => { event.preventDefault(); const text = homePrompt.trim(); if (!text) return; setHomePrompt(""); void askQuestion(promptMode === "agent" ? `spawn agent to ${text}` : text); }}><textarea rows={2} aria-label="Ask Ren" value={homePrompt} onChange={(event) => setHomePrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={promptMode === "agent" ? "Give an agent a task…" : promptMode === "chat" ? "Continue the conversation…" : "Ask Ren anything…"} /><button type="button" className="prompt-mic" aria-label={dictationActive ? "Finish speaking to Ren" : "Start speaking to Ren"} onClick={toggleListening}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21m-4 0h8" /></svg></button><button type="submit" aria-label="Send Ren prompt" disabled={!homePrompt.trim()}>➤</button></form>
+        <div className="panel-hero"><div className="hero-heading"><span className="hero-kicker">{promptMode === "agent" ? "AGENT WORK" : promptMode === "chat" ? "CHAT WITH REN" : "ASK REN"}</span><span className="hero-symbol" aria-hidden="true">✦</span></div><h1>{promptMode === "agent" ? "Task an agent" : promptMode === "chat" ? "Chat inside Ren" : "Ask Ren"}</h1><p>{promptMode === "agent" ? "Write a task and let Ren work on it in the background." : promptMode === "chat" ? "Continue the conversation in this panel." : "Ask with your voice, or type a quick question."}</p>
+          {promptMode === "chat" ? <div className="panel-conversation" aria-label="Ren conversation">{messages.length ? messages.slice(-8).map((message) => <article key={message.id} className={message.role}><b>{message.role === "user" ? "YOU" : "REN"}</b><p>{message.content}</p>{message.role === "assistant" && message.followUps?.length ? <div className="panel-followups">{message.followUps.slice(0, 2).map((followUp) => <button key={followUp} onClick={() => void askQuestion(followUp)}>{followUp} ↗</button>)}</div> : null}</article>) : <p className="chat-empty">Your conversation will appear here.</p>}</div> : <div className="home-actions">{promptMode === "ask" && <button className="voice-guide" onClick={toggleListening}><span className="voice-guide-icon" aria-hidden="true">⌃</span><span><strong>Tap Control three times to talk.</strong><small>Or click here to start listening. Speak again to interrupt Ren.</small></span><span aria-hidden="true">↗</span></button>}<div className="panel-suggestions"><span>✦ &nbsp; SUGGESTIONS</span><div className="suggestion-grid"><button onClick={() => { setPromptMode("ask"); setHomePrompt("Summarise what’s on my screen"); }}>▣ &nbsp; Summarise screen</button><button onClick={() => { setPromptMode("agent"); setHomePrompt("Look at my screen and help with the current task"); }}>◈ &nbsp; Start an agent</button><button onClick={openVisionSettings}>⚙ &nbsp; Open settings</button></div></div></div>}
+          <div className="home-prompt-dock"><form className="panel-prompt" onSubmit={(event) => { event.preventDefault(); const text = homePrompt.trim(); if (!text) return; setHomePrompt(""); void askQuestion(promptMode === "agent" ? `spawn agent to ${text}` : text); }}><span className="prompt-symbol" aria-hidden="true">{promptMode === "agent" ? "◈" : promptMode === "chat" ? "▤" : "✦"}</span><input aria-label="Ask Ren" value={homePrompt} onChange={(event) => setHomePrompt(event.target.value)} placeholder={promptMode === "agent" ? "Task an agent…" : promptMode === "chat" ? "Chat with Ren…" : "Ask Ren…"} /><button type="button" className="prompt-mic" aria-label={dictationActive ? "Finish speaking to Ren" : "Start speaking to Ren"} onClick={toggleListening}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21m-4 0h8" /></svg></button><button type="submit" aria-label="Send Ren prompt" disabled={!homePrompt.trim()}>➤</button></form>
           <div className="prompt-modes"><button type="button" className={promptMode === "ask" ? "active" : ""} aria-pressed={promptMode === "ask"} onClick={() => setPromptMode("ask")}>✦ Ask</button><button type="button" className={promptMode === "agent" ? "active" : ""} aria-pressed={promptMode === "agent"} onClick={() => setPromptMode("agent")}>◈ Agent</button><button type="button" className={promptMode === "chat" ? "active" : ""} aria-pressed={promptMode === "chat"} onClick={() => setPromptMode("chat")}>▤ Chat</button></div>
+          </div>
         </div>
         <div className="panel-status"><span>◈ {agentJob?.status === "running" ? "1 running" : "Agents ready"}</span><span>◇ {permission?.microphone === "granted" ? "Permissions" : "Needs permissions"}</span><span>◉ {stripStatus}</span></div>
         {error && <p className="panel-error" role="alert">{error}</p>}
