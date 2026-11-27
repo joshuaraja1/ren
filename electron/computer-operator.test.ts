@@ -54,6 +54,8 @@ describe("computer action boundary", () => {
     expect(wantsComputerExecution("How do I build this plane in my design software?", history)).toBe(false);
     expect(wantsComputerExecution("How does meshing work?", history)).toBe(false);
     expect(wantsComputerExecution("How do I click the mesh button?", history)).toBe(false);
+    expect(wantsComputerExecution("Create a summary in plain English")).toBe(false);
+    expect(wantsComputerExecution("Create a document in plain English")).toBe(false);
     expect(wantsComputerExecution("Do this math for me")).toBe(false);
   });
 

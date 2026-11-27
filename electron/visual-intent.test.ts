@@ -27,6 +27,9 @@ it("renders only when the learner explicitly asks for a visual", () => {
   expect(wantsVisualCreation("How do I build an FEA mesh for a wing?")).toBe(false);
   expect(wantsVisualCreation("Create a 3D CAD model of a bracket")).toBe(false);
   expect(wantsVisualCreation("Run FEA on this bracket")).toBe(false);
+  expect(wantsVisualCreation("Create a summary in plain English")).toBe(false);
+  expect(wantsVisualCreation("Generate an email in Spanish")).toBe(false);
+  expect(wantsVisualCreation("Create a chart showing these values")).toBe(true);
   expect(wantsVisualCreation("Draw a diagram of how an FEA mesh works")).toBe(true);
   expect(wantsVisualCreation("From this CAD drawing, show how to attach the camera to the board")).toBe(true);
   for (const request of [

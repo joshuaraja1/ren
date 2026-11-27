@@ -8,7 +8,8 @@ export function wantsVisualCreation(question: string) {
   if (/\b(?:cad|fea|fem|finite.element|mesh(?:ing)?|simulation|solver)\b/i.test(question)
     && /\b(?:how|build|create|make|generate|mesh|model|set up|run|perform|analy[sz]e)\b/i.test(question)
     && !/\b(?:diagram|drawing|illustration|schematic|visuali[sz]ation|picture|image|render)\b/i.test(question)) return false;
-  return /\b(?:create|recreate|draw|render|illustrate|sketch|visuali[sz]e|generate)\b/i.test(question)
+  return /\b(?:recreate|draw|render|illustrate|sketch|visuali[sz]e)\b/i.test(question)
+    || /\b(?:create|generate)\b[^.!?]{0,70}\b(?:diagram|drawing|illustration|schematic|visuali[sz]ation|picture|image|render|chart|graph|model)\b/i.test(question)
     || /\b(?:show|make|create|draw|render|generate)\b[^.!?]{0,70}\bschematic\b/i.test(question)
     || /\b(?:play|replay|animate)\s+(?:the\s+)?(?:assembly|assembly steps)\b/i.test(question)
     || /\b(?:show|animate|walk me through)\b[^.!?]{0,90}\b(?:assembl(?:e|y|ing)|putting .{0,25} together|connecting (?:the )?parts|plugging .{0,20} in)\b/i.test(question)
