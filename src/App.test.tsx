@@ -405,7 +405,7 @@ describe("Ren voice interface", () => {
     }
   });
 
-  it("returns to wake-only mode after an answer and retains context after Hey Ren", async () => {
+  it("accepts a contextual follow-up, then returns to wake-only after the session expires", async () => {
     let now = 10_000;
     const dateNow = vi.spyOn(Date, "now").mockImplementation(() => now);
     let speechListener: ((data: { id: string; chunk?: string; done?: boolean }) => void) | undefined;
@@ -447,7 +447,7 @@ describe("Ren voice interface", () => {
       primarySource: async () => ({ id: "screen", name: "Main display", thumbnail: "" }),
       wakeAvailable: async () => true, wakeStart: async () => true, wakeStop: async () => {}, wakeFeed,
       speechAvailable: async () => true, speechStart, speechFeed: async () => true,
-      speechFinish: vi.fn().mockResolvedValueOnce("Hey Ren, Draw a diagram of the hover system").mockResolvedValueOnce("Hey Ren, Why does the fan help?").mockResolvedValueOnce(""), speechStop: async () => {},
+      speechFinish: vi.fn().mockResolvedValueOnce("Hey Ren, Draw a diagram of the hover system").mockResolvedValueOnce("Why does the fan help?").mockResolvedValueOnce(""), speechStop: async () => {},
       onSpeechData: (listener: typeof speechListener) => { speechListener = listener; return () => { speechListener = undefined; }; },
       speak: async (id: string) => { queueMicrotask(() => { speechListener?.({ id, chunk: "AAA=", done: true }); }); return true; },
       onFocusSelection: () => () => {}, onActivateVoice: () => () => {},
@@ -475,11 +475,8 @@ describe("Ren voice interface", () => {
       expect(speechStart).toHaveBeenCalledTimes(1);
       now += 400;
       act(() => { for (let index = 0; index < 5; index += 1) processor?.onaudioprocess?.(quietFollowUpFrame); });
-      await waitFor(() => expect(wakeFeed).toHaveBeenCalledTimes(2));
-      expect(speechStart).toHaveBeenCalledTimes(1);
-      wakeFeed.mockResolvedValueOnce(true);
-      act(() => processor?.onaudioprocess?.(voiceFrame));
       await waitFor(() => expect(speechStart).toHaveBeenCalledTimes(2));
+      expect(wakeFeed).toHaveBeenCalledTimes(1);
       await waitFor(() => expect(setCompanionVisible).toHaveBeenLastCalledWith(true));
       now += 2_100;
       act(() => processor?.onaudioprocess?.(silentFrame));
@@ -488,9 +485,9 @@ describe("Ren voice interface", () => {
       expect(ask).toHaveBeenLastCalledWith(expect.objectContaining({ question: "Why does the fan help?", history: expect.arrayContaining([expect.objectContaining({ role: "assistant", content: "The engine drives the fan." })]) }));
       await waitFor(() => expect(screen.getByRole("button", { name: /start speaking to ren/i })).toBeVisible());
       expect(speechStart).toHaveBeenCalledTimes(2);
-      now += 400;
+      now += 16_000;
       act(() => { for (let index = 0; index < 5; index += 1) processor?.onaudioprocess?.(voiceFrame); });
-      await waitFor(() => expect(wakeFeed.mock.calls.length).toBeGreaterThanOrEqual(4));
+      await waitFor(() => expect(wakeFeed.mock.calls.length).toBeGreaterThanOrEqual(2));
       expect(speechStart).toHaveBeenCalledTimes(2);
       await waitFor(() => expect(screen.getByRole("button", { name: /start speaking to ren/i })).toBeVisible());
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();

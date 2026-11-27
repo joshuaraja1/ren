@@ -70,6 +70,7 @@ export function App() {
   const [imageRendering, setImageRendering] = useState(false);
   const [voiceShortcutAvailable, setVoiceShortcutAvailable] = useState(false);
   const [voiceMode, setVoiceMode] = useState<VoiceMode>({ paused: false, alwaysOn: false });
+  const [wakeSessionOpen, setWakeSessionOpen] = useState(false);
   const [agentJob, setAgentJob] = useState<AgentJobSnapshot | null>(null);
   const agentJobIdRef = useRef<string | null>(null);
   const ignoredAgentJobIdsRef = useRef(new Set<string>());
@@ -102,6 +103,9 @@ export function App() {
   const wakeCandidateRef = useRef(false);
   const conversationOpenRef = useRef(false);
   const awaitingFollowUpRef = useRef(false);
+  const wakeSessionActiveRef = useRef(false);
+  const wakeSessionUntilRef = useRef(0);
+  const wakeSessionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingAudioRef = useRef<number[][]>([]);
   const expandedRef = useRef(false);
   const askingRef = useRef(false);
@@ -160,6 +164,7 @@ export function App() {
     if (!dictationActiveRef.current) return;
     if (input.error) {
       stopNativeDictation();
+      closeWakeSession();
       conversationOpenRef.current = false;
       awaitingFollowUpRef.current = false;
       showVoiceError(input.error);
@@ -264,14 +269,18 @@ export function App() {
                 conversationOpenRef.current = false;
                 awaitingFollowUpRef.current = false;
                 stopNativeDictation();
+                closeWakeSession();
                 showVoiceError(reason instanceof Error ? reason.message : "Ren lost the microphone audio stream. Please try again.");
               }).finally(() => { if (session === dictationSessionRef.current) queuedFeedsRef.current -= 1; });
               if ((voicedFramesRef.current >= 2 && now - lastVoiceAtRef.current > 2000) || now - dictationStartedAtRef.current > (voicedFramesRef.current ? 30_000 : 10_000)) void finishNativeDictation();
               return;
             }
-            if (conversationOpenRef.current && alwaysOnRef.current) {
+            if (wakeSessionActiveRef.current && awaitingFollowUpRef.current && Date.now() >= wakeSessionUntilRef.current) closeWakeSession();
+            if (conversationOpenRef.current && (alwaysOnRef.current || wakeSessionActiveRef.current)) {
               wakeQueue.length = 0;
-              const interruptible = Boolean(speechCancelRef.current) || askingRef.current;
+              // Wake-only conversations listen for a follow-up after Ren finishes
+              // speaking. Always-on mode can also interrupt an answer.
+              const interruptible = alwaysOnRef.current && (Boolean(speechCancelRef.current) || askingRef.current);
               if ((!awaitingFollowUpRef.current && !interruptible) || (!interruptible && Date.now() < suppressSpeechUntilRef.current)) {
                 wasAwaitingFollowUp = false;
                 followUpVoiceFrames = 0;
@@ -327,7 +336,7 @@ export function App() {
       const finals = Array.from(event.results).filter((result) => result.isFinal).map((result) => result[0].transcript.trim()).filter(Boolean);
       const transcript = finals.at(-1);
       if (!transcript || disposed || voicePausedRef.current || Date.now() < suppressSpeechUntilRef.current) return;
-      if (alwaysOnRef.current) {
+      if (alwaysOnRef.current || (wakeSessionActiveRef.current && Date.now() < wakeSessionUntilRef.current)) {
         if (/^(?:stop listening|that(?:'|’)s all|goodbye|bye(?: ren)?|cancel)[.!\s]*$/i.test(transcript)) void endVoiceConversation();
         else void askQuestion(transcript, true);
       }
@@ -349,6 +358,7 @@ export function App() {
       dictationReadyRef.current = false;
       conversationOpenRef.current = alwaysOnRef.current && !voicePausedRef.current;
       awaitingFollowUpRef.current = conversationOpenRef.current;
+      closeWakeSession();
       pendingAudioRef.current = [];
       wakeEnabledRef.current = false;
       recognitionRef.current?.stop();
@@ -368,6 +378,7 @@ export function App() {
     alwaysOnRef.current = mode.alwaysOn;
     setVoiceMode(mode);
     if (mode.paused || (wasAlwaysOn && !mode.alwaysOn)) {
+      closeWakeSession();
       conversationOpenRef.current = false;
       awaitingFollowUpRef.current = false;
       if (dictationActiveRef.current) stopNativeDictation();
@@ -383,16 +394,46 @@ export function App() {
     }
   }
 
-  function returnToWakeMode() {
+  function closeWakeSession() {
+    if (wakeSessionTimerRef.current) clearTimeout(wakeSessionTimerRef.current);
+    wakeSessionTimerRef.current = null;
+    wakeSessionActiveRef.current = false;
+    setWakeSessionOpen(false);
+    wakeSessionUntilRef.current = 0;
     conversationOpenRef.current = alwaysOnRef.current && !voicePausedRef.current;
     awaitingFollowUpRef.current = conversationOpenRef.current;
+  }
+
+  function beginWakeSession() {
+    if (voicePausedRef.current || alwaysOnRef.current) return;
+    if (wakeSessionTimerRef.current) clearTimeout(wakeSessionTimerRef.current);
+    wakeSessionTimerRef.current = null;
+    wakeSessionActiveRef.current = true;
+    setWakeSessionOpen(true);
+    wakeSessionUntilRef.current = Date.now() + 15_000;
+  }
+
+  function returnToWakeMode(refreshWindow = true) {
+    if (wakeSessionTimerRef.current) clearTimeout(wakeSessionTimerRef.current);
+    wakeSessionTimerRef.current = null;
+    if (wakeSessionActiveRef.current && refreshWindow) wakeSessionUntilRef.current = Date.now() + 15_000;
+    if (wakeSessionActiveRef.current && Date.now() >= wakeSessionUntilRef.current) closeWakeSession();
+    conversationOpenRef.current = (alwaysOnRef.current || wakeSessionActiveRef.current) && !voicePausedRef.current;
+    awaitingFollowUpRef.current = conversationOpenRef.current;
     setVoiceState("idle");
+    if (wakeSessionActiveRef.current) {
+      wakeSessionTimerRef.current = setTimeout(() => {
+        closeWakeSession();
+        setVoiceState("idle");
+      }, Math.max(0, wakeSessionUntilRef.current - Date.now()));
+    }
     hideCompanionSoon();
   }
 
   async function endVoiceConversation() {
     interruptCurrentResponse();
     stopNativeDictation();
+    closeWakeSession();
     conversationOpenRef.current = false;
     awaitingFollowUpRef.current = false;
     alwaysOnRef.current = false;
@@ -493,6 +534,8 @@ export function App() {
     const inputContext = microphoneContextRef.current;
     if (!inputContext || inputContext.state === "closed") { showVoiceError("Microphone input is not ready. Reopen Ren and try again."); return; }
     interruptCurrentResponse();
+    if (wakeSessionTimerRef.current) clearTimeout(wakeSessionTimerRef.current);
+    wakeSessionTimerRef.current = null;
     conversationOpenRef.current = true;
     awaitingFollowUpRef.current = false;
     showCompanion();
@@ -530,6 +573,7 @@ export function App() {
     } catch (reason) {
       if (session !== dictationSessionRef.current) return;
       stopNativeDictation();
+      closeWakeSession();
       conversationOpenRef.current = false;
       showVoiceError(reason instanceof Error ? reason.message : "Deepgram is unavailable. Check your key and network in AI settings.");
     }
@@ -552,13 +596,13 @@ export function App() {
       const rawTranscript = (await window.ren.speechFinish()).trim();
       if (session !== dictationSessionRef.current) return;
       const confirmedQuestion = wakeCandidate ? confirmedWakeQuestion(rawTranscript) : null;
-      if (wakeCandidate && confirmedQuestion === null) { returnToWakeMode(); return; }
-      if (wakeCandidate && !confirmedQuestion) { void startNativeDictation(); return; }
+      if (wakeCandidate && confirmedQuestion === null) { closeWakeSession(); returnToWakeMode(); return; }
+      if (wakeCandidate && !confirmedQuestion) { beginWakeSession(); void startNativeDictation(); return; }
       const transcript = wakeCandidate ? confirmedQuestion! : rawTranscript.replace(/^(?:hey\s+)?(?:ren|run)\b[.,:;\s-]*/i, "").trim();
       if (/^(?:stop listening|that(?:'|’)s all|goodbye|bye(?: ren)?|cancel)[.!\s]*$/i.test(transcript)) { await endVoiceConversation(); return; }
-      if (transcript) await askQuestion(transcript, true);
+      if (transcript) { beginWakeSession(); await askQuestion(transcript, true); }
       else {
-        returnToWakeMode();
+        returnToWakeMode(false);
         if (!automatic || voicedFramesRef.current >= 2) setError("I didn't catch that. Tap the microphone and try again.");
       }
     } catch (reason) {
@@ -566,6 +610,7 @@ export function App() {
       conversationOpenRef.current = false;
       awaitingFollowUpRef.current = false;
       stopNativeDictation();
+      closeWakeSession();
       showVoiceError(reason instanceof Error ? reason.message : "Deepgram could not finish dictation. Try again.");
     }
   }
@@ -784,6 +829,7 @@ export function App() {
   function handleAmbientTranscript(transcript: string) {
     const remainder = confirmedWakeQuestion(transcript);
     if (remainder === null) return;
+    beginWakeSession();
     showCompanion();
     keepAwake(); setVoiceState("listening");
     if (remainder) void askQuestion(remainder, true);
@@ -824,7 +870,12 @@ export function App() {
     askingRef.current = true;
     // Room audio may be playing while the user types. Only an active voice
     // conversation can use voice activity to interrupt an in-flight answer.
-    conversationOpenRef.current = fromVoice && alwaysOnRef.current && nativeSpeechRef.current && !voicePausedRef.current;
+    if (!fromVoice) closeWakeSession();
+    else if (wakeSessionTimerRef.current) {
+      clearTimeout(wakeSessionTimerRef.current);
+      wakeSessionTimerRef.current = null;
+    }
+    conversationOpenRef.current = fromVoice && (alwaysOnRef.current || wakeSessionActiveRef.current) && nativeSpeechRef.current && !voicePausedRef.current;
     showCompanion();
     if (expandedRef.current && !visionOpenRef.current && promptMode !== "chat") void setExpanded(false);
     awaitingFollowUpRef.current = false;
@@ -909,6 +960,7 @@ export function App() {
     : imageRendering ? "Drawing"
     : dictationActive ? "Listening"
     : voiceMode.alwaysOn && voiceState === "idle" ? "Hands-free on"
+    : wakeSessionOpen && voiceState === "idle" ? "Follow up"
     : permission?.microphone !== "granted" ? "Mic off"
     : voiceLabels[voiceState].title;
 

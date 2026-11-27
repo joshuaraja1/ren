@@ -332,15 +332,18 @@ app.whenReady().then(() => {
       visible: overlayWindow.isVisible(),
       generation: visualGeneration,
     };
-    captureSession.invalidate();
-    lastCaptureData = null;
+    if (firstProgress) {
+      captureSession.invalidate();
+      lastCaptureData = null;
+    }
     const annotatingCurrentVisual = lastVisualLesson?.displayId === displayId;
     if (firstProgress && !annotatingCurrentVisual) {
       sendOverlayLesson(null);
     }
-    overlayWindow.setBounds(display.bounds);
+    const currentBounds = overlayWindow.getBounds();
+    if (currentBounds.x !== display.bounds.x || currentBounds.y !== display.bounds.y || currentBounds.width !== display.bounds.width || currentBounds.height !== display.bounds.height) overlayWindow.setBounds(display.bounds);
     sendOverlayAnnotations([{ id: "circle-focus", type: "path", points, color: "#327d87" }]);
-    overlayWindow.showInactive();
+    if (!overlayWindow.isVisible()) overlayWindow.showInactive();
   }
   function cancelFocusPath() {
     selectedFocus = null;

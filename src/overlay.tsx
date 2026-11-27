@@ -38,7 +38,7 @@ export function Overlay() {
           if (item.type === "rectangle") return <rect key={item.id} pathLength={1} x={item.at.x * 1000} y={item.at.y * 1000} width={item.width * 1000} height={item.height * 1000} rx="18" style={style} />;
           if (item.type === "ellipse") return <ellipse key={item.id} pathLength={1} cx={item.at.x * 1000} cy={item.at.y * 1000} rx={item.radiusX * 1000} ry={item.radiusY * 1000} style={style} />;
           if (item.type === "polygon") return <polygon key={item.id} pathLength={1} points={item.points.map((p) => `${p.x * 1000},${p.y * 1000}`).join(" ")} style={style} />;
-          if (item.type === "path") return <polyline key={item.id} pathLength={1} points={item.points.map((p) => `${p.x * 1000},${p.y * 1000}`).join(" ")} style={style} />;
+          if (item.type === "path") return <polyline key={item.id} className={item.id === "circle-focus" || item.id === "user-sketch" ? "live-ink" : undefined} pathLength={1} points={item.points.map((p) => `${p.x * 1000},${p.y * 1000}`).join(" ")} style={style} />;
           return null;
         })}
       </svg>

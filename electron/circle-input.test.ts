@@ -112,3 +112,49 @@ it("cancels an unfinished Control+Option circle on Escape", () => {
   expect(onComplete).not.toHaveBeenCalled();
   expect(onTripleControl).not.toHaveBeenCalled();
 });
+
+it("keeps a long drawn square through the last edge and closes it", () => {
+  const onComplete = vi.fn();
+  expect(startCircleInput({ onProgress: vi.fn(), onComplete, onCancel: vi.fn(), onScroll: vi.fn() })).toBe(true);
+  mock.cursor = { x: 200, y: 200 };
+  emit("keydown", event(mock.keys.Ctrl, true, false));
+  emit("keydown", event(mock.keys.Alt, true, true));
+  const corners = [{ x: 600, y: 200 }, { x: 600, y: 600 }, { x: 200, y: 600 }, { x: 205, y: 200 }];
+  let from = { x: 200, y: 200 };
+  for (const corner of corners) {
+    for (let index = 1; index <= 120; index++) {
+      mock.cursor = { x: from.x + (corner.x - from.x) * index / 120, y: from.y + (corner.y - from.y) * index / 120 };
+      emit("mousemove", event(0, index % 10 !== 0, index % 10 !== 0));
+    }
+    from = corner;
+  }
+  emit("keyup", event(mock.keys.Alt, true, false));
+  expect(onComplete).toHaveBeenCalledOnce();
+  const path = onComplete.mock.calls[0][1].points;
+  expect(path.length).toBeGreaterThan(180);
+  expect(path.at(-1)).toEqual(path[0]);
+});
+
+it("snaps a long freehand sketch closed when the pointer returns near its start", () => {
+  const onSketchComplete = vi.fn();
+  expect(startCircleInput({ onProgress: vi.fn(), onComplete: vi.fn(), onCancel: vi.fn(), onScroll: vi.fn(), onSketchComplete })).toBe(true);
+  const sketchEvent = (keycode: number, metaKey: boolean, altKey: boolean): KeyEvent =>
+    ({ keycode, ctrlKey: false, altKey, metaKey, shiftKey: false });
+  mock.cursor = { x: 250, y: 250 };
+  emit("keydown", sketchEvent(mock.keys.Meta, true, false));
+  emit("keydown", sketchEvent(mock.keys.Alt, true, true));
+  const corners = [{ x: 500, y: 250 }, { x: 500, y: 500 }, { x: 250, y: 500 }, { x: 257, y: 250 }];
+  let from = { x: 250, y: 250 };
+  for (const corner of corners) {
+    for (let index = 1; index <= 70; index++) {
+      mock.cursor = { x: from.x + (corner.x - from.x) * index / 70, y: from.y + (corner.y - from.y) * index / 70 };
+      emit("mousemove", sketchEvent(0, true, true));
+    }
+    from = corner;
+  }
+  emit("keyup", sketchEvent(mock.keys.Alt, true, false));
+  expect(onSketchComplete).toHaveBeenCalledOnce();
+  const path = onSketchComplete.mock.calls[0][1];
+  expect(path.length).toBeGreaterThan(180);
+  expect(path.at(-1)).toEqual(path[0]);
+});

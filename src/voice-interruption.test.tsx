@@ -26,6 +26,7 @@ function makeHarness(transcripts: string[], ask: RenBridge["ask"]) {
   let speechData: ((data: { id: string; chunk?: string; done?: boolean; error?: string }) => void) | null = null;
   let agentJobUpdate: ((snapshot: AgentJobSnapshot) => void) | null = null;
   const stoppedSources: Array<ReturnType<typeof vi.fn>> = [];
+  const audioSources: Array<{ onended: (() => void) | null }> = [];
 
   class FakeAudioContext {
     sampleRate = 48_000;
@@ -46,7 +47,10 @@ function makeHarness(transcripts: string[], ask: RenBridge["ask"]) {
     createBufferSource() {
       const stop = vi.fn();
       stoppedSources.push(stop);
-      return { buffer: null, onended: null, connect() {}, disconnect() {}, start() {}, stop };
+      const source: { buffer: null; onended: (() => void) | null; connect(): void; disconnect(): void; start(): void; stop: typeof stop } =
+        { buffer: null, onended: null, connect() {}, disconnect() {}, start() {}, stop };
+      audioSources.push(source);
+      return source;
     }
     async resume() {}
     async close() {}
@@ -100,7 +104,7 @@ function makeHarness(transcripts: string[], ask: RenBridge["ask"]) {
 
   return {
     renderApp: () => render(<App />),
-    speechStart, speechStop, speechFinish, wakeFeed, cancelSpeech, cancelAsk, speak, captureContext, stoppedSources,
+    speechStart, speechStop, speechFinish, wakeFeed, cancelSpeech, cancelAsk, speak, captureContext, stoppedSources, audioSources,
     startAgentJob, cancelAgentJob, runningJob,
     get processAudio() { return processAudio; },
     get speechData() { return speechData; },
@@ -162,6 +166,57 @@ describe("voice interruption and follow-ups", () => {
     await act(async () => first.resolve(false));
     await waitFor(() => expect(harness.wakeFeed).toHaveBeenCalledTimes(2));
     expect(harness.wakeFeed.mock.calls[1][0]).toHaveLength(8192);
+  });
+
+  it("accepts a contextual follow-up after Hey Ren, then returns to wake-only after silence", async () => {
+    let now = 10_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const sessionTimeouts: Array<() => void> = [];
+    const realSetTimeout = globalThis.setTimeout;
+    vi.spyOn(globalThis, "setTimeout").mockImplementation((handler, timeout, ...args) => {
+      if (timeout === 15_000 && typeof handler === "function") {
+        sessionTimeouts.push(() => (handler as (...values: unknown[]) => void)(...args));
+        return 0 as ReturnType<typeof setTimeout>;
+      }
+      return realSetTimeout(handler, timeout, ...args);
+    });
+    const ask = vi.fn(async ({ question }: { question: string }) => response(
+      question.toLowerCase() === "explain the engine" ? "The engine drives the fan." : "It moves air downward.",
+    ));
+    const harness = makeHarness(["Hey Ren, explain the engine", "And the fan?"], ask as RenBridge["ask"]);
+    harness.wakeFeed.mockResolvedValueOnce(true);
+    harness.renderApp();
+    await waitFor(() => expect(harness.processAudio).toBeTypeOf("function"));
+    harness.feedFrames(1);
+    await waitFor(() => expect(harness.speechStart).toHaveBeenCalledOnce());
+    now += 2_100;
+    harness.silence();
+    await waitFor(() => expect(harness.speak).toHaveBeenCalledOnce());
+    const [firstSpeechID] = harness.speak.mock.calls[0];
+    act(() => { harness.speechData?.({ id: firstSpeechID, chunk: btoa("\0".repeat(4096)), done: true }); });
+    act(() => { harness.audioSources[0].onended?.(); });
+    await waitFor(() => expect(sessionTimeouts).toHaveLength(1));
+    expect(screen.getByRole("button", { name: /start speaking to ren/i })).toHaveTextContent("Follow up");
+    now += 350;
+    harness.feedFrames(5);
+    await waitFor(() => expect(harness.speechStart).toHaveBeenCalledTimes(2));
+    expect(harness.wakeFeed).toHaveBeenCalledOnce();
+    now += 2_100;
+    harness.silence();
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(2));
+    expect(ask).toHaveBeenLastCalledWith(expect.objectContaining({
+      question: "And the fan?",
+      history: expect.arrayContaining([expect.objectContaining({ role: "assistant", content: "The engine drives the fan." })]),
+    }));
+    await waitFor(() => expect(harness.speak).toHaveBeenCalledTimes(2));
+    const [secondSpeechID] = harness.speak.mock.calls[1];
+    act(() => { harness.speechData?.({ id: secondSpeechID, chunk: btoa("\0".repeat(4096)), done: true }); });
+    act(() => { harness.audioSources[1].onended?.(); });
+    await waitFor(() => expect(sessionTimeouts).toHaveLength(2));
+    act(() => { sessionTimeouts[1](); });
+    expect(screen.getByRole("button", { name: /start speaking to ren/i })).toHaveTextContent("Ready");
+    harness.feedFrames(5);
+    expect(harness.speechStart).toHaveBeenCalledTimes(2);
   });
 
   it("turns off hands-free listening and cancels active dictation on the second toggle", async () => {
