@@ -7,8 +7,11 @@ it("recognizes explicit guided work across domains and concise continuations", (
     "Show me how to run FEA step by step",
     "Guide me through balancing this chemistry equation in the app",
     "Explain this physics experiment one step at a time",
+    "Teach me how to model a wing in the CAD app",
+    "Help me learn to set up this microscope software",
+    "Help me design an aircraft wing in FreeCAD",
   ]) expect(wantsGuidedWorkflow(request)).toBe(true);
-  for (const request of ["Next step", "I did that, what next?", "Continue", "Done", "I clicked the mesh button"])
+  for (const request of ["Next step", "I did that, what next?", "Continue", "Done", "I clicked the mesh button", "I can't find the sketch tool", "That didn't work", "What do I click now?", "I'm stuck"])
     expect(continuesGuidedWorkflow(request)).toBe(true);
   expect(continuesGuidedWorkflow("Next week is Thursday")).toBe(false);
   expect(hasGuidedWorkflowContext([{ role: "user", content: "Walk me through CAD in FreeCAD" }])).toBe(true);
@@ -16,4 +19,5 @@ it("recognizes explicit guided work across domains and concise continuations", (
   expect(guidedHistory("Next step", recent, "Walk me through CAD in FreeCAD")[0].content).toBe("Walk me through CAD in FreeCAD");
   expect(wantsToDelegateCurrentTask("Can you do it for me?")).toBe(true);
   expect(guidedHistory("Do it for me", recent, "Walk me through CAD in FreeCAD")[0].content).toBe("Walk me through CAD in FreeCAD");
+  expect(guidedHistory("I can't find the sketch tool", recent, "Walk me through CAD in FreeCAD")[0].content).toBe("Walk me through CAD in FreeCAD");
 });

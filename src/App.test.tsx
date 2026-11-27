@@ -53,6 +53,35 @@ describe("Ren voice interface", () => {
     } finally { window.ren = undefined; }
   });
 
+  it("keeps screen context and the original task when a guided user gets stuck", async () => {
+    const captureContext = vi.fn(async () => ({ frames: ["data:image/png;base64,screen"], pointer: { x: .5, y: .5 }, contextToken: crypto.randomUUID() }));
+    const ask = vi.fn(async (_request: unknown) => ({ answer: "Look for the sketch tool in the current workbench.", annotations: [], provider: "vision" as const }));
+    window.ren = {
+      platform: "darwin", permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
+      wakeAvailable: async () => false, onFocusSelection: () => () => {},
+      setExpanded: async () => {}, setCompanionVisible: async () => {}, speechStop: async () => {},
+      captureContext, ask,
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
+      const prompt = screen.getByRole("textbox", { name: /ask ren/i });
+      fireEvent.change(prompt, { target: { value: "Help me design an aircraft wing in this CAD app" } });
+      fireEvent.click(screen.getByRole("button", { name: /send ren prompt/i }));
+      await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+      fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
+      fireEvent.change(screen.getByRole("textbox", { name: /ask ren/i }), { target: { value: "I can't find the sketch tool" } });
+      fireEvent.click(screen.getByRole("button", { name: /send ren prompt/i }));
+      await waitFor(() => expect(ask).toHaveBeenCalledTimes(2));
+      expect(captureContext).toHaveBeenCalledTimes(2);
+      expect(ask.mock.calls[1][0]).toEqual(expect.objectContaining({
+        question: "I can't find the sketch tool",
+        frames: ["data:image/png;base64,screen"],
+        history: expect.arrayContaining([expect.objectContaining({ role: "user", content: "Help me design an aircraft wing in this CAD app" })]),
+      }));
+    } finally { window.ren = undefined; }
+  });
+
   it("does not turn background audio into dictation while a typed visual request is processing", async () => {
     let processAudio: ((event: { inputBuffer: { getChannelData(channel: number): Float32Array } }) => void) | null = null;
     const originalAudioContext = globalThis.AudioContext;

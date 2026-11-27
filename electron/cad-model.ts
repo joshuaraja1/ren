@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { VisionCredentials } from "./vision-settings.js";
+import { wantsGuidedWorkflow } from "./guided-workflow.js";
 
 const execFileAsync = promisify(execFile);
 export type CadFeature =
@@ -16,6 +17,7 @@ export type CadSpec = { title: string; assumptions: string[]; features: CadFeatu
 /** A concrete request to create a native CAD file, rather than a teaching visual. */
 export function wantsCadCreation(question: string): boolean {
   return /\b(?:create|make|build|generate|design|model)\b[^.!?]{0,100}\b(?:cad|freecad|parametric)\b/i.test(question)
+    && !wantsGuidedWorkflow(question)
     && !/\b(?:in|using) (?:this|my|the) (?:\w+ )?(?:app|software|program)\b|\b(?:in|using) (?:Fusion 360|SolidWorks|Blender|Onshape|AutoCAD|Inventor|Creo|CATIA)\b/i.test(question)
     && !/\b(?:how (?:do|can|should)|how to|show me how|walk me through|diagram|drawing|schematic|illustration|fea|fem|analysis|simulate)\b/i.test(question);
 }

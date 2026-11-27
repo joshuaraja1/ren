@@ -25,6 +25,11 @@ describe("screen context routing", () => {
     expect(wantsCurrentScreen("Next step", [{ role: "user", content: "Tell me a joke" }])).toBe(false);
     expect(wantsCurrentScreen("Click the visible button for me")).toBe(true);
     expect(wantsCurrentScreen("Do it for me", [{ role: "user", content: "Walk me through meshing this part" }])).toBe(true);
+    const guided = [{ role: "user" as const, content: "Teach me how to build an aircraft wing in this CAD app" }, { role: "assistant" as const, content: "First, start a new sketch on the visible plane." }];
+    expect(wantsCurrentScreen("I can't find the sketch tool", guided)).toBe(true);
+    expect(wantsCurrentScreen("That didn't work", guided)).toBe(true);
+    expect(wantsCurrentScreen("What do I click now?", guided)).toBe(true);
+    expect(wantsCurrentScreen("I'm stuck", [{ role: "user", content: "Tell me a joke" }])).toBe(false);
   });
 
   it("only requests spatial guidance for direct pointing requests", () => {
