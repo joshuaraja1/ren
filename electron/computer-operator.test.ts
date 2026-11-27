@@ -30,6 +30,7 @@ describe("computer action boundary", () => {
     expect(wantsComputerExecution("I want to design a bracket in Blender. Can you do it for me?")).toBe(true);
     expect(wantsComputerExecution("Run FEA in this software")).toBe(true);
     expect(wantsComputerExecution("Configure the titration in this app")).toBe(true);
+    expect(wantsComputerExecution("Create a CAD model in Fusion 360 for me")).toBe(true);
     expect(wantsComputerExecution("How does meshing work?", history)).toBe(false);
     expect(wantsComputerExecution("How do I click the mesh button?", history)).toBe(false);
     expect(wantsComputerExecution("Do this math for me")).toBe(false);
