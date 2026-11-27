@@ -18,6 +18,8 @@ describe("screen context routing", () => {
     expect(wantsCurrentScreen("Show me how to build a bracket in this CAD app")).toBe(true);
     expect(wantsCurrentScreen("How do I run FEA in FreeCAD?")).toBe(true);
     expect(wantsCurrentScreen("How can I create a table using Excel?")).toBe(true);
+    expect(wantsCurrentScreen("How do I mesh a part in ansys?")).toBe(true);
+    expect(wantsCurrentScreen("What should I click in figma?")).toBe(true);
     expect(wantsCurrentScreen("Walk me through making a bracket in FreeCAD")).toBe(true);
     expect(wantsCurrentScreen("I want to design a bracket; can you walk me through it step by step?")).toBe(true);
     expect(wantsCurrentScreen("Guide me through titration in this chemistry app")).toBe(true);

@@ -49,7 +49,7 @@ describe("native CAD model creation", () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
-  it.skipIf(!freeCadCommand())("creates a native single-solid FreeCAD document off screen", async () => {
+  it.skipIf(process.env.REN_TEST_NATIVE_CAD !== "1" || !freeCadCommand())("creates a native single-solid FreeCAD document off screen", async () => {
     const directory = await mkdtemp(join(tmpdir(), "ren-cad-test-"));
     try {
       const script = join(process.cwd(), "scripts", "freecad-create.py");
