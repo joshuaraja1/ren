@@ -127,7 +127,7 @@ describe("Ren voice interface", () => {
 
   it("keeps Chat visible for a typed follow-up and routes Agent mode to a job", async () => {
     const setExpanded = vi.fn(async () => {});
-    const ask = vi.fn(async () => ({ answer: "Here is the answer.", annotations: [], provider: "demo" as const }));
+    const ask = vi.fn(async () => ({ answer: "Here is the answer.", annotations: [], followUps: ["What changes next?"], provider: "demo" as const }));
     const startAgentJob = vi.fn(async ({ task }: { task: string }) => ({ id: "job-1", task, status: "running" as const, stage: "Starting", completedSteps: 0, totalSteps: 1, scope: "current screen" as const }));
     window.ren = {
       platform: "darwin", permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
@@ -147,6 +147,11 @@ describe("Ren voice interface", () => {
       expect(screen.getByRole("textbox", { name: /ask ren/i })).toBeVisible();
       expect(setExpanded).not.toHaveBeenCalledWith(false, false);
       await waitFor(() => expect(screen.getByText("Here is the answer.")).toBeVisible());
+      fireEvent.click(screen.getByRole("button", { name: /What changes next\?/i }));
+      await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({
+        question: "What changes next?",
+        history: expect.arrayContaining([expect.objectContaining({ role: "assistant", content: "Here is the answer." })]),
+      })));
       fireEvent.click(screen.getByRole("button", { name: /✦ Ask/i }));
       expect(screen.queryByLabelText("Ren conversation")).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: /summarise screen/i })).toBeVisible();
@@ -155,6 +160,25 @@ describe("Ren voice interface", () => {
       fireEvent.click(screen.getByRole("button", { name: /send ren prompt/i }));
       await waitFor(() => expect(startAgentJob).toHaveBeenCalledWith(expect.objectContaining({ task: "Compare two learning tools" })));
       await waitFor(() => expect(setExpanded).toHaveBeenCalledWith(false, false));
+    } finally { window.ren = undefined; }
+  });
+
+  it("sends a screen question without stale images when capture fails", async () => {
+    const ask = vi.fn(async () => ({ answer: "I can't see your screen right now.", annotations: [], followUps: [], provider: "demo" as const }));
+    const captureContext = vi.fn(async () => { throw new Error("Screen sharing stopped"); });
+    window.ren = {
+      platform: "darwin", permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
+      wakeAvailable: async () => false, onFocusSelection: () => () => {},
+      setExpanded: async () => {}, setCompanionVisible: async () => {}, speechStop: async () => {},
+      captureContext, ask,
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      fireEvent.click(await screen.findByRole("button", { name: /start speaking to ren/i }), { shiftKey: true });
+      fireEvent.change(screen.getByRole("textbox", { name: /ask ren/i }), { target: { value: "What is on my screen?" } });
+      fireEvent.click(screen.getByRole("button", { name: /send ren prompt/i }));
+      await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({ question: "What is on my screen?", frames: [] })));
+      expect(captureContext).toHaveBeenCalledOnce();
     } finally { window.ren = undefined; }
   });
 

@@ -9,15 +9,25 @@ const pointingQuestion = /\b(?:what(?:'s| is| does)|where(?:'s| is)|which|look a
 const spatialGuidance = /\b(?:point (?:to|at)|show me where|highlight|mark|circle|draw (?:an? )?arrow|where (?:do i|is the|are the))\b|\bhelp me find\b[^.!?]{0,80}\b(?:button|control|menu|tab|toolbar|panel|tool|icon)\b/i;
 const guidedScreenSteps = /\b(?:show me how|walk me through|guide me through)\b[^.!?]{0,140}\b(?:on (?:my|the) screen|in (?:the|this) (?:app|software|program))\b/i;
 
+/** A request that cannot be grounded in the current display without an image. */
+export function referencesVisibleScreen(question: string, history: { role: "user" | "assistant"; content: string }[] = []) {
+  const clean = question.trim();
+  const directReference = (value: string) => explicitScreen.test(value) || referencedVisual.test(value) || visibleActivity.test(value) || pointingQuestion.test(value);
+  if (directReference(clean)) return true;
+  const priorUser = [...history].reverse().find((turn) => turn.role === "user")?.content;
+  return Boolean(priorUser && directReference(priorUser)
+    && /^(?:why|how|what(?:'s| is| about| changed)|where|which|and|can you explain|tell me more|is that|does that)\b/i.test(clean));
+}
+
 export function wantsCurrentScreen(question: string, history: { role: "user" | "assistant"; content: string }[] = []) {
   const clean = question.trim();
   if ((continuesGuidedWorkflow(clean) || wantsToDelegateCurrentTask(clean)) && hasGuidedWorkflowContext(history)) return true;
   if (wantsComputerExecution(clean, history)) return true;
   if (wantsGuidedWorkflow(clean)) return true;
-  if (wantsVisualCreation(clean) || explicitScreen.test(clean) || referencedVisual.test(clean) || visibleActivity.test(clean) || pointingQuestion.test(clean)) return true;
+  if (wantsVisualCreation(clean) || referencesVisibleScreen(clean, history)) return true;
   const priorUser = [...history].reverse().find((turn) => turn.role === "user")?.content;
-  return Boolean(priorUser && (wantsVisualCreation(priorUser) || explicitScreen.test(priorUser) || referencedVisual.test(priorUser) || visibleActivity.test(priorUser) || pointingQuestion.test(priorUser))
-    && /^(?:why|how|what about|and|can you explain|tell me more|is that|does that)\b/i.test(question.trim()));
+  return Boolean(priorUser && wantsVisualCreation(priorUser)
+    && /^(?:why|how|what about|and|can you explain|tell me more|is that|does that)\b/i.test(clean));
 }
 
 export function wantsSpatialGuidance(question: string) {

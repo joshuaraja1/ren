@@ -66,6 +66,7 @@ function makeHarness(transcripts: string[], ask: RenBridge["ask"]) {
   const speechFeed = vi.fn(async () => true);
   const speechFinish = vi.fn(async () => transcripts.shift() ?? "");
   const wakeFeed = vi.fn(async (_samples: number[]) => false);
+  const voiceDiagnostic = vi.fn();
   const speechStop = vi.fn(async () => {});
   const cancelSpeech = vi.fn(async () => true);
   const cancelAsk = vi.fn(async () => true);
@@ -86,6 +87,7 @@ function makeHarness(transcripts: string[], ask: RenBridge["ask"]) {
     wakeStart: async () => true,
     wakeStop: async () => {},
     wakeFeed,
+    voiceDiagnostic,
     speechAvailable: async () => true,
     speechStart, speechFeed, speechFinish, speechStop,
     onSpeechData: (listener: typeof speechData) => { speechData = listener; return () => { speechData = null; }; },
@@ -104,7 +106,7 @@ function makeHarness(transcripts: string[], ask: RenBridge["ask"]) {
 
   return {
     renderApp: () => render(<App />),
-    speechStart, speechStop, speechFinish, wakeFeed, cancelSpeech, cancelAsk, speak, captureContext, stoppedSources, audioSources,
+    speechStart, speechStop, speechFinish, wakeFeed, voiceDiagnostic, cancelSpeech, cancelAsk, speak, captureContext, stoppedSources, audioSources,
     startAgentJob, cancelAgentJob, runningJob,
     get processAudio() { return processAudio; },
     get speechData() { return speechData; },
@@ -180,9 +182,10 @@ describe("voice interruption and follow-ups", () => {
       }
       return realSetTimeout(handler, timeout, ...args);
     });
-    const ask = vi.fn(async ({ question }: { question: string }) => response(
-      question.toLowerCase() === "explain the engine" ? "The engine drives the fan." : "It moves air downward.",
-    ));
+    const ask = vi.fn(async ({ question }: { question: string }) => ({
+      ...response(question.toLowerCase() === "explain the engine" ? "The engine drives the fan." : "It moves air downward."),
+      followUps: ["What does the fan do?"],
+    }));
     const harness = makeHarness(["Hey Ren, explain the engine", "And the fan?"], ask as RenBridge["ask"]);
     harness.wakeFeed.mockResolvedValueOnce(true);
     harness.renderApp();
@@ -196,6 +199,10 @@ describe("voice interruption and follow-ups", () => {
     act(() => { harness.speechData?.({ id: firstSpeechID, chunk: btoa("\0".repeat(4096)), done: true }); });
     act(() => { harness.audioSources[0].onended?.(); });
     await waitFor(() => expect(sessionTimeouts).toHaveLength(1));
+    expect(harness.voiceDiagnostic.mock.calls.map(([stage]) => stage)).toEqual(expect.arrayContaining([
+      "wake_detected", "dictation_started", "transcript_ready", "request_sent",
+      "answer_ready", "playback_requested", "playback_started", "playback_done", "followup_open",
+    ]));
     expect(screen.getByRole("button", { name: /start speaking to ren/i })).toHaveTextContent("Follow up");
     now += 350;
     harness.feedFrames(5);

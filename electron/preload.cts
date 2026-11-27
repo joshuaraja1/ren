@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld("ren", {
   wakeStart: (sampleRate: number) => ipcRenderer.invoke("ren:wake-start", sampleRate),
   wakeFeed: (samples: number[]) => ipcRenderer.invoke("ren:wake-feed", samples),
   wakeStop: () => ipcRenderer.invoke("ren:wake-stop"),
+  voiceDiagnostic: (stage: string, requestId: string) => ipcRenderer.send("ren:voice-diagnostic", stage, requestId),
   speechAvailable: () => ipcRenderer.invoke("ren:speech-available"),
   speechStart: (sampleRate: number) => ipcRenderer.invoke("ren:speech-start", sampleRate),
   speechFeed: (samples: number[]) => ipcRenderer.invoke("ren:speech-feed", samples),

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { existsSync, writeFileSync } from "node:fs";
 import { askTeacher, type Annotation } from "./provider.js";
 import { feedWake, startWake, stopWake, wakeAvailable } from "./wake.js";
+import { recordVoiceStage } from "./voice-diagnostics.js";
 import { feedSpeech, finishSpeech, speechAvailable, startSpeech, stopSpeech } from "./speech.js";
 import { clearDeepgramKey, deepgramStatus, saveDeepgramKey } from "./deepgram-settings.js";
 import { streamWithDeepgram } from "./deepgram-tts.js";
@@ -465,6 +466,9 @@ app.whenReady().then(() => {
     return permissionStatus();
   });
   ipcMain.handle("ren:wake-available", () => wakeAvailable());
+  ipcMain.on("ren:voice-diagnostic", (event, stage: unknown, requestId: unknown) => {
+    if (event.sender === mainWindow?.webContents) recordVoiceStage(stage, requestId);
+  });
   ipcMain.handle("ren:wake-start", (event, sampleRate: unknown) => !voicePaused && event.sender === mainWindow?.webContents && typeof sampleRate === "number" && startWake(sampleRate));
   ipcMain.handle("ren:wake-feed", (event, samples: unknown) => !voicePaused && event.sender === mainWindow?.webContents && feedWake(samples));
   ipcMain.handle("ren:wake-stop", (event) => { if (event.sender === mainWindow?.webContents) stopWake(); });
@@ -742,7 +746,19 @@ app.whenReady().then(() => {
       }
     }
     const capture = lastCaptureData;
-    if (!value.contextToken || !capture || capture.token !== value.contextToken) throw new Error("Screen context expired. Ask again.");
+    if (!value.contextToken) throw new Error("Invalid conversation request.");
+    if (!capture && value.frames.length === 0) {
+      const askController = new AbortController();
+      activeAskRequest = { token: value.contextToken, controller: askController };
+      try {
+        const response = await askTeacher({ question: value.question, frames: [], history: value.history }, await visionCredentials(), askController.signal);
+        if (askController.signal.aborted || voicePaused) throw new Error("Ren is paused or the request was cancelled.");
+        return { ...response, annotations: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false };
+      } finally {
+        if (activeAskRequest?.controller === askController) activeAskRequest = null;
+      }
+    }
+    if (!capture || capture.token !== value.contextToken) throw new Error("Screen context expired. Ask again.");
     const displayId = captureSession.consume(value.contextToken);
     lastCaptureData = null;
     const askController = new AbortController();

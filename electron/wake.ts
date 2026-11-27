@@ -40,6 +40,7 @@ export function startWake(sampleRate: number) {
     }) as Spotter;
     stream = spotter.createStream();
     resampler = sampleRate === 16000 ? null : new sherpa.LinearResampler(sampleRate, 16000) as Resampler;
+    lastWake = 0;
     return true;
   } catch {
     spotter = null; stream = null; resampler = null;
@@ -62,4 +63,4 @@ export function feedWake(samples: unknown) {
   return true;
 }
 
-export function stopWake() { spotter = null; stream = null; resampler = null; }
+export function stopWake() { spotter = null; stream = null; resampler = null; lastWake = 0; }

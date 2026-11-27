@@ -39,6 +39,29 @@ describe("follow-up validation", () => {
 });
 
 describe("provider privacy boundary", () => {
+  it("grounds every turn in its own image as screen sharing starts and stops", async () => {
+    const fetchCall = vi.fn(async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "I can see a chart on this screen.", annotations: [] }) } }] }) }));
+    vi.stubGlobal("fetch", fetchCall);
+    const credentials = { apiKey: "test", model: "vision", baseUrl: "https://example.com/v1" };
+    const history = [
+      { role: "user" as const, content: "Explain this chart on my screen" },
+      { role: "assistant" as const, content: "I can see a chart on your screen." },
+    ];
+    try {
+      const shared = await askTeacher({ question: "Explain this chart on my screen", frames: ["data:image/png;base64,test"], history: [] }, credentials);
+      expect(shared.answer).toContain("I can see a chart");
+      const unshared = await askTeacher({ question: "Why?", frames: [], history }, credentials);
+      expect(unshared.answer).toMatch(/I can't see your screen right now/);
+      expect(unshared.annotations).toEqual([]);
+      expect(unshared.followUps).toEqual([]);
+      const invalid = await askTeacher({ question: "What changed?", frames: [""], history }, credentials);
+      expect(invalid.answer).toMatch(/I can't see your screen right now/);
+      const resumed = await askTeacher({ question: "What changed?", frames: ["data:image/png;base64,test"], history }, credentials);
+      expect(resumed.answer).toContain("I can see a chart");
+      expect(fetchCall).toHaveBeenCalledTimes(2);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("treats a CAD or FEA workflow as guidance, not a generated model or solver result", async () => {
     const calls: Array<{ messages: Array<{ content: unknown }> }> = [];
     vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {
@@ -144,7 +167,7 @@ describe("provider privacy boundary", () => {
       return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "**The selected area** is a chart." }) } }] }) };
     }));
     try {
-      const result = await askTeacher({ question: "Explain this", frames: [], history: [] }, { apiKey: "test-key", model: "gpt-6-sol", baseUrl: "https://api.openai.com/v1" });
+      const result = await askTeacher({ question: "Explain this", frames: ["data:image/png;base64,test"], history: [] }, { apiKey: "test-key", model: "gpt-6-sol", baseUrl: "https://api.openai.com/v1" });
       expect(body).toMatchObject({ model: "gpt-6-sol", reasoning_effort: "medium" });
       expect(result.answer).toBe("The selected area is a chart.");
     } finally { vi.unstubAllGlobals(); }
@@ -267,7 +290,7 @@ describe("provider privacy boundary", () => {
   it("returns an actionable error when the provider times out", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new DOMException("aborted", "TimeoutError"); }));
     try {
-      await expect(askTeacher({ question: "Explain this", frames: [], history: [] }, { apiKey: "test-key", model: "vision-model", baseUrl: "https://example.com/v1" })).rejects.toThrow(/took too long/);
+      await expect(askTeacher({ question: "Explain finite elements", frames: [], history: [] }, { apiKey: "test-key", model: "vision-model", baseUrl: "https://example.com/v1" })).rejects.toThrow(/took too long/);
     } finally { vi.unstubAllGlobals(); }
   });
 });

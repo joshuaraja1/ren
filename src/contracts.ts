@@ -80,6 +80,7 @@ export type RenBridge = {
   wakeAvailable(): Promise<boolean>;
   wakeStart(sampleRate: number): Promise<boolean>;
   wakeFeed(samples: number[]): Promise<boolean>;
+  voiceDiagnostic?(stage: string, requestId: string): void;
   wakeStop(): Promise<void>;
   speechAvailable(): Promise<boolean>;
   speechStart(sampleRate: number): Promise<boolean>;
