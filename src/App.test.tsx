@@ -490,7 +490,7 @@ describe("Ren voice interface", () => {
       expect(speechStart).toHaveBeenCalledTimes(2);
       now += 400;
       act(() => { for (let index = 0; index < 5; index += 1) processor?.onaudioprocess?.(voiceFrame); });
-      await waitFor(() => expect(wakeFeed).toHaveBeenCalledTimes(4));
+      await waitFor(() => expect(wakeFeed.mock.calls.length).toBeGreaterThanOrEqual(4));
       expect(speechStart).toHaveBeenCalledTimes(2);
       await waitFor(() => expect(screen.getByRole("button", { name: /start speaking to ren/i })).toBeVisible());
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();

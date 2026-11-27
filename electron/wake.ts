@@ -36,7 +36,7 @@ export function startWake(sampleRate: number) {
         tokens: join(model, "tokens.txt"), numThreads: 1, provider: "cpu", debug: 0,
       },
       keywordsFile: join(model, "keywords.txt"),
-      keywordsThreshold: 0.75,
+      keywordsThreshold: 0.3,
     }) as Spotter;
     stream = spotter.createStream();
     resampler = sampleRate === 16000 ? null : new sherpa.LinearResampler(sampleRate, 16000) as Resampler;

@@ -61,7 +61,7 @@ function makeHarness(transcripts: string[], ask: RenBridge["ask"]) {
   const speechStart = vi.fn(async () => true);
   const speechFeed = vi.fn(async () => true);
   const speechFinish = vi.fn(async () => transcripts.shift() ?? "");
-  const wakeFeed = vi.fn(async () => false);
+  const wakeFeed = vi.fn(async (_samples: number[]) => false);
   const speechStop = vi.fn(async () => {});
   const cancelSpeech = vi.fn(async () => true);
   const cancelAsk = vi.fn(async () => true);
@@ -130,7 +130,7 @@ describe("voice interruption and follow-ups", () => {
     let now = 10_000;
     vi.spyOn(Date, "now").mockImplementation(() => now);
     const ask = vi.fn(async () => response("The wheel turns on an axle."));
-    const harness = makeHarness(["The show is still playing", "Hey Ren, explain the wheel"], ask as RenBridge["ask"]);
+    const harness = makeHarness(["The show is still playing", "Hey Run, explain the wheel"], ask as RenBridge["ask"]);
     harness.wakeFeed.mockResolvedValueOnce(true).mockResolvedValueOnce(true);
     harness.renderApp();
     await waitFor(() => expect(harness.processAudio).toBeTypeOf("function"));
@@ -147,6 +147,21 @@ describe("voice interruption and follow-ups", () => {
     now += 2_100;
     harness.silence();
     await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({ question: "explain the wheel" })));
+  });
+
+  it("keeps consecutive wake audio while the detector is processing", async () => {
+    const first = deferred<boolean>();
+    const harness = makeHarness([], vi.fn(async () => response("unused")) as RenBridge["ask"]);
+    harness.wakeFeed.mockImplementationOnce(() => first.promise);
+    harness.renderApp();
+    await waitFor(() => expect(harness.processAudio).toBeTypeOf("function"));
+    harness.feedFrames(1);
+    await waitFor(() => expect(harness.wakeFeed).toHaveBeenCalledTimes(1));
+    harness.feedFrames(4);
+    expect(harness.wakeFeed).toHaveBeenCalledTimes(1);
+    await act(async () => first.resolve(false));
+    await waitFor(() => expect(harness.wakeFeed).toHaveBeenCalledTimes(2));
+    expect(harness.wakeFeed.mock.calls[1][0]).toHaveLength(8192);
   });
 
   it("turns off hands-free listening and cancels active dictation on the second toggle", async () => {

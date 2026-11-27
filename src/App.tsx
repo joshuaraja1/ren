@@ -198,17 +198,38 @@ export function App() {
           microphoneContextRef.current = context;
           sampleRateRef.current = context.sampleRate;
           nativeWakeRef.current = Boolean(wakeAvailable && await window.ren.wakeStart(context.sampleRate).catch(() => false));
+          if (!nativeWakeRef.current) setError("Hey Ren wake detection could not start. Click the sliver to talk, or reopen Ren.");
           const source = context.createMediaStreamSource(media);
           processor = context.createScriptProcessor(2048, 1, 1);
-          let pending = false;
           const recentAudio: number[][] = [];
+          const wakeQueue: number[][] = [];
+          let drainingWake = false;
           const wakePreRollFrames = Math.min(72, Math.max(12, Math.floor(context.sampleRate * 3 / 2048)));
+          const drainWakeQueue = async () => {
+            if (drainingWake) return;
+            drainingWake = true;
+            try {
+              while (wakeQueue.length && !disposed && !voicePausedRef.current && !dictationActiveRef.current && !alwaysOnRef.current) {
+                // Preserve consecutive audio while the native detector works.
+                // Batching four frames also avoids one IPC round trip per frame.
+                const batch = wakeQueue.splice(0, 4).flat();
+                if (await window.ren!.wakeFeed(batch)) {
+                  wakeQueue.length = 0;
+                  if (nativeSpeechRef.current) void startNativeDictation(recentAudio.slice(), false, true);
+                  else handleAmbientTranscript("Hey Ren");
+                  break;
+                }
+              }
+            } catch { setError("Local wake engine stopped. Click Ren to ask."); }
+            finally { drainingWake = false; }
+          };
           let wasAwaitingFollowUp = false;
           let followUpVoiceFrames = 0;
           processor.onaudioprocess = (event) => {
             if (disposed || voicePausedRef.current || (visionOpenRef.current && !dictationActiveRef.current)) return;
             const samples = Array.from(event.inputBuffer.getChannelData(0));
             if (dictationActiveRef.current) {
+              wakeQueue.length = 0;
               wasAwaitingFollowUp = false;
               followUpVoiceFrames = 0;
               const now = Date.now();
@@ -249,6 +270,7 @@ export function App() {
               return;
             }
             if (conversationOpenRef.current && alwaysOnRef.current) {
+              wakeQueue.length = 0;
               const interruptible = Boolean(speechCancelRef.current) || askingRef.current;
               if ((!awaitingFollowUpRef.current && !interruptible) || (!interruptible && Date.now() < suppressSpeechUntilRef.current)) {
                 wasAwaitingFollowUp = false;
@@ -268,16 +290,12 @@ export function App() {
               return;
             }
             wasAwaitingFollowUp = false;
-            if (!nativeWakeRef.current || pending || Date.now() < suppressSpeechUntilRef.current) return;
+            if (!nativeWakeRef.current || Date.now() < suppressSpeechUntilRef.current) { wakeQueue.length = 0; return; }
             recentAudio.push(samples);
             if (recentAudio.length > wakePreRollFrames) recentAudio.shift();
-            pending = true;
-            void window.ren!.wakeFeed(samples).then((woke) => {
-              if (woke && !disposed) {
-                if (nativeSpeechRef.current) void startNativeDictation(recentAudio.slice(), false, true);
-                else handleAmbientTranscript("Hey Ren");
-              }
-            }).catch(() => setError("Local wake engine stopped. Click Ren to ask.")).finally(() => { pending = false; });
+            wakeQueue.push(samples);
+            if (wakeQueue.length > wakePreRollFrames) wakeQueue.shift();
+            void drainWakeQueue();
           };
           source.connect(processor);
           processor.connect(context.destination);
@@ -764,11 +782,10 @@ export function App() {
   }
 
   function handleAmbientTranscript(transcript: string) {
-    const wakeMatch = transcript.match(/\bhey[\s,.-]+ren\b/i);
-    if (!wakeMatch) return;
+    const remainder = confirmedWakeQuestion(transcript);
+    if (remainder === null) return;
     showCompanion();
     keepAwake(); setVoiceState("listening");
-    const remainder = wakeMatch ? transcript.slice((wakeMatch.index ?? 0) + wakeMatch[0].length).replace(/^[,.:;\s-]+/, "") : transcript;
     if (remainder) void askQuestion(remainder, true);
     else if (nativeWakeRef.current && nativeSpeechRef.current) void startNativeDictation();
     else greet(nativeWakeRef.current ? "Hey, I'm here. Ask me about what you're pointing at." : undefined);
