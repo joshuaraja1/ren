@@ -1,5 +1,5 @@
 import { app } from "electron";
-import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from "node:fs";
+import { closeSync, fstatSync, ftruncateSync, mkdirSync, openSync, writeSync } from "node:fs";
 import { join } from "node:path";
 
 const stages = new Set([
@@ -15,8 +15,13 @@ export function recordVoiceStage(stage: unknown, requestId: unknown) {
     const directory = app.getPath("userData");
     mkdirSync(directory, { recursive: true });
     const file = join(directory, "voice-events.jsonl");
-    if (existsSync(file) && statSync(file).size > 256_000) renameSync(file, `${file}.previous`);
-    appendFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), requestId, stage })}\n`);
+    const descriptor = openSync(file, "a+");
+    try {
+      if (fstatSync(descriptor).size > 256_000) ftruncateSync(descriptor, 0);
+      writeSync(descriptor, `${JSON.stringify({ at: new Date().toISOString(), requestId, stage })}\n`);
+    } finally {
+      closeSync(descriptor);
+    }
     return true;
   } catch {
     return false;

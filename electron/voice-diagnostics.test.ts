@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -20,4 +20,13 @@ it("records voice pipeline stages without storing speech or arbitrary text", () 
   const entries = readFileSync(join(mock.directory, "voice-events.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
   expect(entries.map(({ stage }: { stage: string }) => stage)).toEqual(["wake_detected", "answer_ready"]);
   expect(entries.every(({ requestId }: { requestId: string }) => requestId === id)).toBe(true);
+});
+
+it("bounds the local diagnostic file without retaining old events", () => {
+  const file = join(mock.directory, "voice-events.jsonl");
+  writeFileSync(file, "x".repeat(256_001));
+  expect(recordVoiceStage("wake_detected", "test-request-1234")).toBe(true);
+  const contents = readFileSync(file, "utf8");
+  expect(contents).not.toContain("xxxx");
+  expect(JSON.parse(contents.trim()).stage).toBe("wake_detected");
 });
