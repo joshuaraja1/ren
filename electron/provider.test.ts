@@ -72,6 +72,20 @@ describe("provider privacy boundary", () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
+  it("uses visible content without assuming an app workflow", async () => {
+    let body: { messages: Array<{ content: unknown }> } | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {
+      body = JSON.parse(String(options.body));
+      return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "The visible chart compares two results.", annotations: [] }) } }] }) };
+    }));
+    try {
+      await askTeacher({ question: "Explain this diagram", frames: ["data:image/png;base64,test"], history: [] }, { apiKey: "test", model: "vision", baseUrl: "https://example.com/v1" });
+      expect(String(body?.messages[0].content)).toContain("a video, an article, a diagram");
+      expect(String(body?.messages[0].content)).not.toContain("Give exactly one concrete next action");
+      expect(JSON.stringify(body?.messages.at(-1)?.content)).toContain("data:image/png;base64,test");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("continues a guided workflow with the new screen and prior step", async () => {
     let body: { messages: Array<{ content: unknown }> } | undefined;
     vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {

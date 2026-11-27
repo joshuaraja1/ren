@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { VisionCredentials } from "./vision-settings.js";
 import type { Bounds } from "./display-geometry.js";
+import { mentionsNamedTarget } from "./computer-intent.js";
 
 const execFileAsync = promisify(execFile);
 const blockedApps = new Set(["ai.ren.teacher", "com.openai.codex", "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable", "org.alacritty", "com.apple.systempreferences"]);
@@ -95,6 +96,7 @@ export function selectComputerTarget(task: string, apps: AppIdentity[], runningA
   const named = matchingApps(task, visible.filter((item) => !blockedApps.has(item.bundle)));
   if (named.length === 1) return named[0].bundle;
   if (named.length > 1) throw new Error("More than one named app is visible. Specify which one Ren should use.");
+  if (mentionsNamedTarget(task)) throw new Error("Open the named app you want Ren to use, then try again.");
   const top = visible[0];
   if (!top?.bundle) throw new Error("Open the app you want Ren to operate, then ask again.");
   if (blockedApps.has(top.bundle)) throw new Error("Keep the app you want Ren to use visible behind Ren, then try again.");

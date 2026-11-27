@@ -54,7 +54,7 @@ describe("Ren voice interface", () => {
   });
 
   it.each([
-    { task: "How do I design an aircraft wing in FreeCAD?", stuck: "I can't find the sketch tool" },
+    { task: "How do I design an aircraft wing in AeroSketch?", stuck: "I can't find the sketch tool" },
     { task: "How do I create a table using excel?", stuck: "That didn't work" },
   ])("keeps screen context and the original task when guidance gets stuck: $task", async ({ task, stuck }) => {
     const captureContext = vi.fn(async () => ({ frames: ["data:image/png;base64,screen"], pointer: { x: .5, y: .5 }, contextToken: crypto.randomUUID() }));

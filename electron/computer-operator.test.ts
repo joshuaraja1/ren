@@ -15,8 +15,10 @@ describe("computer action boundary", () => {
       { bundle: "ai.ren.teacher", name: "Ren" }, { bundle: "com.apple.TextEdit", name: "TextEdit" },
     ])).toThrow(/cannot operate/);
     expect(() => selectComputerTarget("Type this in the app", apps)).toThrow(/Keep the app/);
-    expect(() => selectComputerTarget("Type this in TextEdit", [{ bundle: "com.openai.codex", name: "ChatGPT" }])).toThrow(/Keep the app/);
+    expect(() => selectComputerTarget("Type this in TextEdit", [{ bundle: "com.openai.codex", name: "ChatGPT" }])).toThrow(/named app/);
     expect(selectComputerTarget("Make a sketch in Fusion", [{ bundle: "com.autodesk.fusion", name: "Autodesk Fusion 360" }])).toBe("com.autodesk.fusion");
+    expect(selectComputerTarget("Create a table in excel", [{ bundle: "com.microsoft.Excel", name: "Microsoft Excel" }])).toBe("com.microsoft.Excel");
+    expect(() => selectComputerTarget("Create a table in excel", [{ bundle: "com.apple.Safari", name: "Safari" }])).toThrow(/named app/);
     expect(selectComputerTarget("Type in TextEdit", [{ bundle: "com.apple.Safari", name: "Safari" }], [
       { bundle: "com.apple.Safari", name: "Safari" }, { bundle: "com.apple.TextEdit", name: "TextEdit" },
     ])).toBe("com.apple.TextEdit");
@@ -47,6 +49,9 @@ describe("computer action boundary", () => {
     expect(wantsComputerExecution("Run FEA in this software")).toBe(true);
     expect(wantsComputerExecution("Configure the titration in this app")).toBe(true);
     expect(wantsComputerExecution("Create a CAD model in Fusion 360 for me")).toBe(true);
+    expect(wantsComputerExecution("Create a table in excel for me")).toBe(true);
+    expect(wantsComputerExecution("Make a sketch in figma")).toBe(true);
+    expect(wantsComputerExecution("How do I build this plane in my design software?", history)).toBe(false);
     expect(wantsComputerExecution("How does meshing work?", history)).toBe(false);
     expect(wantsComputerExecution("How do I click the mesh button?", history)).toBe(false);
     expect(wantsComputerExecution("Do this math for me")).toBe(false);

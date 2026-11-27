@@ -5,6 +5,7 @@ describe("screen context routing", () => {
   it("keeps ordinary voice conversation off the screen path", () => {
     expect(wantsCurrentScreen("Tell me a joke about bicycles")).toBe(false);
     expect(wantsCurrentScreen("Why did you stop responding to me?")).toBe(false);
+    expect(wantsCurrentScreen("What is a video codec?")).toBe(false);
     expect(wantsCurrentScreen("How do bicycle gears work?", [{ role: "user", content: "Tell me a joke" }])).toBe(false);
   });
 
@@ -16,17 +17,24 @@ describe("screen context routing", () => {
     expect(wantsCurrentScreen("Why does the fan help?", [{ role: "user", content: "Draw a diagram of the hover system" }, { role: "assistant", content: "Here is the fan." }])).toBe(true);
     expect(wantsCurrentScreen("How do I run FEA in this software?")).toBe(true);
     expect(wantsCurrentScreen("Show me how to build a bracket in this CAD app")).toBe(true);
-    expect(wantsCurrentScreen("How do I run FEA in FreeCAD?")).toBe(true);
+    expect(wantsCurrentScreen("How do I run FEA in AeroSketch?")).toBe(true);
     expect(wantsCurrentScreen("How can I create a table using Excel?")).toBe(true);
     expect(wantsCurrentScreen("How do I mesh a part in ansys?")).toBe(true);
     expect(wantsCurrentScreen("What should I click in figma?")).toBe(true);
     expect(wantsCurrentScreen("How do I do this?")).toBe(true);
     expect(wantsCurrentScreen("Can you help me with this?")).toBe(true);
-    expect(wantsCurrentScreen("Walk me through making a bracket in FreeCAD")).toBe(true);
+    expect(wantsCurrentScreen("Summarize what I'm reading")).toBe(true);
+    expect(wantsCurrentScreen("What am I looking at?")).toBe(true);
+    expect(wantsCurrentScreen("What is happening in this video?")).toBe(true);
+    expect(wantsCurrentScreen("Explain this YouTube video")).toBe(true);
+    expect(wantsCurrentScreen("Summarize the research article")).toBe(true);
+    expect(wantsCurrentScreen("Explain this diagram")).toBe(true);
+    expect(wantsCurrentScreen("How do I build this plane in my design software?")).toBe(true);
+    expect(wantsCurrentScreen("Walk me through making a bracket in AeroSketch")).toBe(true);
     expect(wantsCurrentScreen("I want to design a bracket; can you walk me through it step by step?")).toBe(true);
     expect(wantsCurrentScreen("Guide me through titration in this chemistry app")).toBe(true);
     expect(wantsCurrentScreen("Create a CAD model of this object")).toBe(true);
-    expect(wantsCurrentScreen("Next step", [{ role: "user", content: "Walk me through CAD in FreeCAD" }, { role: "assistant", content: "Select the sketch tool." }])).toBe(true);
+    expect(wantsCurrentScreen("Next step", [{ role: "user", content: "Walk me through CAD in AeroSketch" }, { role: "assistant", content: "Select the sketch tool." }])).toBe(true);
     expect(wantsCurrentScreen("Next step", [{ role: "user", content: "Tell me a joke" }])).toBe(false);
     expect(wantsCurrentScreen("Click the visible button for me")).toBe(true);
     expect(wantsCurrentScreen("Do it for me", [{ role: "user", content: "Walk me through meshing this part" }])).toBe(true);
