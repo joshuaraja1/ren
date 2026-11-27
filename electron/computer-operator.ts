@@ -121,8 +121,11 @@ export async function activateComputerTarget(scriptPath: string, expectedBundle:
   try {
     const { stdout } = await execFileAsync("/usr/bin/swift", [scriptPath, JSON.stringify({ action: "activate", expectedBundle, screenBounds: bounds })], { timeout: 15_000, maxBuffer: 100_000, signal });
     if (!stdout.includes("REN_INPUT_OK")) throw new Error("The app did not activate.");
-  } catch {
-    throw new Error("Bring the requested app window onto this display, then try again.");
+  } catch (error) {
+    const detail = String(error);
+    if (detail.includes("REN_TARGET_NOT_ON_DISPLAY")) throw new Error("Bring the requested app window onto this display, then try again.");
+    if (detail.includes("REN_TARGET_FOCUS_LOST")) throw new Error("Another app took focus before Ren could act. Bring the requested app forward and try again.");
+    throw new Error("Ren could not activate the requested app. Bring its window forward and try again.");
   }
 }
 

@@ -69,19 +69,43 @@ guard let expectedBundle = value["expectedBundle"] as? String,
     exit(14)
 }
 if action == "activate" {
-    guard let target = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == expectedBundle }),
-          target.activate(options: .activateAllWindows) == true else {
-        fputs("The active app changed or cannot be operated safely.\n", stderr)
+    guard let target = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == expectedBundle }) else {
+        fputs("REN_TARGET_ACTIVATION_DENIED\n", stderr)
         exit(14)
     }
-    usleep(150_000)
-    guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier == expectedBundle,
-          visibleApps().first?.bundle == expectedBundle else {
-        fputs("The active app changed or cannot be operated safely.\n", stderr)
-        exit(14)
+    func targetIsReady() -> Bool {
+        NSWorkspace.shared.frontmostApplication?.bundleIdentifier == expectedBundle &&
+        visibleApps().first?.bundle == expectedBundle
     }
-    print("REN_INPUT_OK")
-    exit(0)
+    func waitForTarget() -> Bool {
+        for _ in 0..<10 {
+            if targetIsReady() { return true }
+            // NSWorkspace updates its frontmost-app state through the run loop.
+            // Sleeping this short-lived helper can leave that state stale even
+            // after the target app has visibly taken focus.
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        return targetIsReady()
+    }
+    if targetIsReady() {
+        print("REN_INPUT_OK")
+        exit(0)
+    }
+    if NSWorkspace.shared.frontmostApplication?.bundleIdentifier != expectedBundle {
+        // Do not raise every window: doing so can replace the tab or document
+        // that was in view when Ren captured the screen.
+        _ = target.activate(options: [])
+    }
+    if waitForTarget() {
+        print("REN_INPUT_OK")
+        exit(0)
+    }
+    if NSWorkspace.shared.frontmostApplication?.bundleIdentifier != expectedBundle {
+        fputs("REN_TARGET_FOCUS_LOST\n", stderr)
+    } else {
+        fputs("REN_TARGET_NOT_ON_DISPLAY\n", stderr)
+    }
+    exit(14)
 }
 guard apps.first?.bundle == expectedBundle,
       NSWorkspace.shared.frontmostApplication?.bundleIdentifier == expectedBundle else {
