@@ -66,7 +66,7 @@ describe("Ren voice interface", () => {
       render(<App />);
       fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
       const prompt = screen.getByRole("textbox", { name: /ask ren/i });
-      fireEvent.change(prompt, { target: { value: "Help me design an aircraft wing in this CAD app" } });
+      fireEvent.change(prompt, { target: { value: "How do I design an aircraft wing in FreeCAD?" } });
       fireEvent.click(screen.getByRole("button", { name: /send ren prompt/i }));
       await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
       fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
@@ -77,7 +77,7 @@ describe("Ren voice interface", () => {
       expect(ask.mock.calls[1][0]).toEqual(expect.objectContaining({
         question: "I can't find the sketch tool",
         frames: ["data:image/png;base64,screen"],
-        history: expect.arrayContaining([expect.objectContaining({ role: "user", content: "Help me design an aircraft wing in this CAD app" })]),
+        history: expect.arrayContaining([expect.objectContaining({ role: "user", content: "How do I design an aircraft wing in FreeCAD?" })]),
       }));
     } finally { window.ren = undefined; }
   });
