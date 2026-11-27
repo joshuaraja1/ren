@@ -8,6 +8,7 @@ describe("Ren voice interface", () => {
     const raw = "Error invoking remote method 'ren:ask': Error: Command failed: /usr/bin/swift /Users/Josh/Ren/ren-input.swift {\"action\":\"type\"} The active app changed or cannot be operated safely.";
     expect(friendlyAskError(new Error(raw))).toBe("The visible app changed while Ren was working. Please try again.");
     expect(friendlyAskError(new Error("Error invoking remote method 'ren:ask': Error: Command failed: /usr/bin/swift"))).toBe("Ren couldn't complete that action. Please try again.");
+    expect(friendlyAskError(new Error("Error invoking remote method 'ren:ask': Error: Ren cannot operate that app through screen coordinates."))).toBe("Ren cannot operate that app through screen coordinates.");
   });
   it("opens the OpenClicky-style home panel from the compact notch", async () => {
     window.ren = {

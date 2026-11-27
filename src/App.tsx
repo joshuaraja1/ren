@@ -32,11 +32,12 @@ const voiceLabels: Record<VoiceState, { title: string; detail: string }> = {
   responding: { title: "Speaking", detail: "Working it through" },
 };
 export function friendlyAskError(reason: unknown): string {
-  const raw = reason instanceof Error ? reason.message : String(reason ?? "");
+  const raw = (reason instanceof Error ? reason.message : String(reason ?? ""))
+    .replace(/^Error invoking remote method '[^']+': Error: /, "");
   if (/visible app changed|active app changed/i.test(raw)) return "The visible app changed while Ren was working. Please try again.";
   if (/Accessibility permission|Enable Accessibility/i.test(raw)) return "Enable Accessibility for Ren in macOS Settings, then try again.";
   if (/\bfetch failed\b/i.test(raw)) return "The AI request could not be sent. Please try again.";
-  if (/Error invoking remote method|Command failed|ren-input\.swift|\/usr\/bin\/swift/i.test(raw)) return "Ren couldn't complete that action. Please try again.";
+  if (/Error invoking remote method|Command failed|ren-input\.swift|\/usr\/bin\/swift|\/Users\//i.test(raw)) return "Ren couldn't complete that action. Please try again.";
   return raw.replace(/\s+/g, " ").slice(0, 240) || "Ren couldn’t answer. Please try again.";
 }
 const Spark = () => <svg aria-hidden="true" viewBox="0 0 32 32" className="spark"><path d="M16 2c.8 8.6 5.4 13.2 14 14-8.6.8-13.2 5.4-14 14-.8-8.6-5.4-13.2-14-14 8.6-.8 13.2-5.4 14-14Z" /></svg>;

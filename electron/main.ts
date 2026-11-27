@@ -34,7 +34,7 @@ import { consumeAgentJobCapture } from "./agent-job-capture.js";
 import { wantsCurrentScreen, wantsSpatialGuidance } from "./screen-intent.js";
 import { createFreeCadModel, planCadModel, wantsCadCreation } from "./cad-model.js";
 import { wantsToDelegateCurrentTask, wantsGuidedWorkflow } from "./guided-workflow.js";
-import { performComputerAction, planComputerAction, readComputerTarget, type ComputerAction } from "./computer-operator.js";
+import { activateComputerTarget, performComputerAction, planComputerAction, readComputerTarget, type ComputerAction } from "./computer-operator.js";
 import { wantsComputerExecution } from "./computer-intent.js";
 
 type Illustration = { image: string; preview: boolean; width: number; height: number; registration?: ImageRegistration };
@@ -704,11 +704,19 @@ app.whenReady().then(() => {
       let replans = 0;
       try {
         await new Promise((resolve) => setTimeout(resolve, 160));
-        const targetApp = await readComputerTarget(script, controller.signal);
+        const targetApp = await readComputerTarget(script, task, controller.signal);
+        await activateComputerTarget(script, targetApp, controller.signal);
+        const initialScreen = await captureDisplay(displayId, captured.thumbnailSize);
+        if (!initialScreen) throw new Error("Ren could not view the requested app after bringing it forward.");
+        image = initialScreen.toDataURL();
+        firstSample = motionSample(initialScreen);
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        secondSample = motionSample(await captureDisplay(displayId, captured.thumbnailSize) ?? initialScreen);
         for (let step = 0; step < 24; step++) {
           if (controller.signal.aborted || voicePaused) throw new Error("Ren stopped operating the app.");
           if (!screen.getAllDisplays().some((item) => item.id === displayId && JSON.stringify(item.bounds) === JSON.stringify(display.bounds))) throw new Error("The display changed during this task.");
           const action = await planComputerAction(task, image, actions, credentials, controller.signal);
+          await activateComputerTarget(script, targetApp, controller.signal);
           const beforeAction = await captureDisplay(displayId, captured.thumbnailSize);
           if (!beforeAction) throw new Error("Ren could not recheck the screen before acting.");
           if (!isSameStableScreen(firstSample, secondSample, motionSample(beforeAction))) {

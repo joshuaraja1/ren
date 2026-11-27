@@ -9,8 +9,15 @@ guard CommandLine.arguments.count == 2,
     fputs("Invalid screen action.\n", stderr)
     exit(2)
 }
-func visibleApp() -> (bundle: String, pid: pid_t)? {
+struct VisibleApp {
+    let bundle: String
+    let pid: pid_t
+    let name: String
+}
+func visibleApps() -> [VisibleApp] {
     let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+    var apps: [VisibleApp] = []
+    var seen: Set<String> = []
     for window in windows {
         guard let layer = window[kCGWindowLayer as String] as? Int, layer == 0,
               let rawBounds = window[kCGWindowBounds as String] as? [String: Any],
@@ -21,13 +28,18 @@ func visibleApp() -> (bundle: String, pid: pid_t)? {
               !(window[kCGWindowName as String] as? String ?? "").contains("Computer Use"),
               let number = window[kCGWindowOwnerPID as String] as? NSNumber else { continue }
         let pid = pid_t(number.intValue)
-        if let bundle = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier { return (bundle, pid) }
+        guard let app = NSRunningApplication(processIdentifier: pid), let bundle = app.bundleIdentifier,
+              !seen.contains(bundle) else { continue }
+        seen.insert(bundle)
+        apps.append(VisibleApp(bundle: bundle, pid: pid, name: app.localizedName ?? owner))
     }
-    return nil
+    return apps
 }
-let target = visibleApp()
+let apps = visibleApps()
 if action == "identity" {
-    print("REN_APP_ID:\(target?.bundle ?? "")")
+    let details = apps.map { ["bundle": $0.bundle, "name": $0.name] }
+    guard let json = try? JSONSerialization.data(withJSONObject: details), let text = String(data: json, encoding: .utf8) else { exit(2) }
+    print("REN_VISIBLE_APPS:\(text)")
     exit(0)
 }
 guard AXIsProcessTrusted() else {
@@ -35,13 +47,13 @@ guard AXIsProcessTrusted() else {
     exit(13)
 }
 guard let expectedBundle = value["expectedBundle"] as? String,
-      expectedBundle == target?.bundle,
       !["ai.ren.teacher", "com.openai.codex", "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable", "org.alacritty", "com.apple.systempreferences"].contains(expectedBundle) else {
     fputs("The active app changed or cannot be operated safely.\n", stderr)
     exit(14)
 }
-if action == "type" || action == "key" {
-    guard NSRunningApplication(processIdentifier: target!.pid)?.activate(options: .activateAllWindows) == true else {
+if action == "activate" {
+    guard let target = apps.first(where: { $0.bundle == expectedBundle }),
+          NSRunningApplication(processIdentifier: target.pid)?.activate(options: .activateAllWindows) == true else {
         fputs("The active app changed or cannot be operated safely.\n", stderr)
         exit(14)
     }
@@ -50,6 +62,13 @@ if action == "type" || action == "key" {
         fputs("The active app changed or cannot be operated safely.\n", stderr)
         exit(14)
     }
+    print("REN_INPUT_OK")
+    exit(0)
+}
+guard apps.first?.bundle == expectedBundle,
+      NSWorkspace.shared.frontmostApplication?.bundleIdentifier == expectedBundle else {
+    fputs("The active app changed or cannot be operated safely.\n", stderr)
+    exit(14)
 }
 
 func location(_ raw: Any?) -> CGPoint? {

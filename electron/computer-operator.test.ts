@@ -1,10 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { nativeAction, parseComputerAction, planComputerAction, screenPoint } from "./computer-operator.js";
+import { nativeAction, parseComputerAction, planComputerAction, screenPoint, selectComputerTarget } from "./computer-operator.js";
 import { wantsComputerExecution } from "./computer-intent.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("computer action boundary", () => {
+  it("selects an explicitly named visible app instead of the assistant host", () => {
+    const apps = [{ bundle: "com.openai.codex", name: "ChatGPT" }, { bundle: "com.apple.TextEdit", name: "TextEdit" }];
+    expect(selectComputerTarget("Type this in TextEdit", apps)).toBe("com.apple.TextEdit");
+    expect(() => selectComputerTarget("Type this in the app", apps)).toThrow(/Keep the app/);
+    expect(() => selectComputerTarget("Type this in TextEdit", [{ bundle: "com.openai.codex", name: "ChatGPT" }])).toThrow(/Keep the app/);
+    expect(selectComputerTarget("Make a sketch in Fusion", [{ bundle: "com.autodesk.fusion", name: "Autodesk Fusion 360" }])).toBe("com.autodesk.fusion");
+  });
   it("maps image fractions to Electron/Quartz screen points, including an offset display", () => {
     const bounds = { x: -1440, y: 180, width: 1440, height: 900 };
     expect(screenPoint({ x: 0, y: 0 }, bounds)).toEqual({ x: -1440, y: 180 });
