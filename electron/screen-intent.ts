@@ -3,10 +3,10 @@ import { continuesGuidedWorkflow, hasGuidedWorkflowContext, wantsGuidedWorkflow,
 import { wantsComputerExecution } from "./computer-intent.js";
 
 const explicitScreen = /\b(?:screen|screenshot|display|cursor|pointer|window|webpage|browser tab|visible|on[- ]screen|this app|this page|this software|this program|in (?:the|this) (?:app|software|program)|overlay)\b/i;
-const referencedVisual = /\b(?:this|that|these|those|the)\s+(?:[\w-]+\s+){0,2}(?:part|diagram|chart|graph|button|menu|icon|object|region|area|component|drawing|model|video|clip|article|page|document|paragraph|formula|table|slide|frame|scene|equation|code|text|website|photo|picture|image)\b/i;
+const referencedVisual = /\b(?:this|that|these|those|the)\s+(?:[\w-]+\s+){0,2}(?:part|diagram|chart|graph|button|control|menu|tab|toolbar|panel|tool|icon|object|region|area|component|drawing|model|video|clip|stream|game|animation|article|page|document|pdf|spreadsheet|worksheet|paragraph|formula|table|slide|frame|scene|equation|code|text|website|dashboard|map|canvas|timeline|photo|picture|image)\b/i;
 const visibleActivity = /\b(?:i(?:'m| am)|we(?:'re| are))\s+(?:watching|reading|viewing|looking at|working on|editing|drawing)\b|\bwhat am i looking at\b/i;
 const pointingQuestion = /\b(?:what(?:'s| is| does)|where(?:'s| is)|which|look at|read|explain|summari[sz]e|point to|highlight|circle|mark|show me)\b.{0,65}\b(?:this|that|these|those|here|there|it)\s*[?.!]*$/i;
-const spatialGuidance = /\b(?:point (?:to|at)|show me where|highlight|mark|circle|draw (?:an? )?arrow|where (?:do i|is the|are the))\b/i;
+const spatialGuidance = /\b(?:point (?:to|at)|show me where|highlight|mark|circle|draw (?:an? )?arrow|where (?:do i|is the|are the))\b|\bhelp me find\b[^.!?]{0,80}\b(?:button|control|menu|tab|toolbar|panel|tool|icon)\b/i;
 const guidedScreenSteps = /\b(?:show me how|walk me through|guide me through)\b[^.!?]{0,140}\b(?:on (?:my|the) screen|in (?:the|this) (?:app|software|program))\b/i;
 
 export function wantsCurrentScreen(question: string, history: { role: "user" | "assistant"; content: string }[] = []) {

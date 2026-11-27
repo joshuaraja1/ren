@@ -6,6 +6,7 @@ describe("screen context routing", () => {
     expect(wantsCurrentScreen("Tell me a joke about bicycles")).toBe(false);
     expect(wantsCurrentScreen("Why did you stop responding to me?")).toBe(false);
     expect(wantsCurrentScreen("What is a video codec?")).toBe(false);
+    expect(wantsCurrentScreen("How do games work?")).toBe(false);
     expect(wantsCurrentScreen("How do bicycle gears work?", [{ role: "user", content: "Tell me a joke" }])).toBe(false);
   });
 
@@ -29,6 +30,10 @@ describe("screen context routing", () => {
     expect(wantsCurrentScreen("Explain this YouTube video")).toBe(true);
     expect(wantsCurrentScreen("Summarize the research article")).toBe(true);
     expect(wantsCurrentScreen("Explain this diagram")).toBe(true);
+    expect(wantsCurrentScreen("Explain this dashboard")).toBe(true);
+    expect(wantsCurrentScreen("What is happening in this game?")).toBe(true);
+    expect(wantsCurrentScreen("Summarize this spreadsheet")).toBe(true);
+    expect(wantsCurrentScreen("Help me find the sketch tool")).toBe(true);
     expect(wantsCurrentScreen("How do I build this plane in my design software?")).toBe(true);
     expect(wantsCurrentScreen("Walk me through making a bracket in AeroSketch")).toBe(true);
     expect(wantsCurrentScreen("I want to design a bracket; can you walk me through it step by step?")).toBe(true);
@@ -47,6 +52,8 @@ describe("screen context routing", () => {
 
   it("only requests spatial guidance for direct pointing requests", () => {
     expect(wantsSpatialGuidance("Where is the Apple menu? Point to it.")).toBe(true);
+    expect(wantsSpatialGuidance("Help me find the export button")).toBe(true);
+    expect(wantsSpatialGuidance("Help me find a job")).toBe(false);
     expect(wantsSpatialGuidance("What does this error mean?")).toBe(false);
     expect(wantsSpatialGuidance("Show me how to run FEM analysis in this software")).toBe(true);
     expect(wantsSpatialGuidance("Walk me through meshing on my screen")).toBe(true);
