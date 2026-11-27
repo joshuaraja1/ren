@@ -15,6 +15,9 @@ it("recognizes explicit guided work across domains and concise continuations", (
     "How do I mesh a part in ansys?",
     "How do I edit this video in davinci resolve?",
     "What should I click in figma?",
+    "How do I do this?",
+    "What should I do here?",
+    "Can you help me with this?",
   ]) expect(wantsGuidedWorkflow(request)).toBe(true);
   expect(wantsGuidedWorkflow("How do I cook rice in a pot?")).toBe(false);
   for (const request of ["Next step", "I did that, what next?", "Continue", "Done", "I clicked the mesh button", "I can't find the sketch tool", "That didn't work", "What do I click now?", "I'm stuck"])
