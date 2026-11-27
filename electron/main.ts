@@ -205,8 +205,8 @@ function createMainWindow() {
   mainWindow.once("ready-to-show", () => {
     const access = permissionStatus();
     const needsOnboarding = process.platform === "darwin" ? access.microphone !== "granted" : !access.ready;
-    positionMainWindow(needsOnboarding);
-    if (needsOnboarding) mainWindow?.show();
+    positionMainWindow(false);
+    if (needsOnboarding) mainWindow?.showInactive();
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith("https://")) void shell.openExternal(url);

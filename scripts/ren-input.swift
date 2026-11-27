@@ -9,9 +9,25 @@ guard CommandLine.arguments.count == 2,
     fputs("Invalid screen action.\n", stderr)
     exit(2)
 }
-let frontmostBundle = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+func visibleApp() -> (bundle: String, pid: pid_t)? {
+    let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+    for window in windows {
+        guard let layer = window[kCGWindowLayer as String] as? Int, layer == 0,
+              let rawBounds = window[kCGWindowBounds as String] as? [String: Any],
+              let width = rawBounds["Width"] as? NSNumber, width.doubleValue >= 200,
+              let height = rawBounds["Height"] as? NSNumber, height.doubleValue >= 200,
+              let owner = window[kCGWindowOwnerName as String] as? String,
+              owner != "Ren", owner != "ChatGPT Computer Use Software Cursor",
+              !(window[kCGWindowName as String] as? String ?? "").contains("Computer Use"),
+              let number = window[kCGWindowOwnerPID as String] as? NSNumber else { continue }
+        let pid = pid_t(number.intValue)
+        if let bundle = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier { return (bundle, pid) }
+    }
+    return nil
+}
+let target = visibleApp()
 if action == "identity" {
-    print("REN_APP_ID:\(frontmostBundle)")
+    print("REN_APP_ID:\(target?.bundle ?? "")")
     exit(0)
 }
 guard AXIsProcessTrusted() else {
@@ -19,10 +35,21 @@ guard AXIsProcessTrusted() else {
     exit(13)
 }
 guard let expectedBundle = value["expectedBundle"] as? String,
-      expectedBundle == frontmostBundle,
-      !["ai.ren.teacher", "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable", "org.alacritty", "com.apple.systempreferences"].contains(frontmostBundle) else {
+      expectedBundle == target?.bundle,
+      !["ai.ren.teacher", "com.openai.codex", "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable", "org.alacritty", "com.apple.systempreferences"].contains(expectedBundle) else {
     fputs("The active app changed or cannot be operated safely.\n", stderr)
     exit(14)
+}
+if action == "type" || action == "key" {
+    guard NSRunningApplication(processIdentifier: target!.pid)?.activate(options: .activateAllWindows) == true else {
+        fputs("The active app changed or cannot be operated safely.\n", stderr)
+        exit(14)
+    }
+    usleep(150_000)
+    guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier == expectedBundle else {
+        fputs("The active app changed or cannot be operated safely.\n", stderr)
+        exit(14)
+    }
 }
 
 func location(_ raw: Any?) -> CGPoint? {

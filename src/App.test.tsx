@@ -1,9 +1,14 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
-import { App } from "./App";
+import { App, friendlyAskError } from "./App";
 import type { RenBridge } from "./contracts";
 
 describe("Ren voice interface", () => {
+  it("does not expose native command details in an action error", () => {
+    const raw = "Error invoking remote method 'ren:ask': Error: Command failed: /usr/bin/swift /Users/Josh/Ren/ren-input.swift {\"action\":\"type\"} The active app changed or cannot be operated safely.";
+    expect(friendlyAskError(new Error(raw))).toBe("The visible app changed while Ren was working. Please try again.");
+    expect(friendlyAskError(new Error("Error invoking remote method 'ren:ask': Error: Command failed: /usr/bin/swift"))).toBe("Ren couldn't complete that action. Please try again.");
+  });
   it("opens the OpenClicky-style home panel from the compact notch", async () => {
     window.ren = {
       platform: "darwin", permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
@@ -156,7 +161,7 @@ describe("Ren voice interface", () => {
     } finally { window.ren = undefined; }
   });
 
-  it("shrinks the setup window when microphone permission becomes ready", async () => {
+  it("keeps setup compact until the user opens Ren", async () => {
     const permissionStatus = vi.fn()
       .mockResolvedValueOnce({ ready: false, microphone: "not-determined", screen: "not-determined", interaction: "not-granted" })
       .mockResolvedValue({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" });
@@ -169,12 +174,14 @@ describe("Ren voice interface", () => {
     } as unknown as RenBridge;
     try {
       render(<App />);
-      await waitFor(() => expect(setExpanded).toHaveBeenCalledWith(true, true));
-      expect(screen.getByText(/give ren permission once/i)).toBeVisible();
+      await screen.findByRole("button", { name: /open ren/i });
+      expect(setExpanded).not.toHaveBeenCalledWith(true, true);
+      expect(screen.queryByText(/give ren permission once/i)).not.toBeInTheDocument();
       fireEvent.focus(window);
       await waitFor(() => expect(permissionStatus).toHaveBeenCalledTimes(2));
-      await waitFor(() => expect(setExpanded).toHaveBeenCalledWith(false, false));
       expect(screen.getByRole("button", { name: /open ren/i })).toHaveClass("ren-pebble");
+      fireEvent.click(screen.getByRole("button", { name: /open ren/i }));
+      expect(await screen.findByRole("textbox", { name: /ask ren/i })).toBeVisible();
     } finally { window.ren = undefined; }
   });
 
@@ -194,12 +201,12 @@ describe("Ren voice interface", () => {
       await screen.findByRole("button", { name: /open ren/i });
       act(() => activate?.());
       expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible();
-      expect(await screen.findByRole("textbox", { name: /ask ren/i })).toBeVisible();
-      expect(screen.getByRole("alert")).toHaveTextContent(/voice|wake phrase/i);
+      expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /open ren/i })).toHaveAttribute("title", expect.stringMatching(/voice|wake phrase/i));
     } finally { window.ren = undefined; }
   });
 
-  it("opens Home on unavailable voice and settings on right-click", async () => {
+  it("keeps unavailable voice compact and opens settings on right-click", async () => {
     let activate: (() => void) | undefined;
     const setExpanded = vi.fn(async () => {});
     window.ren = {
@@ -218,8 +225,8 @@ describe("Ren voice interface", () => {
       expect(setExpanded).not.toHaveBeenCalledWith(true, expect.anything());
       act(() => activate?.());
       expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible();
-      await waitFor(() => expect(setExpanded).toHaveBeenCalledWith(true, true));
-      fireEvent.click(screen.getByRole("button", { name: /open ren settings/i }));
+      expect(setExpanded).not.toHaveBeenCalledWith(true, true);
+      fireEvent.contextMenu(screen.getByRole("button", { name: /open ren/i }));
       await waitFor(() => expect(setExpanded).toHaveBeenCalledWith(true, true));
       expect(screen.getByLabelText(/openai api key/i)).toHaveAttribute("type", "password");
       expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
@@ -315,7 +322,7 @@ describe("Ren voice interface", () => {
       speechStart.mockResolvedValueOnce(false);
       act(() => activate?.());
       await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Deepgram dictation could not start"));
-      expect(screen.getByRole("main")).toBeVisible();
+      expect(screen.getByRole("button", { name: /open ren/i })).toHaveClass("ren-pebble");
     } finally {
       window.ren = undefined;
       globalThis.AudioContext = originalAudioContext;

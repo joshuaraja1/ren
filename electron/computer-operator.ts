@@ -4,7 +4,7 @@ import type { VisionCredentials } from "./vision-settings.js";
 import type { Bounds } from "./display-geometry.js";
 
 const execFileAsync = promisify(execFile);
-const blockedApps = new Set(["ai.ren.teacher", "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable", "org.alacritty", "com.apple.systempreferences"]);
+const blockedApps = new Set(["ai.ren.teacher", "com.openai.codex", "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable", "org.alacritty", "com.apple.systempreferences"]);
 type Point = { x: number; y: number };
 export type ComputerAction =
   | { action: "click"; x: number; y: number }
@@ -67,7 +67,12 @@ export async function planComputerAction(task: string, screenshot: string, recen
 }
 
 export async function readComputerTarget(scriptPath: string, signal?: AbortSignal): Promise<string> {
-  const { stdout } = await execFileAsync("/usr/bin/swift", [scriptPath, '{"action":"identity"}'], { timeout: 15_000, maxBuffer: 100_000, signal });
+  let stdout: string;
+  try {
+    ({ stdout } = await execFileAsync("/usr/bin/swift", [scriptPath, '{"action":"identity"}'], { timeout: 15_000, maxBuffer: 100_000, signal }));
+  } catch {
+    throw new Error("Ren could not identify the visible app. Please try again.");
+  }
   const bundle = stdout.match(/^REN_APP_ID:([\w.-]+)$/m)?.[1];
   if (!bundle) throw new Error("Open the app you want Ren to operate, then ask again.");
   if (blockedApps.has(bundle)) throw new Error("Ren cannot operate that app through screen coordinates.");
@@ -77,7 +82,14 @@ export async function readComputerTarget(scriptPath: string, signal?: AbortSigna
 export async function performComputerAction(action: ComputerAction, bounds: Bounds, scriptPath: string, expectedBundle: string, signal?: AbortSignal): Promise<void> {
   if (!/^[\w.-]{3,160}$/.test(expectedBundle)) throw new Error("Invalid target app.");
   const input = { ...nativeAction(action, bounds), expectedBundle };
-  const { stdout } = await execFileAsync("/usr/bin/swift", [scriptPath, JSON.stringify(input)], { timeout: 15_000, maxBuffer: 100_000, signal });
-  if (!stdout.includes("REN_INPUT_OK")) throw new Error("macOS did not perform the screen action.");
+  try {
+    const { stdout } = await execFileAsync("/usr/bin/swift", [scriptPath, JSON.stringify(input)], { timeout: 15_000, maxBuffer: 100_000, signal });
+    if (!stdout.includes("REN_INPUT_OK")) throw new Error("macOS did not perform the screen action.");
+  } catch (error) {
+    const message = String(error);
+    if (message.includes("active app changed")) throw new Error("The visible app changed while Ren was working, so it stopped before acting.");
+    if (message.includes("Accessibility permission")) throw new Error("Ren needs macOS Accessibility permission before it can control this app.");
+    throw new Error("Ren could not perform the screen action, so it stopped.");
+  }
 }
 

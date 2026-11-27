@@ -31,12 +31,19 @@ const voiceLabels: Record<VoiceState, { title: string; detail: string }> = {
   processing: { title: "Thinking", detail: "Working on your request" },
   responding: { title: "Speaking", detail: "Working it through" },
 };
+export function friendlyAskError(reason: unknown): string {
+  const raw = reason instanceof Error ? reason.message : String(reason ?? "");
+  if (/visible app changed|active app changed/i.test(raw)) return "The visible app changed while Ren was working. Please try again.";
+  if (/Accessibility permission|Enable Accessibility/i.test(raw)) return "Enable Accessibility for Ren in macOS Settings, then try again.";
+  if (/\bfetch failed\b/i.test(raw)) return "The AI request could not be sent. Please try again.";
+  if (/Error invoking remote method|Command failed|ren-input\.swift|\/usr\/bin\/swift/i.test(raw)) return "Ren couldn't complete that action. Please try again.";
+  return raw.replace(/\s+/g, " ").slice(0, 240) || "Ren couldn’t answer. Please try again.";
+}
 const Spark = () => <svg aria-hidden="true" viewBox="0 0 32 32" className="spark"><path d="M16 2c.8 8.6 5.4 13.2 14 14-8.6.8-13.2 5.4-14 14-.8-8.6-5.4-13.2-14-14 8.6-.8 13.2-5.4 14-14Z" /></svg>;
 const VoiceMeter = ({ active = false }: { active?: boolean }) => <span className={`voice-meter${active ? " is-active" : ""}`} aria-hidden="true"><i /><i /><i /><i /></span>;
 
 export function App() {
   const [permission, setPermission] = useState<AmbientStatus | null>(null);
-  const previousMicrophonePermissionRef = useRef<string | undefined>(undefined);
   const [expanded, setExpandedState] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [dictationActive, setDictationActive] = useState(false);
@@ -113,13 +120,6 @@ export function App() {
   useEffect(() => { void window.ren?.deepgramStatus?.().then(setDeepgram).catch(() => setError("Could not read Deepgram settings.")); }, []);
   useEffect(() => { void window.ren?.voiceShortcutAvailable?.().then(setVoiceShortcutAvailable).catch(() => {}); }, []);
   useEffect(() => {
-    const previous = previousMicrophonePermissionRef.current;
-    previousMicrophonePermissionRef.current = permission?.microphone;
-    if (previous && previous !== "granted" && expandedRef.current && permission?.microphone === "granted" && !visionOpenRef.current) {
-      void setExpanded(false);
-    }
-  }, [permission?.ready, permission?.microphone]);
-  useEffect(() => {
     void window.ren?.voiceModeStatus?.().then(applyVoiceMode).catch(() => {});
     return window.ren?.onVoiceModeChanged?.(applyVoiceMode);
   }, []);
@@ -167,7 +167,6 @@ export function App() {
     void (async () => {
       const status = window.ren ? await window.ren.permissionStatus() : readyStatus;
       setPermission(status);
-      if (status.microphone !== "granted") await setExpanded(true);
     })();
   }, []);
 
@@ -446,7 +445,6 @@ export function App() {
     if (collapseTimerRef.current) clearTimeout(collapseTimerRef.current);
     collapseTimerRef.current = null;
     showCompanion();
-    void setExpanded(true);
   }
 
   function interruptCurrentResponse() {
@@ -665,7 +663,7 @@ export function App() {
       unsubscribe();
       player?.dispose();
       speechCancelRef.current = null;
-      if (reason) { setError(reason); void setExpanded(true); }
+      if (reason) { setError(reason); showCompanion(); }
       suppressSpeechUntilRef.current = Date.now() + 300;
       if (notify) onEnd();
     };
@@ -838,8 +836,7 @@ export function App() {
       if (response.autoIllustrate && generation === askGenerationRef.current) void illustrate(true);
     } catch (reason) {
       if (generation !== askGenerationRef.current) return;
-      const message = reason instanceof Error ? reason.message : "Ren couldn’t answer.";
-      setError(/\bfetch failed\b/i.test(message) ? "The AI request could not be sent. Please try again." : message);
+      setError(friendlyAskError(reason));
       returnToWakeMode();
     }
     finally { if (generation === askGenerationRef.current) { askingRef.current = false; activeAskTokenRef.current = null; } }
@@ -885,7 +882,7 @@ export function App() {
     : permission?.microphone !== "granted" ? "Mic off"
     : voiceLabels[voiceState].title;
 
-  if (!expanded) return <button className={`ren-pebble state-${voiceState}`} onClick={() => { if (dictationActive || voiceState !== "idle") toggleListening(); else { setPanelTab("home"); setPromptMode("ask"); void setExpanded(true); } }} onContextMenu={(event) => { event.preventDefault(); openVisionSettings(); }} aria-label={dictationActive ? "Finish speaking to Ren" : voiceState === "idle" ? "Open Ren" : "Start speaking to Ren"} title={error || "Open Ren. Right-click for connections."}><span className="pebble-mark"><span className="clicky-triangle" /></span><span className="pebble-copy"><strong>{stripStatus}</strong></span><VoiceMeter active={dictationActive || voiceState === "processing" || voiceState === "responding" || imageRendering} /></button>;
+  if (!expanded) return <button className={`ren-pebble state-${voiceState}`} onClick={() => { if (dictationActive || voiceState !== "idle") toggleListening(); else { setPanelTab("home"); setPromptMode("ask"); void setExpanded(true); } }} onContextMenu={(event) => { event.preventDefault(); openVisionSettings(); }} aria-label={dictationActive ? "Finish speaking to Ren" : voiceState === "idle" ? "Open Ren" : "Start speaking to Ren"} title={error || "Open Ren. Right-click for connections."}><span className="pebble-mark"><span className="clicky-triangle" /></span><span className="pebble-copy"><strong>{stripStatus}</strong></span><VoiceMeter active={dictationActive || voiceState === "processing" || voiceState === "responding" || imageRendering} />{error && <span className="screen-reader-only" role="alert">{error}</span>}</button>;
 
   const needsSetup = Boolean(window.ren) ? permission?.microphone !== "granted" : !permission?.ready;
   return <main className="ambient-panel">

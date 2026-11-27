@@ -436,3 +436,14 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--listen);
 .onboarding-card { color: #f5f7ff; background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.1); }
 .onboarding-card h2 { color: #f5f7ff; }
 .onboarding-card > p { color: #aeb9ca; }
+.screen-reader-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
