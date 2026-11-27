@@ -1,6 +1,7 @@
 /** A request to learn a task one visible step at a time. */
 export function wantsGuidedWorkflow(question: string): boolean {
-  return /\b(?:walk (?:me )?through|guide me(?: through)?|step[ -]by[ -]step|one step at a time|show me how to|teach me (?:how to|to)|help me (?:learn to|figure out how to|design|build|model|use|create|run))\b/i.test(question);
+  return /\b(?:walk (?:me )?through|guide me(?: through)?|step[ -]by[ -]step|one step at a time|show me how to|teach me (?:how to|to)|help me (?:learn to|figure out how to|design|build|model|use|create|run))\b/i.test(question)
+    || /\b[Hh]ow (?:do|can) I\b[^?!.]{0,120}\b(?:in|using)\s+[A-Z][\w .+-]{1,35}/.test(question);
 }
 
 /** Short replies that continue the last guided task after the screen changes. */

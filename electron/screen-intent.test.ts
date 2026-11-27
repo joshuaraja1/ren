@@ -16,7 +16,8 @@ describe("screen context routing", () => {
     expect(wantsCurrentScreen("Why does the fan help?", [{ role: "user", content: "Draw a diagram of the hover system" }, { role: "assistant", content: "Here is the fan." }])).toBe(true);
     expect(wantsCurrentScreen("How do I run FEA in this software?")).toBe(true);
     expect(wantsCurrentScreen("Show me how to build a bracket in this CAD app")).toBe(true);
-    expect(wantsCurrentScreen("How do I run FEA in FreeCAD?")).toBe(false);
+    expect(wantsCurrentScreen("How do I run FEA in FreeCAD?")).toBe(true);
+    expect(wantsCurrentScreen("How can I create a table using Excel?")).toBe(true);
     expect(wantsCurrentScreen("Walk me through making a bracket in FreeCAD")).toBe(true);
     expect(wantsCurrentScreen("I want to design a bracket; can you walk me through it step by step?")).toBe(true);
     expect(wantsCurrentScreen("Guide me through titration in this chemistry app")).toBe(true);

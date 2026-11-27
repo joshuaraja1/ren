@@ -27,6 +27,7 @@ describe("native CAD model creation", () => {
     expect(wantsCadCreation("Create a CAD model in Fusion 360 for me")).toBe(false);
     expect(wantsCadCreation("Show me how to create a CAD model of a bracket")).toBe(false);
     expect(wantsCadCreation("Help me design a CAD bracket in FreeCAD")).toBe(false);
+    expect(wantsCadCreation("How do I design an aircraft in FreeCAD?")).toBe(false);
     expect(wantsCadCreation("Teach me to create a CAD model in FreeCAD")).toBe(false);
     expect(wantsCadCreation("Draw a CAD diagram of a bracket")).toBe(false);
     expect(wantsCadCreation("Create a CAD model and run FEA")).toBe(false);
