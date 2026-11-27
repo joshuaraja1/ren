@@ -8,12 +8,18 @@ describe("computer action boundary", () => {
   it("selects an explicitly named visible app instead of the assistant host", () => {
     const apps = [{ bundle: "com.openai.codex", name: "ChatGPT" }, { bundle: "com.apple.TextEdit", name: "TextEdit" }];
     expect(selectComputerTarget("Type this in TextEdit", apps)).toBe("com.apple.TextEdit");
+    expect(selectComputerTarget("Type REN UI automation test in the open TextEdit document for me.", [
+      { bundle: "ai.ren.teacher", name: "Ren" }, { bundle: "com.apple.TextEdit", name: "TextEdit" },
+    ])).toBe("com.apple.TextEdit");
+    expect(() => selectComputerTarget("Operate Ren for me", [
+      { bundle: "ai.ren.teacher", name: "Ren" }, { bundle: "com.apple.TextEdit", name: "TextEdit" },
+    ])).toThrow(/cannot operate/);
     expect(() => selectComputerTarget("Type this in the app", apps)).toThrow(/Keep the app/);
     expect(() => selectComputerTarget("Type this in TextEdit", [{ bundle: "com.openai.codex", name: "ChatGPT" }])).toThrow(/Keep the app/);
     expect(selectComputerTarget("Make a sketch in Fusion", [{ bundle: "com.autodesk.fusion", name: "Autodesk Fusion 360" }])).toBe("com.autodesk.fusion");
-    expect(() => selectComputerTarget("Type in TextEdit", [{ bundle: "com.apple.Safari", name: "Safari" }], [
+    expect(selectComputerTarget("Type in TextEdit", [{ bundle: "com.apple.Safari", name: "Safari" }], [
       { bundle: "com.apple.Safari", name: "Safari" }, { bundle: "com.apple.TextEdit", name: "TextEdit" },
-    ])).toThrow(/named app visible/);
+    ])).toBe("com.apple.TextEdit");
   });
   it("maps image fractions to Electron/Quartz screen points, including an offset display", () => {
     const bounds = { x: -1440, y: 180, width: 1440, height: 900 };

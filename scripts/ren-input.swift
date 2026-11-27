@@ -69,13 +69,14 @@ guard let expectedBundle = value["expectedBundle"] as? String,
     exit(14)
 }
 if action == "activate" {
-    guard let target = apps.first(where: { $0.bundle == expectedBundle }),
-          NSRunningApplication(processIdentifier: target.pid)?.activate(options: .activateAllWindows) == true else {
+    guard let target = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == expectedBundle }),
+          target.activate(options: .activateAllWindows) == true else {
         fputs("The active app changed or cannot be operated safely.\n", stderr)
         exit(14)
     }
     usleep(150_000)
-    guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier == expectedBundle else {
+    guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier == expectedBundle,
+          visibleApps().first?.bundle == expectedBundle else {
         fputs("The active app changed or cannot be operated safely.\n", stderr)
         exit(14)
     }

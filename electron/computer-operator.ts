@@ -86,8 +86,12 @@ export function selectComputerTarget(task: string, apps: AppIdentity[], runningA
   const visible = apps.filter(validApp);
   const running = runningApps.filter(validApp);
   const namedRunning = matchingApps(task, running);
-  if (namedRunning.some((item) => blockedApps.has(item.bundle))) throw new Error("Ren cannot operate that app through screen coordinates.");
-  if (namedRunning.some((item) => !visible.some((other) => other.bundle === item.bundle))) throw new Error("Keep the named app visible on this display, then try again.");
+  const operableNamed = namedRunning.filter((item) => !blockedApps.has(item.bundle));
+  if (operableNamed.length === 0 && namedRunning.length > 0) throw new Error("Ren cannot operate that app through screen coordinates.");
+  // A named app can be in another macOS Space. Activation must bring a window
+  // onto the captured display before the operator sees or touches it.
+  if (operableNamed.length === 1) return operableNamed[0].bundle;
+  if (operableNamed.length > 1) throw new Error("More than one named app is running. Specify which one Ren should use.");
   const named = matchingApps(task, visible.filter((item) => !blockedApps.has(item.bundle)));
   if (named.length === 1) return named[0].bundle;
   if (named.length > 1) throw new Error("More than one named app is visible. Specify which one Ren should use.");
@@ -118,7 +122,7 @@ export async function activateComputerTarget(scriptPath: string, expectedBundle:
     const { stdout } = await execFileAsync("/usr/bin/swift", [scriptPath, JSON.stringify({ action: "activate", expectedBundle, screenBounds: bounds })], { timeout: 15_000, maxBuffer: 100_000, signal });
     if (!stdout.includes("REN_INPUT_OK")) throw new Error("The app did not activate.");
   } catch {
-    throw new Error("Ren could not bring the requested app to the front. Please try again.");
+    throw new Error("Bring the requested app window onto this display, then try again.");
   }
 }
 
