@@ -49,9 +49,14 @@ func visibleApps() -> [VisibleApp] {
 }
 let apps = visibleApps()
 if action == "identity" {
-    let details = apps.map { ["bundle": $0.bundle, "name": $0.name] }
-    guard let json = try? JSONSerialization.data(withJSONObject: details), let text = String(data: json, encoding: .utf8) else { exit(2) }
-    print("REN_VISIBLE_APPS:\(text)")
+    let visible = apps.map { ["bundle": $0.bundle, "name": $0.name] }
+    let running = NSWorkspace.shared.runningApplications.compactMap { app -> [String: String]? in
+        guard let bundle = app.bundleIdentifier, let name = app.localizedName else { return nil }
+        return ["bundle": bundle, "name": name]
+    }
+    guard let json = try? JSONSerialization.data(withJSONObject: ["visible": visible, "running": running]),
+          let text = String(data: json, encoding: .utf8) else { exit(2) }
+    print("REN_APP_INVENTORY:\(text)")
     exit(0)
 }
 guard AXIsProcessTrusted() else {

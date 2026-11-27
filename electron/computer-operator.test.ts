@@ -11,6 +11,9 @@ describe("computer action boundary", () => {
     expect(() => selectComputerTarget("Type this in the app", apps)).toThrow(/Keep the app/);
     expect(() => selectComputerTarget("Type this in TextEdit", [{ bundle: "com.openai.codex", name: "ChatGPT" }])).toThrow(/Keep the app/);
     expect(selectComputerTarget("Make a sketch in Fusion", [{ bundle: "com.autodesk.fusion", name: "Autodesk Fusion 360" }])).toBe("com.autodesk.fusion");
+    expect(() => selectComputerTarget("Type in TextEdit", [{ bundle: "com.apple.Safari", name: "Safari" }], [
+      { bundle: "com.apple.Safari", name: "Safari" }, { bundle: "com.apple.TextEdit", name: "TextEdit" },
+    ])).toThrow(/named app visible/);
   });
   it("maps image fractions to Electron/Quartz screen points, including an offset display", () => {
     const bounds = { x: -1440, y: 180, width: 1440, height: 900 };

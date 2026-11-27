@@ -66,21 +66,32 @@ export async function planComputerAction(task: string, screenshot: string, recen
   return parseComputerAction(JSON.parse(content));
 }
 
-export function selectComputerTarget(task: string, apps: { bundle: string; name: string }[]): string {
-  const visible = apps.filter((item) => item && typeof item.bundle === "string" && typeof item.name === "string" && /^[\w.-]{3,160}$/.test(item.bundle) && item.name.trim() && !blockedApps.has(item.bundle));
-  const matchesName = (item: { name: string }) => {
+type AppIdentity = { bundle: string; name: string };
+const validApp = (item: AppIdentity): boolean => Boolean(item && typeof item.bundle === "string" && typeof item.name === "string" && /^[\w.-]{3,160}$/.test(item.bundle) && item.name.trim());
+function matchingApps(task: string, apps: AppIdentity[]): AppIdentity[] {
+  const matchesName = (item: AppIdentity) => {
     const name = item.name.trim();
     return name.length >= 3 && new RegExp(`(?:^|[^\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=$|[^\\p{L}\\p{N}])`, "iu").test(task);
   };
-  let named = visible.filter(matchesName);
+  let named = apps.filter(matchesName);
   if (named.length === 0) {
-    named = visible.filter((item) => item.name.split(/[^\p{L}\p{N}]+/u).some((word) =>
+    named = apps.filter((item) => item.name.split(/[^\p{L}\p{N}]+/u).some((word) =>
       word.length >= 4 && !/^(app|open|file|software|desktop|window|windows)$/i.test(word) &&
       new RegExp(`(?:^|[^\\p{L}\\p{N}])${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=$|[^\\p{L}\\p{N}])`, "iu").test(task)));
   }
+  return named;
+}
+
+export function selectComputerTarget(task: string, apps: AppIdentity[], runningApps: AppIdentity[] = apps): string {
+  const visible = apps.filter(validApp);
+  const running = runningApps.filter(validApp);
+  const namedRunning = matchingApps(task, running);
+  if (namedRunning.some((item) => blockedApps.has(item.bundle))) throw new Error("Ren cannot operate that app through screen coordinates.");
+  if (namedRunning.some((item) => !visible.some((other) => other.bundle === item.bundle))) throw new Error("Keep the named app visible on this display, then try again.");
+  const named = matchingApps(task, visible.filter((item) => !blockedApps.has(item.bundle)));
   if (named.length === 1) return named[0].bundle;
   if (named.length > 1) throw new Error("More than one named app is visible. Specify which one Ren should use.");
-  const top = apps[0];
+  const top = visible[0];
   if (!top?.bundle) throw new Error("Open the app you want Ren to operate, then ask again.");
   if (blockedApps.has(top.bundle)) throw new Error("Keep the app you want Ren to use visible behind Ren, then try again.");
   return top.bundle;
@@ -93,12 +104,12 @@ export async function readComputerTarget(scriptPath: string, task: string, bound
   } catch {
     throw new Error("Ren could not identify the visible app. Please try again.");
   }
-  const json = stdout.match(/^REN_VISIBLE_APPS:(.+)$/m)?.[1];
+  const json = stdout.match(/^REN_APP_INVENTORY:(.+)$/m)?.[1];
   if (!json) throw new Error("Open the app you want Ren to operate, then ask again.");
-  let apps: { bundle: string; name: string }[];
-  try { apps = JSON.parse(json) as typeof apps; } catch { throw new Error("Ren could not identify the visible app. Please try again."); }
-  if (!Array.isArray(apps)) throw new Error("Ren could not identify the visible app. Please try again.");
-  return selectComputerTarget(task, apps);
+  let inventory: { visible: AppIdentity[]; running: AppIdentity[] };
+  try { inventory = JSON.parse(json) as typeof inventory; } catch { throw new Error("Ren could not identify the visible app. Please try again."); }
+  if (!Array.isArray(inventory?.visible) || !Array.isArray(inventory?.running)) throw new Error("Ren could not identify the visible app. Please try again.");
+  return selectComputerTarget(task, inventory.visible, inventory.running);
 }
 
 export async function activateComputerTarget(scriptPath: string, expectedBundle: string, bounds: Bounds, signal?: AbortSignal): Promise<void> {
