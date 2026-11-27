@@ -30,6 +30,11 @@ export function wantsCurrentScreen(question: string, history: { role: "user" | "
     && /^(?:why|how|what about|and|can you explain|tell me more|is that|does that)\b/i.test(clean));
 }
 
+/** A fresh capture takes precedence over phrase-based routing. */
+export function shouldUseCurrentScreen(question: string, history: { role: "user" | "assistant"; content: string }[], capturedToken: string | undefined, requestToken: string | undefined) {
+  return Boolean(capturedToken && requestToken && capturedToken === requestToken) || wantsCurrentScreen(question, history);
+}
+
 export function wantsSpatialGuidance(question: string) {
   return spatialGuidance.test(question) || guidedScreenSteps.test(question) || continuesGuidedWorkflow(question) || wantsGuidedWorkflow(question);
 }

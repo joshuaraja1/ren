@@ -34,7 +34,7 @@ describe("Ren voice interface", () => {
     } finally { window.ren = undefined; }
   });
 
-  it("answers an ordinary question without taking a screen capture", async () => {
+  it("attempts a fresh capture for an ordinary question, then answers if capture is unavailable", async () => {
     const captureContext = vi.fn(async () => { throw new Error("Screen Recording is unavailable"); });
     const ask = vi.fn(async () => ({ answer: "Pedaling turns the wheel.", annotations: [], provider: "demo" as const }));
     window.ren = {
@@ -49,7 +49,33 @@ describe("Ren voice interface", () => {
       fireEvent.change(screen.getByRole("textbox", { name: /ask ren/i }), { target: { value: "How do bicycle gears work?" } });
       fireEvent.click(screen.getByRole("button", { name: /send ren prompt/i }));
       await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({ question: "How do bicycle gears work?", frames: [], contextToken: expect.any(String) })));
-      expect(captureContext).not.toHaveBeenCalled();
+      expect(captureContext).toHaveBeenCalledOnce();
+    } finally { window.ren = undefined; }
+  });
+
+  it("captures the current screen again for each ordinary question and follow-up", async () => {
+    const tokens = [crypto.randomUUID(), crypto.randomUUID()];
+    const captureContext = vi.fn(async () => ({ frames: [], pointer: { x: .5, y: .5 }, contextToken: tokens.shift() }));
+    const ask = vi.fn(async (_request: Parameters<RenBridge["ask"]>[0]) => ({ answer: "Here is the answer.", annotations: [], provider: "demo" as const }));
+    window.ren = {
+      platform: "darwin", permissionStatus: async () => ({ ready: true, microphone: "granted", screen: "granted", interaction: "granted" }),
+      wakeAvailable: async () => false, onFocusSelection: () => () => {},
+      setExpanded: async () => {}, setCompanionVisible: async () => {}, speechStop: async () => {},
+      captureContext, ask,
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      fireEvent.click(await screen.findByRole("button", { name: /start speaking to ren/i }), { shiftKey: true });
+      const prompt = screen.getByRole("textbox", { name: /ask ren/i });
+      fireEvent.change(prompt, { target: { value: "How do bicycle gears work?" } });
+      fireEvent.click(screen.getByRole("button", { name: /send ren prompt/i }));
+      await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+      fireEvent.click(screen.getByRole("button", { name: /start speaking to ren/i }), { shiftKey: true });
+      fireEvent.change(screen.getByRole("textbox", { name: /ask ren/i }), { target: { value: "Why?" } });
+      fireEvent.click(screen.getByRole("button", { name: /send ren prompt/i }));
+      await waitFor(() => expect(ask).toHaveBeenCalledTimes(2));
+      expect(captureContext).toHaveBeenCalledTimes(2);
+      expect(ask.mock.calls[0][0].contextToken).not.toBe(ask.mock.calls[1][0].contextToken);
     } finally { window.ren = undefined; }
   });
 

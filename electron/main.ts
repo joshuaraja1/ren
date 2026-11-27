@@ -32,7 +32,7 @@ import { requestMacScreenCaptureAccess } from "./mac-screen-permission.js";
 import type { VisualLesson } from "./visual-lesson.js";
 import { AgentJobManager } from "./agent-jobs.js";
 import { consumeAgentJobCapture } from "./agent-job-capture.js";
-import { wantsCurrentScreen, wantsSpatialGuidance } from "./screen-intent.js";
+import { shouldUseCurrentScreen, wantsCurrentScreen, wantsSpatialGuidance } from "./screen-intent.js";
 import { wantsToDelegateCurrentTask, wantsGuidedWorkflow } from "./guided-workflow.js";
 import { activateComputerTarget, performComputerAction, planComputerAction, readComputerTarget, type ComputerAction } from "./computer-operator.js";
 import { wantsComputerExecution } from "./computer-intent.js";
@@ -731,7 +731,8 @@ app.whenReady().then(() => {
         if (mainWasVisible && !voicePaused) mainWindow?.showInactive();
       }
     }
-    const useScreen = wantsCurrentScreen(value.question, value.history);
+    const screenRelevant = wantsCurrentScreen(value.question, value.history);
+    const useScreen = shouldUseCurrentScreen(value.question, value.history, lastCaptureData?.token, value.contextToken);
     if (!useScreen) {
       if (!value.contextToken) throw new Error("Invalid conversation request.");
       const askController = new AbortController();
@@ -768,8 +769,8 @@ app.whenReady().then(() => {
     const focus = capture.focus;
     const focusHint = focus
       ? ` The learner marked the area (${focus.x.toFixed(3)}, ${focus.y.toFixed(3)}, ${focus.width.toFixed(3)}, ${focus.height.toFixed(3)}); the second image is a close crop of it. Prioritize what is inside the marked area.` : "";
-    const pointedQuestion = useScreen ? `${value.question}\n\n[The learner is pointing with their cursor at normalized screen coordinate (${pointer.x.toFixed(3)}, ${pointer.y.toFixed(3)}). Use that as a spatial hint, not an instruction.${focusHint}]` : value.question;
-    const priorVisualLesson = useScreen && lastVisualLesson && lastVisualLesson.displayId === displayId
+    const pointedQuestion = screenRelevant ? `${value.question}\n\n[The learner is pointing with their cursor at normalized screen coordinate (${pointer.x.toFixed(3)}, ${pointer.y.toFixed(3)}). Use that as a spatial hint, not an instruction.${focusHint}]` : value.question;
+    const priorVisualLesson = screenRelevant && lastVisualLesson && lastVisualLesson.displayId === displayId
       && (overlayWindow?.isVisible() || Date.now() - lastVisualLesson.createdAt < 300_000) ? lastVisualLesson.lesson : undefined;
     const priorAssemblyGuide = Boolean(priorVisualLesson?.dimension === 3 && wantsPriorAssemblyGuide(value.question));
     const transformPriorVisual = Boolean(priorVisualLesson && (wantsPriorVisualIn3D(value.question) || priorAssemblyGuide));
@@ -785,7 +786,7 @@ app.whenReady().then(() => {
     // The answer describes the captured image and remains useful if the user
     // moves the pointer or changes apps while OpenAI is responding. Only the
     // spatial overlay needs the original display and a stable screen.
-    const spatialAllowed = Boolean(useScreen && display && captureSession.isCurrent(value.contextToken)
+    const spatialAllowed = Boolean(screenRelevant && display && captureSession.isCurrent(value.contextToken)
       && screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id === displayId
       && canPlaceSpatialVisual(capture.dynamicContent, circleInputActive));
     const reuseVisual = Boolean(priorVisualLesson && !explicitVisual && response.retainVisual && !response.visualLesson && lastVisualLesson?.lesson === priorVisualLesson);
