@@ -19,15 +19,15 @@ describe("Ren voice interface", () => {
     } as unknown as RenBridge;
     try {
       render(<App />);
-      const notch = await screen.findByRole("button", { name: /open ren/i });
+      const notch = await screen.findByRole("button", { name: /start speaking to ren/i });
       expect(notch).toHaveClass("ren-pebble");
       expect(screen.queryByRole("main")).not.toBeInTheDocument();
-      fireEvent.click(notch);
+      fireEvent.click(notch, { shiftKey: true });
       expect(await screen.findByRole("textbox", { name: /ask ren/i })).toBeVisible();
       expect(screen.getByRole("button", { name: /agents/i })).toBeVisible();
       expect(screen.getByRole("button", { name: /connect/i })).toBeVisible();
       expect(screen.getByRole("button", { name: /collapse ren/i })).toBeVisible();
-      expect(screen.getByRole("button", { name: /tap control three times to talk/i })).toBeVisible();
+      expect(screen.getByRole("button", { name: /talk to ren/i })).toBeVisible();
       expect(screen.getByRole("button", { name: /summarise screen/i })).toBeVisible();
       expect(screen.getByText(/hey ren only/i)).toBeVisible();
       expect(screen.queryByLabelText("Ren conversation")).not.toBeInTheDocument();
@@ -45,7 +45,7 @@ describe("Ren voice interface", () => {
     } as unknown as RenBridge;
     try {
       render(<App />);
-      fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
+      fireEvent.click(await screen.findByRole("button", { name: /start speaking to ren/i }), { shiftKey: true });
       fireEvent.change(screen.getByRole("textbox", { name: /ask ren/i }), { target: { value: "How do bicycle gears work?" } });
       fireEvent.click(screen.getByRole("button", { name: /send ren prompt/i }));
       await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({ question: "How do bicycle gears work?", frames: [], contextToken: expect.any(String) })));
@@ -67,12 +67,12 @@ describe("Ren voice interface", () => {
     } as unknown as RenBridge;
     try {
       render(<App />);
-      fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
+      fireEvent.click(await screen.findByRole("button", { name: /start speaking to ren/i }), { shiftKey: true });
       const prompt = screen.getByRole("textbox", { name: /ask ren/i });
       fireEvent.change(prompt, { target: { value: task } });
       fireEvent.click(screen.getByRole("button", { name: /send ren prompt/i }));
       await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
-      fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
+      fireEvent.click(await screen.findByRole("button", { name: /start speaking to ren/i }), { shiftKey: true });
       fireEvent.change(screen.getByRole("textbox", { name: /ask ren/i }), { target: { value: stuck } });
       fireEvent.click(screen.getByRole("button", { name: /send ren prompt/i }));
       await waitFor(() => expect(ask).toHaveBeenCalledTimes(2));
@@ -111,7 +111,7 @@ describe("Ren voice interface", () => {
     try {
       render(<App />);
       await waitFor(() => expect(processAudio).toBeTypeOf("function"));
-      fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
+      fireEvent.click(await screen.findByRole("button", { name: /start speaking to ren/i }), { shiftKey: true });
       fireEvent.change(screen.getByRole("textbox", { name: /ask ren/i }), { target: { value: "Show a 3D computer assembly" } });
       fireEvent.click(screen.getByRole("button", { name: /send ren prompt/i }));
       await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({ question: "Show a 3D computer assembly" })));
@@ -137,7 +137,7 @@ describe("Ren voice interface", () => {
     } as unknown as RenBridge;
     try {
       render(<App />);
-      fireEvent.click(await screen.findByRole("button", { name: /open ren/i }));
+      fireEvent.click(await screen.findByRole("button", { name: /start speaking to ren/i }), { shiftKey: true });
       expect(screen.queryByLabelText("Ren conversation")).not.toBeInTheDocument();
       fireEvent.click(await screen.findByRole("button", { name: /chat/i }));
       expect(screen.getByLabelText("Ren conversation")).toBeVisible();
@@ -167,7 +167,7 @@ describe("Ren voice interface", () => {
     } as unknown as RenBridge;
     try {
       render(<App />);
-      fireEvent.contextMenu(await screen.findByRole("button", { name: /open ren/i }));
+      fireEvent.contextMenu(await screen.findByRole("button", { name: /start speaking to ren/i }));
       expect(await screen.findByRole("textbox", { name: /vision model/i })).toHaveValue("gpt-6-sol");
       expect(screen.getByLabelText(/openai api key/i)).toHaveAttribute("type", "password");
       expect(screen.getByLabelText(/deepgram api key/i)).toHaveAttribute("type", "password");
@@ -185,7 +185,7 @@ describe("Ren voice interface", () => {
     } as unknown as RenBridge;
     try {
       render(<App />);
-      const strip = await screen.findByRole("button", { name: /open ren/i });
+      const strip = await screen.findByRole("button", { name: /start speaking to ren/i });
       expect(screen.queryByText(/give ren permission once/i)).not.toBeInTheDocument();
       await waitFor(() => expect(wakeAvailable).toHaveBeenCalled());
       fireEvent.contextMenu(strip);
@@ -207,13 +207,13 @@ describe("Ren voice interface", () => {
     } as unknown as RenBridge;
     try {
       render(<App />);
-      await screen.findByRole("button", { name: /open ren/i });
+      await screen.findByRole("button", { name: /start speaking to ren/i });
       expect(setExpanded).not.toHaveBeenCalledWith(true, true);
       expect(screen.queryByText(/give ren permission once/i)).not.toBeInTheDocument();
       fireEvent.focus(window);
       await waitFor(() => expect(permissionStatus).toHaveBeenCalledTimes(2));
-      expect(screen.getByRole("button", { name: /open ren/i })).toHaveClass("ren-pebble");
-      fireEvent.click(screen.getByRole("button", { name: /open ren/i }));
+      expect(screen.getByRole("button", { name: /start speaking to ren/i })).toHaveClass("ren-pebble");
+      fireEvent.click(screen.getByRole("button", { name: /start speaking to ren/i }), { shiftKey: true });
       expect(await screen.findByRole("textbox", { name: /ask ren/i })).toBeVisible();
     } finally { window.ren = undefined; }
   });
@@ -231,11 +231,11 @@ describe("Ren voice interface", () => {
     } as unknown as RenBridge;
     try {
       render(<App />);
-      await screen.findByRole("button", { name: /open ren/i });
+      await screen.findByRole("button", { name: /start speaking to ren/i });
       act(() => activate?.());
-      expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible();
+      expect(screen.getByRole("button", { name: /start speaking to ren/i })).toBeVisible();
       expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /open ren/i })).toHaveAttribute("title", expect.stringMatching(/voice|wake phrase/i));
+      expect(screen.getByRole("button", { name: /start speaking to ren/i })).toHaveAttribute("title", expect.stringMatching(/voice|wake phrase/i));
     } finally { window.ren = undefined; }
   });
 
@@ -253,13 +253,13 @@ describe("Ren voice interface", () => {
     } as unknown as RenBridge;
     try {
       render(<App />);
-      const strip = await screen.findByRole("button", { name: /open ren/i });
+      const strip = await screen.findByRole("button", { name: /start speaking to ren/i });
       expect(strip).toBeVisible();
       expect(setExpanded).not.toHaveBeenCalledWith(true, expect.anything());
       act(() => activate?.());
-      expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible();
+      expect(screen.getByRole("button", { name: /start speaking to ren/i })).toBeVisible();
       expect(setExpanded).not.toHaveBeenCalledWith(true, true);
-      fireEvent.contextMenu(screen.getByRole("button", { name: /open ren/i }));
+      fireEvent.contextMenu(screen.getByRole("button", { name: /start speaking to ren/i }));
       await waitFor(() => expect(setExpanded).toHaveBeenCalledWith(true, true));
       expect(screen.getByLabelText(/openai api key/i)).toHaveAttribute("type", "password");
       expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
@@ -355,7 +355,7 @@ describe("Ren voice interface", () => {
       speechStart.mockResolvedValueOnce(false);
       act(() => activate?.());
       await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Deepgram dictation could not start"));
-      expect(screen.getByRole("button", { name: /open ren/i })).toHaveClass("ren-pebble");
+      expect(screen.getByRole("button", { name: /start speaking to ren/i })).toHaveClass("ren-pebble");
     } finally {
       window.ren = undefined;
       globalThis.AudioContext = originalAudioContext;
@@ -447,7 +447,7 @@ describe("Ren voice interface", () => {
       primarySource: async () => ({ id: "screen", name: "Main display", thumbnail: "" }),
       wakeAvailable: async () => true, wakeStart: async () => true, wakeStop: async () => {}, wakeFeed,
       speechAvailable: async () => true, speechStart, speechFeed: async () => true,
-      speechFinish: vi.fn().mockResolvedValueOnce("Draw a diagram of the hover system").mockResolvedValueOnce("Why does the fan help?").mockResolvedValueOnce(""), speechStop: async () => {},
+      speechFinish: vi.fn().mockResolvedValueOnce("Hey Ren, Draw a diagram of the hover system").mockResolvedValueOnce("Hey Ren, Why does the fan help?").mockResolvedValueOnce(""), speechStop: async () => {},
       onSpeechData: (listener: typeof speechListener) => { speechListener = listener; return () => { speechListener = undefined; }; },
       speak: async (id: string) => { queueMicrotask(() => { speechListener?.({ id, chunk: "AAA=", done: true }); }); return true; },
       onFocusSelection: () => () => {}, onActivateVoice: () => () => {},
@@ -469,7 +469,7 @@ describe("Ren voice interface", () => {
       await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
       expect(captureContext).toHaveBeenNthCalledWith(1, false, "Draw a diagram of the hover system");
       await waitFor(() => expect(generateIllustration).toHaveBeenCalledExactlyOnceWith(true));
-      await waitFor(() => expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible());
+      await waitFor(() => expect(screen.getByRole("button", { name: /start speaking to ren/i })).toBeVisible());
       await waitFor(() => expect(setCompanionVisible).toHaveBeenCalledWith(false), { timeout: 2_500 });
       expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
       expect(speechStart).toHaveBeenCalledTimes(1);
@@ -486,16 +486,16 @@ describe("Ren voice interface", () => {
       await waitFor(() => expect(ask).toHaveBeenCalledTimes(2));
       expect(captureContext).toHaveBeenNthCalledWith(2, true, "Why does the fan help?");
       expect(ask).toHaveBeenLastCalledWith(expect.objectContaining({ question: "Why does the fan help?", history: expect.arrayContaining([expect.objectContaining({ role: "assistant", content: "The engine drives the fan." })]) }));
-      await waitFor(() => expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible());
+      await waitFor(() => expect(screen.getByRole("button", { name: /start speaking to ren/i })).toBeVisible());
       expect(speechStart).toHaveBeenCalledTimes(2);
       now += 400;
       act(() => { for (let index = 0; index < 5; index += 1) processor?.onaudioprocess?.(voiceFrame); });
       await waitFor(() => expect(wakeFeed).toHaveBeenCalledTimes(4));
       expect(speechStart).toHaveBeenCalledTimes(2);
-      await waitFor(() => expect(screen.getByRole("button", { name: /open ren/i })).toBeVisible());
+      await waitFor(() => expect(screen.getByRole("button", { name: /start speaking to ren/i })).toBeVisible());
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       expect(screen.queryByRole("textbox", { name: /ask ren/i })).not.toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /open ren/i })).toHaveClass("ren-pebble");
+      expect(screen.getByRole("button", { name: /start speaking to ren/i })).toHaveClass("ren-pebble");
     } finally {
       dateNow.mockRestore();
       window.ren = undefined;

@@ -66,6 +66,13 @@ it("toggles voice after three Control taps without treating modifiers as screen 
     }
     expect(onTripleControl).toHaveBeenCalledOnce();
     expect(onInteraction).not.toHaveBeenCalled();
+    for (let index = 0; index < 3; index++) {
+      clock.mockReturnValue(900 + index * 220);
+      emit("keydown", event(mock.keys.Ctrl, true, false));
+      clock.mockReturnValue(960 + index * 220);
+      emit("keyup", event(mock.keys.Ctrl, false, false));
+    }
+    expect(onTripleControl).toHaveBeenCalledTimes(2);
   } finally { clock.mockRestore(); }
 });
 

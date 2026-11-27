@@ -4,6 +4,7 @@ import { PcmStreamPlayer } from "./pcm-player";
 import { interactiveSceneFor } from "../electron/interactive-scene";
 import { wantsVisualCreation } from "../electron/visual-intent";
 import { wantsCurrentScreen } from "../electron/screen-intent";
+import { confirmedWakeQuestion } from "./wake-confirmation";
 import { detectAgentJobIntent } from "../electron/agent-job-intent";
 import { continuesGuidedWorkflow, guidedHistory, wantsGuidedWorkflow, wantsToDelegateCurrentTask } from "../electron/guided-workflow";
 import type { AgentJobSnapshot } from "../electron/agent-jobs";
@@ -98,6 +99,7 @@ export function App() {
   const queuedFeedsRef = useRef(0);
   const dictationSessionRef = useRef(0);
   const automaticDictationRef = useRef(false);
+  const wakeCandidateRef = useRef(false);
   const conversationOpenRef = useRef(false);
   const awaitingFollowUpRef = useRef(false);
   const pendingAudioRef = useRef<number[][]>([]);
@@ -200,6 +202,7 @@ export function App() {
           processor = context.createScriptProcessor(2048, 1, 1);
           let pending = false;
           const recentAudio: number[][] = [];
+          const wakePreRollFrames = Math.min(72, Math.max(12, Math.floor(context.sampleRate * 3 / 2048)));
           let wasAwaitingFollowUp = false;
           let followUpVoiceFrames = 0;
           processor.onaudioprocess = (event) => {
@@ -245,7 +248,7 @@ export function App() {
               if ((voicedFramesRef.current >= 2 && now - lastVoiceAtRef.current > 2000) || now - dictationStartedAtRef.current > (voicedFramesRef.current ? 30_000 : 10_000)) void finishNativeDictation();
               return;
             }
-            if (conversationOpenRef.current) {
+            if (conversationOpenRef.current && alwaysOnRef.current) {
               const interruptible = Boolean(speechCancelRef.current) || askingRef.current;
               if ((!awaitingFollowUpRef.current && !interruptible) || (!interruptible && Date.now() < suppressSpeechUntilRef.current)) {
                 wasAwaitingFollowUp = false;
@@ -267,11 +270,11 @@ export function App() {
             wasAwaitingFollowUp = false;
             if (!nativeWakeRef.current || pending || Date.now() < suppressSpeechUntilRef.current) return;
             recentAudio.push(samples);
-            if (recentAudio.length > 24) recentAudio.shift();
+            if (recentAudio.length > wakePreRollFrames) recentAudio.shift();
             pending = true;
             void window.ren!.wakeFeed(samples).then((woke) => {
               if (woke && !disposed) {
-                if (nativeSpeechRef.current) void startNativeDictation(recentAudio.slice());
+                if (nativeSpeechRef.current) void startNativeDictation(recentAudio.slice(), false, true);
                 else handleAmbientTranscript("Hey Ren");
               }
             }).catch(() => setError("Local wake engine stopped. Click Ren to ask.")).finally(() => { pending = false; });
@@ -350,7 +353,7 @@ export function App() {
       conversationOpenRef.current = false;
       awaitingFollowUpRef.current = false;
       if (dictationActiveRef.current) stopNativeDictation();
-      if (mode.paused) interruptCurrentResponse();
+      if (mode.paused || (wasAlwaysOn && !mode.alwaysOn)) interruptCurrentResponse();
       setVoiceState("idle");
       if (!expandedRef.current) void window.ren?.setCompanionVisible?.(false);
     } else if (mode.alwaysOn && (!wasAlwaysOn || wasPaused)) {
@@ -421,7 +424,7 @@ export function App() {
   function hideCompanionSoon() {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     hideTimerRef.current = setTimeout(() => {
-      if (!expandedRef.current && !dictationActiveRef.current && !askingRef.current && !imageRenderingRef.current && voiceStateRef.current !== "responding" && voiceStateRef.current !== "processing") {
+      if (!expandedRef.current && !alwaysOnRef.current && !dictationActiveRef.current && !askingRef.current && !imageRenderingRef.current && voiceStateRef.current !== "responding" && voiceStateRef.current !== "processing") {
         void window.ren?.setCompanionVisible?.(false);
       }
     }, 1_800);
@@ -433,6 +436,7 @@ export function App() {
     setDictationActive(false);
     dictationReadyRef.current = false;
     automaticDictationRef.current = false;
+    wakeCandidateRef.current = false;
     pendingAudioRef.current = [];
     void window.ren?.speechStop();
   }
@@ -466,7 +470,7 @@ export function App() {
     suppressSpeechUntilRef.current = 0;
   }
 
-  async function startNativeDictation(preRoll: number[][] = [], automatic = false) {
+  async function startNativeDictation(preRoll: number[][] = [], automatic = false, wakeCandidate = false) {
     if (!window.ren || !nativeSpeechRef.current || dictationActiveRef.current) return;
     const inputContext = microphoneContextRef.current;
     if (!inputContext || inputContext.state === "closed") { showVoiceError("Microphone input is not ready. Reopen Ren and try again."); return; }
@@ -479,6 +483,7 @@ export function App() {
     setDictationActive(true);
     if (expandedRef.current && !visionOpenRef.current) void setExpanded(false);
     automaticDictationRef.current = automatic;
+    wakeCandidateRef.current = wakeCandidate;
     const session = ++dictationSessionRef.current;
     dictationReadyRef.current = false;
     dictationStartedAtRef.current = Date.now();
@@ -516,7 +521,9 @@ export function App() {
     if (!dictationActiveRef.current || !window.ren) return;
     const session = dictationSessionRef.current;
     const automatic = automaticDictationRef.current;
+    const wakeCandidate = wakeCandidateRef.current;
     automaticDictationRef.current = false;
+    wakeCandidateRef.current = false;
     dictationActiveRef.current = false;
     setDictationActive(false);
     dictationReadyRef.current = false;
@@ -524,8 +531,12 @@ export function App() {
     try {
       await feedChainRef.current;
       if (session !== dictationSessionRef.current) return;
-      const transcript = (await window.ren.speechFinish()).replace(/^(?:hey\s+)?(?:ren|run)\b[.,:;\s-]*/i, "").trim();
+      const rawTranscript = (await window.ren.speechFinish()).trim();
       if (session !== dictationSessionRef.current) return;
+      const confirmedQuestion = wakeCandidate ? confirmedWakeQuestion(rawTranscript) : null;
+      if (wakeCandidate && confirmedQuestion === null) { returnToWakeMode(); return; }
+      if (wakeCandidate && !confirmedQuestion) { void startNativeDictation(); return; }
+      const transcript = wakeCandidate ? confirmedQuestion! : rawTranscript.replace(/^(?:hey\s+)?(?:ren|run)\b[.,:;\s-]*/i, "").trim();
       if (/^(?:stop listening|that(?:'|’)s all|goodbye|bye(?: ren)?|cancel)[.!\s]*$/i.test(transcript)) { await endVoiceConversation(); return; }
       if (transcript) await askQuestion(transcript, true);
       else {
@@ -796,7 +807,7 @@ export function App() {
     askingRef.current = true;
     // Room audio may be playing while the user types. Only an active voice
     // conversation can use voice activity to interrupt an in-flight answer.
-    conversationOpenRef.current = fromVoice && nativeSpeechRef.current && !voicePausedRef.current;
+    conversationOpenRef.current = fromVoice && alwaysOnRef.current && nativeSpeechRef.current && !voicePausedRef.current;
     showCompanion();
     if (expandedRef.current && !visionOpenRef.current && promptMode !== "chat") void setExpanded(false);
     awaitingFollowUpRef.current = false;
@@ -880,10 +891,11 @@ export function App() {
     : agentJob?.status === "running" ? "Running job"
     : imageRendering ? "Drawing"
     : dictationActive ? "Listening"
+    : voiceMode.alwaysOn && voiceState === "idle" ? "Hands-free on"
     : permission?.microphone !== "granted" ? "Mic off"
     : voiceLabels[voiceState].title;
 
-  if (!expanded) return <button className={`ren-pebble state-${voiceState}`} onClick={() => { if (dictationActive || voiceState !== "idle") toggleListening(); else { setPanelTab("home"); setPromptMode("ask"); void setExpanded(true); } }} onContextMenu={(event) => { event.preventDefault(); openVisionSettings(); }} aria-label={dictationActive ? "Finish speaking to Ren" : voiceState === "idle" ? "Open Ren" : "Start speaking to Ren"} title={error || "Open Ren. Right-click for connections."}><span className="pebble-mark"><span className="clicky-triangle" /></span><span className="pebble-copy"><strong>{stripStatus}</strong></span><VoiceMeter active={dictationActive || voiceState === "processing" || voiceState === "responding" || imageRendering} />{error && <span className="screen-reader-only" role="alert">{error}</span>}</button>;
+  if (!expanded) return <button className={`ren-pebble state-${voiceState}`} onClick={(event) => { if (event.shiftKey) { setPanelTab("home"); setPromptMode("ask"); void setExpanded(true); } else toggleListening(); }} onContextMenu={(event) => { event.preventDefault(); openVisionSettings(); }} aria-label={dictationActive ? "Finish speaking to Ren" : "Start speaking to Ren"} title={error || "Click to talk. Shift-click for the full panel; right-click for settings."}><span className="pebble-mark"><span className="clicky-triangle" /></span><span className="pebble-copy"><strong>{stripStatus}</strong></span><VoiceMeter active={dictationActive || voiceState === "processing" || voiceState === "responding" || imageRendering} />{error && <span className="screen-reader-only" role="alert">{error}</span>}</button>;
 
   const needsSetup = Boolean(window.ren) ? permission?.microphone !== "granted" : !permission?.ready;
   return <main className="ambient-panel">
@@ -892,7 +904,7 @@ export function App() {
     {needsSetup ? <section className="onboarding-card"><span className="step-kicker">ONE-TIME SETUP</span><h2>Give Ren permission once.</h2><p>Allow microphone, screen recording, and pointer access now. After that, Ren starts quietly with your computer and only captures the screen when you ask a question.</p><div className="permission-row"><span>Microphone</span><b>{permission?.microphone ?? "checking"}</b></div><div className="permission-row"><span>Screen recording</span><b>{permission?.screen ?? "checking"}</b></div><div className="permission-row"><span>Circle shortcut</span><b>{permission?.interaction ?? "checking"}</b></div>{permission?.ready && permission.microphone !== "granted" ? <button className="allow-button" onClick={() => void enableMicrophone()}>Enable microphone</button> : <button className="allow-button" onClick={() => void requestOneTimePermissions()}>Allow and continue</button>}{permission && !permission.ready && <button className="settings-link" onClick={() => void openPermissionSettings()}>Request access and open system settings</button>}</section> : <>
       {!visionOpen && panelTab === "home" && <section className="panel-home">
         <div className="panel-hero"><div className="hero-heading"><span className="hero-kicker">{promptMode === "agent" ? "AGENT WORK" : promptMode === "chat" ? "CHAT WITH REN" : "ASK REN"}</span><span className="hero-symbol" aria-hidden="true">✦</span></div><h1>{promptMode === "agent" ? "Task an agent" : promptMode === "chat" ? "Chat inside Ren" : "Ask Ren"}</h1><p>{promptMode === "agent" ? "Write a task and let Ren work on it in the background." : promptMode === "chat" ? "Continue the conversation in this panel." : "Ask with your voice, or type a quick question."}</p>
-          {promptMode === "chat" ? <div className="panel-conversation" aria-label="Ren conversation">{messages.length ? messages.slice(-8).map((message) => <article key={message.id} className={message.role}><b>{message.role === "user" ? "YOU" : "REN"}</b><p>{message.content}</p>{message.role === "assistant" && message.followUps?.length ? <div className="panel-followups">{message.followUps.slice(0, 2).map((followUp) => <button key={followUp} onClick={() => void askQuestion(followUp)}>{followUp} ↗</button>)}</div> : null}</article>) : <p className="chat-empty">Your conversation will appear here.</p>}</div> : <div className="home-actions">{promptMode === "ask" && <button className="voice-guide" onClick={toggleListening}><span className="voice-guide-icon" aria-hidden="true">⌃</span><span><strong>Tap Control three times to talk.</strong><small>Or click here to start listening. Speak again to interrupt Ren.</small></span><span aria-hidden="true">↗</span></button>}<div className="panel-suggestions"><span>✦ &nbsp; SUGGESTIONS</span><div className="suggestion-grid"><button onClick={() => { setPromptMode("ask"); setHomePrompt("Summarise what’s on my screen"); }}>▣ &nbsp; Summarise screen</button><button onClick={() => { setPromptMode("agent"); setHomePrompt("Look at my screen and help with the current task"); }}>◈ &nbsp; Start an agent</button><button onClick={openVisionSettings}>⚙ &nbsp; Open settings</button></div></div></div>}
+          {promptMode === "chat" ? <div className="panel-conversation" aria-label="Ren conversation">{messages.length ? messages.slice(-8).map((message) => <article key={message.id} className={message.role}><b>{message.role === "user" ? "YOU" : "REN"}</b><p>{message.content}</p>{message.role === "assistant" && message.followUps?.length ? <div className="panel-followups">{message.followUps.slice(0, 2).map((followUp) => <button key={followUp} onClick={() => void askQuestion(followUp)}>{followUp} ↗</button>)}</div> : null}</article>) : <p className="chat-empty">Your conversation will appear here.</p>}</div> : <div className="home-actions">{promptMode === "ask" && <button className="voice-guide" onClick={toggleListening}><span className="voice-guide-icon" aria-hidden="true">⌃</span><span><strong>Talk to Ren</strong><small>Click to speak. Three Control taps toggle hands-free mode on or off.</small></span><span aria-hidden="true">↗</span></button>}<div className="panel-suggestions"><span>✦ &nbsp; SUGGESTIONS</span><div className="suggestion-grid"><button onClick={() => { setPromptMode("ask"); setHomePrompt("Summarise what’s on my screen"); }}>▣ &nbsp; Summarise screen</button><button onClick={() => { setPromptMode("agent"); setHomePrompt("Look at my screen and help with the current task"); }}>◈ &nbsp; Start an agent</button><button onClick={openVisionSettings}>⚙ &nbsp; Open settings</button></div></div></div>}
           <div className="home-prompt-dock"><form className="panel-prompt" onSubmit={(event) => { event.preventDefault(); const text = homePrompt.trim(); if (!text) return; setHomePrompt(""); void askQuestion(promptMode === "agent" ? `spawn agent to ${text}` : text); }}><span className="prompt-symbol" aria-hidden="true">{promptMode === "agent" ? "◈" : promptMode === "chat" ? "▤" : "✦"}</span><input aria-label="Ask Ren" value={homePrompt} onChange={(event) => setHomePrompt(event.target.value)} placeholder={promptMode === "agent" ? "Task an agent…" : promptMode === "chat" ? "Chat with Ren…" : "Ask Ren…"} /><button type="button" className="prompt-mic" aria-label={dictationActive ? "Finish speaking to Ren" : "Start speaking to Ren"} onClick={toggleListening}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21m-4 0h8" /></svg></button><button type="submit" aria-label="Send Ren prompt" disabled={!homePrompt.trim()}>➤</button></form>
           <div className="prompt-modes"><button type="button" className={promptMode === "ask" ? "active" : ""} aria-pressed={promptMode === "ask"} onClick={() => setPromptMode("ask")}>✦ Ask</button><button type="button" className={promptMode === "agent" ? "active" : ""} aria-pressed={promptMode === "agent"} onClick={() => setPromptMode("agent")}>◈ Agent</button><button type="button" className={promptMode === "chat" ? "active" : ""} aria-pressed={promptMode === "chat"} onClick={() => setPromptMode("chat")}>▤ Chat</button></div>
           </div>

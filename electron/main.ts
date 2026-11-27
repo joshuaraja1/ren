@@ -2,7 +2,7 @@ import "dotenv/config";
 import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, screen, session, shell, systemPreferences, Tray } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { askTeacher, type Annotation } from "./provider.js";
 import { feedWake, startWake, stopWake, wakeAvailable } from "./wake.js";
 import { feedSpeech, finishSpeech, speechAvailable, startSpeech, stopSpeech } from "./speech.js";
@@ -201,10 +201,8 @@ function createMainWindow() {
   mainWindow.setAlwaysOnTop(true, "screen-saver");
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   mainWindow.once("ready-to-show", () => {
-    const access = permissionStatus();
-    const needsOnboarding = process.platform === "darwin" ? access.microphone !== "granted" : !access.ready;
     positionMainWindow(false);
-    if (needsOnboarding) mainWindow?.showInactive();
+    if (!voicePaused) mainWindow?.showInactive();
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith("https://")) void shell.openExternal(url);
@@ -230,6 +228,7 @@ function voiceMode() { return { paused: voicePaused, alwaysOn: alwaysOnVoice }; 
 function updateTrayMenu() {
   if (!tray) return;
   tray.setContextMenu(Menu.buildFromTemplate([
+    { label: "Open Ren panel", click: () => mainWindow?.webContents.send("ren:open-home") },
     { label: "AI settings", click: () => mainWindow?.webContents.send("ren:open-panel") },
     { label: "Start voice conversation", enabled: !voicePaused, click: () => mainWindow?.webContents.send("ren:activate-voice") },
     { label: alwaysOnVoice ? "Turn always-on voice off" : "Turn always-on voice on", click: () => setAlwaysOnVoice(!alwaysOnVoice) },
@@ -241,7 +240,6 @@ function updateTrayMenu() {
 
 function setAlwaysOnVoice(value: boolean) {
   alwaysOnVoice = value;
-  try { writeFileSync(join(app.getPath("userData"), "voice-mode.json"), JSON.stringify({ alwaysOn: value }), { mode: 0o600 }); } catch { /* session still works */ }
   updateTrayMenu();
   mainWindow?.webContents.send("ren:voice-mode", voiceMode());
 }
@@ -268,7 +266,9 @@ function setVoicePaused(value: boolean) {
 }
 
 app.whenReady().then(() => {
-  try { alwaysOnVoice = JSON.parse(readFileSync(join(app.getPath("userData"), "voice-mode.json"), "utf8")).alwaysOn === true; } catch { /* default is wake mode */ }
+  // Hands-free listening is session-only. A relaunch must never reopen a live
+  // microphone conversation because a previous session left it enabled.
+  alwaysOnVoice = false;
   if (permissionStatus().ready && app.isPackaged) app.setLoginItemSettings({ openAtLogin: true });
   createMainWindow();
   createOverlayWindow();
@@ -393,7 +393,7 @@ app.whenReady().then(() => {
     circleInputActive = startCircleInput({
       onTripleControl: () => {
         if (voicePaused) setVoicePaused(false);
-        mainWindow?.webContents.send("ren:activate-voice");
+        setAlwaysOnVoice(!alwaysOnVoice);
       },
       onSketchProgress: (displayId, points) => { if (!voicePaused) showFocusPath(displayId, points); },
       onSketchComplete: (displayId, points) => {
@@ -547,8 +547,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("ren:set-companion-visible", (event, visible: unknown) => {
     requireMainRenderer(event);
-    if (visible === true) mainWindow?.showInactive();
-    else if (visible === false) mainWindow?.hide();
+    if (visible === true || (visible === false && !voicePaused)) mainWindow?.showInactive();
   });
 
   ipcMain.handle("ren:list-sources", async (event) => {
