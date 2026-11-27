@@ -72,6 +72,10 @@
     ],
     "extraResources": [
       {
+        "from": "scripts/freecad-create.py",
+        "to": "freecad-create.py"
+      },
+      {
         "from": "build/icon.png",
         "to": "tray-icon.png"
       },

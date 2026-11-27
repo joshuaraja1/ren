@@ -5,6 +5,7 @@ import { interactiveSceneFor } from "../electron/interactive-scene";
 import { wantsVisualCreation } from "../electron/visual-intent";
 import { wantsCurrentScreen } from "../electron/screen-intent";
 import { detectAgentJobIntent } from "../electron/agent-job-intent";
+import { continuesGuidedWorkflow, guidedHistory, wantsGuidedWorkflow, wantsToDelegateCurrentTask } from "../electron/guided-workflow";
 import type { AgentJobSnapshot } from "../electron/agent-jobs";
 
 type VoiceState = "idle" | "listening" | "processing" | "responding";
@@ -75,6 +76,7 @@ export function App() {
   const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesRef = useRef<Message[]>([]);
+  const guidedTaskRef = useRef<string | null>(null);
   const nativeWakeRef = useRef(false);
   const nativeSpeechRef = useRef(false);
   const microphoneContextRef = useRef<AudioContext | null>(null);
@@ -788,7 +790,9 @@ export function App() {
     }
     interruptCurrentResponse();
     const generation = ++askGenerationRef.current;
-    const history = messagesRef.current.slice(-8).map(({ role, content }) => ({ role, content }));
+    if (wantsGuidedWorkflow(clean)) guidedTaskRef.current = clean;
+    else if (!continuesGuidedWorkflow(clean) && !wantsToDelegateCurrentTask(clean) && !/^(?:why|how|what about|and|can you explain|tell me more)\b/i.test(clean)) guidedTaskRef.current = null;
+    const history = guidedHistory(clean, messagesRef.current.slice(-8).map(({ role, content }) => ({ role, content })), guidedTaskRef.current);
     queuedIllustrationRef.current = false;
     askingRef.current = true;
     // Room audio may be playing while the user types. Only an active voice

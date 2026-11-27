@@ -32,6 +32,8 @@ import type { VisualLesson } from "./visual-lesson.js";
 import { AgentJobManager } from "./agent-jobs.js";
 import { consumeAgentJobCapture } from "./agent-job-capture.js";
 import { wantsCurrentScreen, wantsSpatialGuidance } from "./screen-intent.js";
+import { createFreeCadModel, planCadModel, wantsCadCreation } from "./cad-model.js";
+import { wantsToDelegateCurrentTask, wantsGuidedWorkflow } from "./guided-workflow.js";
 
 type Illustration = { image: string; preview: boolean; width: number; height: number; registration?: ImageRegistration };
 type ActiveVisual = { lesson: VisualLesson; displayId: number; createdAt: number; referenceImage?: string };
@@ -636,6 +638,37 @@ app.whenReady().then(() => {
     requireMainRenderer(event);
     if (voicePaused) throw new Error("Ren is paused. Resume it before asking.");
     const value = parseAskRequest(request);
+    const guidedCadTask = wantsToDelegateCurrentTask(value.question)
+      ? value.history.find((turn) => turn.role === "user" && wantsGuidedWorkflow(turn.content)
+        && /\b(?:cad|freecad|parametric)\b/i.test(turn.content)
+        && !/\b(?:fea|fem|finite.element|simulation|solver|analysis)\b/i.test(turn.content))?.content
+      : undefined;
+    const cadRequest = guidedCadTask ? `Create a CAD model for this task: ${guidedCadTask}` : value.question;
+    if (guidedCadTask || wantsCadCreation(cadRequest)) {
+      if (!value.contextToken) throw new Error("Invalid CAD request.");
+      const captured = lastCaptureData?.token === value.contextToken ? lastCaptureData : null;
+      if (wantsCurrentScreen(value.question, value.history) && !captured) throw new Error("Screen context expired. Ask again.");
+      if (captured) {
+        captureSession.consume(value.contextToken);
+        lastCaptureData = null;
+      }
+      const controller = new AbortController();
+      activeAskRequest = { token: value.contextToken, controller };
+      try {
+        const credentials = await visionCredentials();
+        if (!credentials) throw new Error("Connect a vision model in Ren settings to create a CAD model.");
+        const spec = await planCadModel(cadRequest, credentials, captured?.frames ?? [], controller.signal);
+        if (controller.signal.aborted || voicePaused) throw new Error("The CAD request was cancelled.");
+        const script = app.isPackaged ? join(process.resourcesPath, "freecad-create.py") : join(currentDirectory, "..", "scripts", "freecad-create.py");
+        const output = await createFreeCadModel(spec, join(app.getPath("documents"), "Ren CAD Models"), script, undefined, controller.signal);
+        if (controller.signal.aborted || voicePaused) throw new Error("The CAD request was cancelled. A new model file may have been saved.");
+        const openError = await shell.openPath(output);
+        const assumptions = spec.assumptions.length ? ` Assumed: ${spec.assumptions.slice(0, 3).join("; ")}.` : "";
+        return { answer: `I created an editable FreeCAD model named ${spec.title}.${openError ? ` I saved it at ${output}, but could not open it: ${openError}.` : " It is open in FreeCAD."}${assumptions} Check the dimensions and fit before using it for fabrication or analysis.`, annotations: [], followUps: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false, provider: "vision" as const };
+      } finally {
+        if (activeAskRequest?.controller === controller) activeAskRequest = null;
+      }
+    }
     const useScreen = wantsCurrentScreen(value.question, value.history);
     if (!useScreen) {
       if (!value.contextToken) throw new Error("Invalid conversation request.");

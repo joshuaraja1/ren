@@ -57,6 +57,37 @@ describe("provider privacy boundary", () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
+  it("uses a supplied CAD screen for visible next-step guidance", async () => {
+    let body: { messages: Array<{ content: unknown }> } | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {
+      body = JSON.parse(String(options.body));
+      return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "Select the visible analysis workbench first.", annotations: [] }) } }] }) };
+    }));
+    try {
+      await askTeacher({ question: "Show me how to run FEA in this software", frames: ["data:image/png;base64,test"], history: [] }, { apiKey: "test", model: "vision", baseUrl: "https://example.com/v1" });
+      expect(String(body?.messages[0].content)).toContain("identify the visible app");
+      expect(String(body?.messages[0].content)).toContain("annotate the first relevant control");
+      expect(String(body?.messages[0].content)).not.toContain("visualLesson is REQUIRED");
+      expect(JSON.stringify(body?.messages.at(-1)?.content)).toContain("data:image/png;base64,test");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("continues a guided workflow with the new screen and prior step", async () => {
+    let body: { messages: Array<{ content: unknown }> } | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {
+      body = JSON.parse(String(options.body));
+      return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "Open the mesh settings next.", annotations: [] }) } }] }) };
+    }));
+    try {
+      await askTeacher({ question: "Next step", frames: ["data:image/png;base64,test"], history: [
+        { role: "user", content: "Walk me through a simulation in this app" },
+        { role: "assistant", content: "Select the analysis container." },
+      ] }, { apiKey: "test", model: "vision", baseUrl: "https://example.com/v1" });
+      expect(String(body?.messages[0].content)).toContain("Give exactly one concrete next action");
+      expect(JSON.stringify(body?.messages.at(-1)?.content)).toContain("data:image/png;base64,test");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("answers ordinary voice questions without claiming screen access", async () => {
     let body: { messages: Array<{ content: unknown }> } | undefined;
     vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {

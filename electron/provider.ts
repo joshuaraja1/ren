@@ -1,6 +1,7 @@
 import { validateVisualLesson, type VisualLesson } from "./visual-lesson.js";
 import { plainAnswer } from "./plain-answer.js";
 import { requestedVisualDimension, wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
+import { continuesGuidedWorkflow, hasGuidedWorkflowContext, wantsGuidedWorkflow } from "./guided-workflow.js";
 
 type Point = { x: number; y: number };
 export type Annotation =
@@ -106,11 +107,27 @@ words and explain any assumptions.`;
 const ENGINEERING_PROMPT = `For CAD, FEM, or FEA requests, distinguish guidance and
 illustrative diagrams from an editable CAD file or a computed solver result.
 Do not claim to have controlled engineering software, created a file, run a
-solver, or validated a design unless a tool result proves it. Give concrete
-next steps for the software actually visible, when known. Never invent
+solver, or validated a design unless a tool result proves it. If a screen
+image is supplied, identify the visible app and current workbench or panel
+when possible. Give the next one or two concrete steps using controls that
+are actually visible; annotate the first relevant control when its location
+is clear. If the needed control is not visible, say what the learner should
+open rather than guessing coordinates. Never invent
 stress, displacement, temperature, safety factor, mesh convergence, or
 validated dimensions. For a case-specific analysis, identify missing
 geometry, units, material properties, loads, constraints, and solver setup.`;
+
+const GUIDED_WORKFLOW_PROMPT = `The learner wants to work through a task step by step.
+Use the current screen and conversation history to identify the app, current
+state, and last requested step. Give exactly one concrete next action, followed
+by a short way to recognize its result. If the learner says the step is done,
+check the new screen before advancing; if the result is not visible, say what
+you can verify and ask for the missing view. Point to the relevant visible
+control when its position is clear. Never invent menu names or claim to have
+performed the action yourself. Continue the same task unless the learner
+changes it. Offer a single short follow-up such as "Done; what's next?".
+Keep the spoken answer brief and do not create a diagram unless
+the learner asks for one.`;
 
 const REQUESTED_VISUAL_PROMPT = `The learner explicitly requested a diagram or rendered illustration. visualLesson is REQUIRED.
 Set retainVisual:false; this is a new drawing request.
@@ -224,8 +241,11 @@ export async function askTeacher(request: AskRequest, credentials: VisionCredent
   if (!credentials) return demoAnswer(request.question);
 
   const { apiKey, model, baseUrl: base } = credentials;
+  const userQuestion = request.question.split("\n\n[The learner is pointing", 1)[0];
   const requestedVisual = wantsVisualCreation(request.question) && !request.transformPriorVisual;
-  const engineeringQuestion = /\b(?:cad|fea|fem|finite.element|mesh(?:ing)?|simulation|solver)\b/i.test(request.question);
+  const engineeringQuestion = /\b(?:cad|fea|fem|finite.element|mesh(?:ing)?|simulation|solver)\b/i.test(userQuestion)
+    || (continuesGuidedWorkflow(userQuestion) && request.history.some((turn) => turn.role === "user" && /\b(?:cad|fea|fem|finite.element|mesh(?:ing)?|simulation|solver)\b/i.test(turn.content)));
+  const guidedWorkflow = wantsGuidedWorkflow(userQuestion) || (continuesGuidedWorkflow(userQuestion) && hasGuidedWorkflowContext(request.history));
   const visualDimension = requestedVisualDimension(request.question);
   const visualContent = request.frames.slice(0, 3).map((url) => ({ type: "image_url", image_url: { url, detail: "high" } }));
   const history = request.history.slice(-8).map((turn) => ({ role: turn.role, content: turn.content }));
@@ -243,7 +263,7 @@ export async function askTeacher(request: AskRequest, credentials: VisionCredent
         ...(model === "gpt-6-sol" ? { reasoning_effort: "medium" } : {}),
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: `${request.frames.length || requestedVisual ? TEACHER_PROMPT : GENERAL_PROMPT}${!request.frames.length && requestedVisual ? `\n${NO_SCREEN_VISUAL_NOTE}` : ""}${engineeringQuestion ? `\n${ENGINEERING_PROMPT}` : ""}${request.transformPriorVisual ? `\n${TRANSFORM_PRIOR_VISUAL_PROMPT}` : ""}${requestedVisual ? `\n${REQUESTED_VISUAL_PROMPT}\nThe requested visual is ${visualDimension}D. ${visualDimension === 3 ? "Plan real spatial components for a subject-specific rotatable teaching model. Do not claim exact CAD fidelity." : "Plan a flat 2D teaching diagram and do not describe it as a rotatable model."} ${wantsReferenceRecreation(request.question) ? "Identify a tight referenceRegion around the visible subject if it appears on screen." : "Set referenceRegion:null unless the learner specifically asks to recreate a visible object."}` : ""}${retryVisual ? `\n${RETRY_VISUAL_PROMPT}` : ""}` },
+          { role: "system", content: `${request.frames.length || requestedVisual ? TEACHER_PROMPT : GENERAL_PROMPT}${!request.frames.length && requestedVisual ? `\n${NO_SCREEN_VISUAL_NOTE}` : ""}${engineeringQuestion ? `\n${ENGINEERING_PROMPT}` : ""}${guidedWorkflow ? `\n${GUIDED_WORKFLOW_PROMPT}` : ""}${request.transformPriorVisual ? `\n${TRANSFORM_PRIOR_VISUAL_PROMPT}` : ""}${requestedVisual ? `\n${REQUESTED_VISUAL_PROMPT}\nThe requested visual is ${visualDimension}D. ${visualDimension === 3 ? "Plan real spatial components for a subject-specific rotatable teaching model. Do not claim exact CAD fidelity." : "Plan a flat 2D teaching diagram and do not describe it as a rotatable model."} ${wantsReferenceRecreation(request.question) ? "Identify a tight referenceRegion around the visible subject if it appears on screen." : "Set referenceRegion:null unless the learner specifically asks to recreate a visible object."}` : ""}${retryVisual ? `\n${RETRY_VISUAL_PROMPT}` : ""}` },
           ...history,
           { role: "user", content: [{ type: "text", text: request.question }, ...priorVisual, ...visualContent] },
         ],

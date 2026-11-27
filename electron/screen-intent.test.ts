@@ -14,10 +14,22 @@ describe("screen context routing", () => {
     expect(wantsCurrentScreen("What is this? ")).toBe(true);
     expect(wantsCurrentScreen("Why?", [{ role: "user", content: "Explain this screenshot" }, { role: "assistant", content: "It shows a warning." }])).toBe(true);
     expect(wantsCurrentScreen("Why does the fan help?", [{ role: "user", content: "Draw a diagram of the hover system" }, { role: "assistant", content: "Here is the fan." }])).toBe(true);
+    expect(wantsCurrentScreen("How do I run FEA in this software?")).toBe(true);
+    expect(wantsCurrentScreen("Show me how to build a bracket in this CAD app")).toBe(true);
+    expect(wantsCurrentScreen("How do I run FEA in FreeCAD?")).toBe(false);
+    expect(wantsCurrentScreen("Walk me through making a bracket in FreeCAD")).toBe(true);
+    expect(wantsCurrentScreen("I want to design a bracket; can you walk me through it step by step?")).toBe(true);
+    expect(wantsCurrentScreen("Guide me through titration in this chemistry app")).toBe(true);
+    expect(wantsCurrentScreen("Create a CAD model of this object")).toBe(true);
+    expect(wantsCurrentScreen("Next step", [{ role: "user", content: "Walk me through CAD in FreeCAD" }, { role: "assistant", content: "Select the sketch tool." }])).toBe(true);
+    expect(wantsCurrentScreen("Next step", [{ role: "user", content: "Tell me a joke" }])).toBe(false);
   });
 
   it("only requests spatial guidance for direct pointing requests", () => {
     expect(wantsSpatialGuidance("Where is the Apple menu? Point to it.")).toBe(true);
     expect(wantsSpatialGuidance("What does this error mean?")).toBe(false);
+    expect(wantsSpatialGuidance("Show me how to run FEM analysis in this software")).toBe(true);
+    expect(wantsSpatialGuidance("Walk me through meshing on my screen")).toBe(true);
+    expect(wantsSpatialGuidance("Next step")).toBe(true);
   });
 });
