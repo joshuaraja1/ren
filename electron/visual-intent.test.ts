@@ -23,6 +23,22 @@ it("renders only when the learner explicitly asks for a visual", () => {
   expect(wantsVisualCreation("Show how to install RAM into a server")).toBe(true);
   expect(requestedVisualDimension("Show how to install RAM into a server")).toBe(3);
   expect(wantsVisualCreation("How do I connect an app to a server?")).toBe(false);
+  expect(wantsVisualCreation("How do I build a 3D CAD model of a bracket?")).toBe(false);
+  expect(wantsVisualCreation("How do I build an FEA mesh for a wing?")).toBe(false);
+  expect(wantsVisualCreation("Create a 3D CAD model of a bracket")).toBe(false);
+  expect(wantsVisualCreation("Run FEA on this bracket")).toBe(false);
+  expect(wantsVisualCreation("Draw a diagram of how an FEA mesh works")).toBe(true);
+  expect(wantsVisualCreation("From this CAD drawing, show how to attach the camera to the board")).toBe(true);
+  for (const request of [
+    "Create a mesh and run a structural FEA on this bracket",
+    "How do I set up thermal simulation in CAD?",
+    "Build a parametric CAD model of a phone enclosure",
+    "Analyze vibration modes with FEM",
+  ]) expect(wantsVisualCreation(request)).toBe(false);
+  for (const request of [
+    "Draw a diagram of the fixed support and applied force on this bracket",
+    "Show a schematic of the thermal boundary conditions",
+  ]) expect(wantsVisualCreation(request)).toBe(true);
   expect(wantsPriorAssemblyGuide("How do I do that?")).toBe(true);
   expect(wantsPriorAssemblyGuide("Show me how to do it")).toBe(true);
   expect(wantsPriorAssemblyGuide("Repeat the steps")).toBe(true);

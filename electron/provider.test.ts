@@ -39,6 +39,24 @@ describe("follow-up validation", () => {
 });
 
 describe("provider privacy boundary", () => {
+  it("treats a CAD or FEA workflow as guidance, not a generated model or solver result", async () => {
+    const calls: Array<{ messages: Array<{ content: unknown }> }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {
+      calls.push(JSON.parse(String(options.body)));
+      return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "I can guide you through the setup.", visualLesson: null }) } }] }) };
+    }));
+    try {
+      const credentials = { apiKey: "test", model: "vision", baseUrl: "https://example.com/v1" };
+      await askTeacher({ question: "Create a 3D CAD model of a bracket", frames: [], history: [] }, credentials);
+      await askTeacher({ question: "Run FEA on this bracket", frames: [], history: [] }, credentials);
+      expect(calls).toHaveLength(2);
+      for (const call of calls) {
+        expect(String(call.messages[0].content)).toContain("Do not claim to have controlled engineering software");
+        expect(String(call.messages[0].content)).not.toContain("visualLesson is REQUIRED");
+      }
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("answers ordinary voice questions without claiming screen access", async () => {
     let body: { messages: Array<{ content: unknown }> } | undefined;
     vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {

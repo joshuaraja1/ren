@@ -2,8 +2,14 @@ import { wantsAssemblySequence } from "./assembly-intent.js";
 
 /** An explicit request to make a visual authorizes an image render for this answer. */
 export function wantsVisualCreation(question: string) {
-  return wantsAssemblySequence(question)
-    || /\b(?:create|recreate|draw|render|illustrate|sketch|visuali[sz]e|generate)\b/i.test(question)
+  if (wantsAssemblySequence(question)) return true;
+  // Creating an editable CAD file or running an analysis is not a request for
+  // Ren's illustrative diagram renderer. An explicit diagram still is.
+  if (/\b(?:cad|fea|fem|finite.element|mesh(?:ing)?|simulation|solver)\b/i.test(question)
+    && /\b(?:how|build|create|make|generate|mesh|model|set up|run|perform|analy[sz]e)\b/i.test(question)
+    && !/\b(?:diagram|drawing|illustration|schematic|visuali[sz]ation|picture|image|render)\b/i.test(question)) return false;
+  return /\b(?:create|recreate|draw|render|illustrate|sketch|visuali[sz]e|generate)\b/i.test(question)
+    || /\b(?:show|make|create|draw|render|generate)\b[^.!?]{0,70}\bschematic\b/i.test(question)
     || /\b(?:play|replay|animate)\s+(?:the\s+)?(?:assembly|assembly steps)\b/i.test(question)
     || /\b(?:show|animate|walk me through)\b[^.!?]{0,90}\b(?:assembl(?:e|y|ing)|putting .{0,25} together|connecting (?:the )?parts|plugging .{0,20} in)\b/i.test(question)
     || /\b(?:show|animate|render|draw)\b[^.!?]{0,100}\b(?:attach(?:ing)?|install(?:ing)?|mount(?:ing)?)\b[^.!?]{0,100}\b(?:to|into|onto|on|in)\b/i.test(question)

@@ -103,6 +103,15 @@ const NO_SCREEN_VISUAL_NOTE = `No screen image is supplied. Do not claim to see
 the screen or cursor. If a diagram was requested, derive it from the user's
 words and explain any assumptions.`;
 
+const ENGINEERING_PROMPT = `For CAD, FEM, or FEA requests, distinguish guidance and
+illustrative diagrams from an editable CAD file or a computed solver result.
+Do not claim to have controlled engineering software, created a file, run a
+solver, or validated a design unless a tool result proves it. Give concrete
+next steps for the software actually visible, when known. Never invent
+stress, displacement, temperature, safety factor, mesh convergence, or
+validated dimensions. For a case-specific analysis, identify missing
+geometry, units, material properties, loads, constraints, and solver setup.`;
+
 const REQUESTED_VISUAL_PROMPT = `The learner explicitly requested a diagram or rendered illustration. visualLesson is REQUIRED.
 Set retainVisual:false; this is a new drawing request.
 If the named object is not visible on screen, derive the subject from the learner's
@@ -216,6 +225,7 @@ export async function askTeacher(request: AskRequest, credentials: VisionCredent
 
   const { apiKey, model, baseUrl: base } = credentials;
   const requestedVisual = wantsVisualCreation(request.question) && !request.transformPriorVisual;
+  const engineeringQuestion = /\b(?:cad|fea|fem|finite.element|mesh(?:ing)?|simulation|solver)\b/i.test(request.question);
   const visualDimension = requestedVisualDimension(request.question);
   const visualContent = request.frames.slice(0, 3).map((url) => ({ type: "image_url", image_url: { url, detail: "high" } }));
   const history = request.history.slice(-8).map((turn) => ({ role: turn.role, content: turn.content }));
@@ -233,7 +243,7 @@ export async function askTeacher(request: AskRequest, credentials: VisionCredent
         ...(model === "gpt-6-sol" ? { reasoning_effort: "medium" } : {}),
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: `${request.frames.length || requestedVisual ? TEACHER_PROMPT : GENERAL_PROMPT}${!request.frames.length && requestedVisual ? `\n${NO_SCREEN_VISUAL_NOTE}` : ""}${request.transformPriorVisual ? `\n${TRANSFORM_PRIOR_VISUAL_PROMPT}` : ""}${requestedVisual ? `\n${REQUESTED_VISUAL_PROMPT}\nThe requested visual is ${visualDimension}D. ${visualDimension === 3 ? "Plan real spatial components for a subject-specific rotatable teaching model. Do not claim exact CAD fidelity." : "Plan a flat 2D teaching diagram and do not describe it as a rotatable model."} ${wantsReferenceRecreation(request.question) ? "Identify a tight referenceRegion around the visible subject if it appears on screen." : "Set referenceRegion:null unless the learner specifically asks to recreate a visible object."}` : ""}${retryVisual ? `\n${RETRY_VISUAL_PROMPT}` : ""}` },
+          { role: "system", content: `${request.frames.length || requestedVisual ? TEACHER_PROMPT : GENERAL_PROMPT}${!request.frames.length && requestedVisual ? `\n${NO_SCREEN_VISUAL_NOTE}` : ""}${engineeringQuestion ? `\n${ENGINEERING_PROMPT}` : ""}${request.transformPriorVisual ? `\n${TRANSFORM_PRIOR_VISUAL_PROMPT}` : ""}${requestedVisual ? `\n${REQUESTED_VISUAL_PROMPT}\nThe requested visual is ${visualDimension}D. ${visualDimension === 3 ? "Plan real spatial components for a subject-specific rotatable teaching model. Do not claim exact CAD fidelity." : "Plan a flat 2D teaching diagram and do not describe it as a rotatable model."} ${wantsReferenceRecreation(request.question) ? "Identify a tight referenceRegion around the visible subject if it appears on screen." : "Set referenceRegion:null unless the learner specifically asks to recreate a visible object."}` : ""}${retryVisual ? `\n${RETRY_VISUAL_PROMPT}` : ""}` },
           ...history,
           { role: "user", content: [{ type: "text", text: request.question }, ...priorVisual, ...visualContent] },
         ],

@@ -1,5 +1,8 @@
 /** A request to demonstrate how physical parts are put together. */
 export function wantsAssemblySequence(question: string): boolean {
+  // Digital modeling is a workflow, not physical part assembly.
+  if (/\b(?:cad|fea|fem|finite.element|mesh(?:ing)?|simulation|simulate|solver|boundary conditions?)\b/i.test(question)
+    && !/\b(?:attach|install|mount|plug|wire|insert|fit|connect)(?:ed|ing)?\b[^.!?]{0,100}\b(?:camera|cable|board|device|part|component|ram|cpu|battery|wheel|motor|sensor)\b/i.test(question)) return false;
   if (/\b(?:wi-?fi|internet|network|api|database|server|account|software|package|dependencies|login|code|program|agent|workflow|website|application|resume|document|form|file|repository|repo|service)\b/i.test(question)
     && !/\b(?:hardware|cable|camera|board|device|part|component|ram|memory|monitor|cpu|gpu|processor|motherboard|keyboard|display|port|lens|battery|wheel|motor|sensor)\b/i.test(question)) return false;
   return /\b(?:assembl(?:e|y|ing)|put (?:it|them|the parts|this|that) together|connect (?:the )?parts|plug (?:it|them|the parts) in|exploded (?:view|diagram|model)|step.by.step (?:build|assembly|connection))\b/i.test(question)

@@ -81,6 +81,11 @@ describe("generic subject model generation", () => {
     expect(wantsAssemblySequence("Show how to install RAM into a server")).toBe(true);
     expect(wantsAssemblySequence("How do I connect a monitor to a server?")).toBe(true);
     expect(wantsAssemblySequence("How do I connect an app to a server?")).toBe(false);
+    expect(wantsAssemblySequence("How do I build a 3D CAD model of a bracket?")).toBe(false);
+    expect(wantsAssemblySequence("How do I build an FEA mesh for a wing?")).toBe(false);
+    expect(wantsAssemblySequence("From this CAD drawing, show how to attach the camera to the board")).toBe(true);
+    expect(wantsAssemblySequence("Connect the CAD model to the FEA solver")).toBe(false);
+    expect(wantsAssemblySequence("Set up a thermal simulation for the heat sink")).toBe(false);
   });
 
   it("sends bounded lesson data and returns validated physical primitives", async () => {
