@@ -704,8 +704,8 @@ app.whenReady().then(() => {
       let replans = 0;
       try {
         await new Promise((resolve) => setTimeout(resolve, 160));
-        const targetApp = await readComputerTarget(script, task, controller.signal);
-        await activateComputerTarget(script, targetApp, controller.signal);
+        const targetApp = await readComputerTarget(script, task, display.bounds, controller.signal);
+        await activateComputerTarget(script, targetApp, display.bounds, controller.signal);
         const initialScreen = await captureDisplay(displayId, captured.thumbnailSize);
         if (!initialScreen) throw new Error("Ren could not view the requested app after bringing it forward.");
         image = initialScreen.toDataURL();
@@ -716,7 +716,7 @@ app.whenReady().then(() => {
           if (controller.signal.aborted || voicePaused) throw new Error("Ren stopped operating the app.");
           if (!screen.getAllDisplays().some((item) => item.id === displayId && JSON.stringify(item.bounds) === JSON.stringify(display.bounds))) throw new Error("The display changed during this task.");
           const action = await planComputerAction(task, image, actions, credentials, controller.signal);
-          await activateComputerTarget(script, targetApp, controller.signal);
+          await activateComputerTarget(script, targetApp, display.bounds, controller.signal);
           const beforeAction = await captureDisplay(displayId, captured.thumbnailSize);
           if (!beforeAction) throw new Error("Ren could not recheck the screen before acting.");
           if (!isSameStableScreen(firstSample, secondSample, motionSample(beforeAction))) {

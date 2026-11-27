@@ -14,6 +14,13 @@ struct VisibleApp {
     let pid: pid_t
     let name: String
 }
+let displayFrame: CGRect? = {
+    guard let bounds = value["screenBounds"] as? [String: Any],
+          let x = bounds["x"] as? NSNumber, let y = bounds["y"] as? NSNumber,
+          let width = bounds["width"] as? NSNumber, let height = bounds["height"] as? NSNumber,
+          width.doubleValue > 0, height.doubleValue > 0 else { return nil }
+    return CGRect(x: x.doubleValue, y: y.doubleValue, width: width.doubleValue, height: height.doubleValue)
+}()
 func visibleApps() -> [VisibleApp] {
     let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
     var apps: [VisibleApp] = []
@@ -27,6 +34,11 @@ func visibleApps() -> [VisibleApp] {
               owner != "Ren", owner != "ChatGPT Computer Use Software Cursor",
               !(window[kCGWindowName as String] as? String ?? "").contains("Computer Use"),
               let number = window[kCGWindowOwnerPID as String] as? NSNumber else { continue }
+        if let displayFrame {
+            guard let x = rawBounds["X"] as? NSNumber, let y = rawBounds["Y"] as? NSNumber else { continue }
+            let overlap = CGRect(x: x.doubleValue, y: y.doubleValue, width: width.doubleValue, height: height.doubleValue).intersection(displayFrame)
+            if overlap.isNull || overlap.width < 80 || overlap.height < 80 { continue }
+        }
         let pid = pid_t(number.intValue)
         guard let app = NSRunningApplication(processIdentifier: pid), let bundle = app.bundleIdentifier,
               !seen.contains(bundle) else { continue }
