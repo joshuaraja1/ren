@@ -4,6 +4,7 @@ import os
 import sys
 
 import FreeCAD as App
+import Part
 
 
 def main():
@@ -49,6 +50,11 @@ def main():
     doc.Label = spec["title"]
     doc.recompute()
     doc.saveAs(output_path)
+    step_path = os.path.splitext(output_path)[0] + ".step"
+    Part.export([current], step_path)
+    if not os.path.isfile(step_path) or os.path.getsize(step_path) < 1_000:
+        raise ValueError("FreeCAD did not export a visible STEP preview")
+    print("REN_CAD_STEP", step_path, flush=True)
     print("REN_CAD_SAVED", output_path, flush=True)
     App.closeDocument(doc.Name)
 

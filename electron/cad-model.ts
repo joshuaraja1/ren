@@ -98,6 +98,7 @@ export async function createFreeCadModel(spec: CadSpec, outputDirectory: string,
   const validated = validateCadSpec(spec);
   await mkdir(outputDirectory, { recursive: true, mode: 0o700 });
   const output = join(outputDirectory, `${safeStem(validated.title)}-${randomUUID().slice(0, 8)}.FCStd`);
+  const preview = output.replace(/\.FCStd$/, ".step");
   const work = await mkdtemp(join(tmpdir(), "ren-cad-"));
   try {
     const input = join(work, "plan.json");
@@ -105,9 +106,11 @@ export async function createFreeCadModel(spec: CadSpec, outputDirectory: string,
     const { stdout, stderr } = await execFileAsync(command, [scriptPath], { timeout: 60_000, maxBuffer: 2_000_000, windowsHide: true, signal, env: { ...process.env, REN_CAD_INPUT: input, REN_CAD_OUTPUT: output } });
     if (!stdout.includes("REN_CAD_SAVED") || !stdout.includes("REN_CAD_VALID")) throw new Error(`FreeCAD did not validate the model. ${(stderr + stdout).slice(0, 900)}`);
     if ((await stat(output)).size < 1_000) throw new Error("FreeCAD saved an empty model.");
+    if ((await stat(preview)).size < 1_000) throw new Error("FreeCAD saved an empty CAD preview.");
     return output;
   } catch (error) {
     await rm(output, { force: true });
+    await rm(preview, { force: true });
     throw error;
   } finally {
     await rm(work, { recursive: true, force: true });

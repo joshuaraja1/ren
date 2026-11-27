@@ -53,6 +53,7 @@ describe("native CAD model creation", () => {
       const output = await createFreeCadModel(bracket, directory, script);
       expect(output.endsWith(".FCStd")).toBe(true);
       expect((await stat(output)).size).toBeGreaterThan(1_000);
+      expect((await stat(output.replace(/\.FCStd$/, ".step"))).size).toBeGreaterThan(1_000);
       const inspect = join(process.cwd(), "scripts", "freecad-inspect.py");
       const { stdout, stderr } = await execFileAsync(freeCadCommand()!, [inspect], { env: { ...process.env, REN_CAD_VERIFY: output } });
       const match = stdout.match(/REN_INSPECT\s+([\d.]+)\s+(\d+)\s+(\d+)/);
@@ -61,6 +62,10 @@ describe("native CAD model creation", () => {
       expect(Number(match![1])).toBeLessThan(15_000);
       expect(match![2]).toBe("1");
       expect(Number(match![3])).toBeGreaterThanOrEqual(7);
+      const step = stdout.match(/REN_STEP\s+([\d.]+)\s+(\d+)/);
+      expect(step, stdout + stderr).not.toBeNull();
+      expect(Number(step![1])).toBeCloseTo(Number(match![1]), 4);
+      expect(step![2]).toBe("1");
     } finally { await rm(directory, { recursive: true, force: true }); }
   });
 });

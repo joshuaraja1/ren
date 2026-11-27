@@ -3,6 +3,8 @@ import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, M
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { askTeacher, type Annotation } from "./provider.js";
 import { feedWake, startWake, stopWake, wakeAvailable } from "./wake.js";
 import { feedSpeech, finishSpeech, speechAvailable, startSpeech, stopSpeech } from "./speech.js";
@@ -41,6 +43,7 @@ type Illustration = { image: string; preview: boolean; width: number; height: nu
 type ActiveVisual = { lesson: VisualLesson; displayId: number; createdAt: number; referenceImage?: string };
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
+const execFileAsync = promisify(execFile);
 let mainWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -663,9 +666,19 @@ app.whenReady().then(() => {
         const script = app.isPackaged ? join(process.resourcesPath, "freecad-create.py") : join(currentDirectory, "..", "scripts", "freecad-create.py");
         const output = await createFreeCadModel(spec, join(app.getPath("documents"), "Ren CAD Models"), script, undefined, controller.signal);
         if (controller.signal.aborted || voicePaused) throw new Error("The CAD request was cancelled. A new model file may have been saved.");
-        const openError = await shell.openPath(output);
+        const preview = output.replace(/\.FCStd$/, ".step");
+        let openError = "";
+        if (process.platform === "darwin" && existsSync("/Applications/FreeCAD.app")) {
+          try {
+            await execFileAsync("/usr/bin/open", ["-a", "/Applications/FreeCAD.app", preview], { timeout: 15_000 });
+          } catch (error) {
+            openError = error instanceof Error ? error.message : String(error);
+          }
+        } else {
+          openError = await shell.openPath(preview);
+        }
         const assumptions = spec.assumptions.length ? ` Assumed: ${spec.assumptions.slice(0, 3).join("; ")}.` : "";
-        return { answer: `I created an editable FreeCAD model named ${spec.title}.${openError ? ` I saved it at ${output}, but could not open it: ${openError}.` : " It is open in FreeCAD."}${assumptions} Check the dimensions and fit before using it for fabrication or analysis.`, annotations: [], followUps: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false, provider: "vision" as const };
+        return { answer: `I saved an editable FreeCAD model named ${spec.title} at ${output}.${openError ? ` I could not open its STEP view: ${openError}.` : " I asked FreeCAD to open its STEP view so you can see the solid."}${assumptions} Check the dimensions and fit before using it for fabrication or analysis.`, annotations: [], followUps: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false, provider: "vision" as const };
       } finally {
         if (activeAskRequest?.controller === controller) activeAskRequest = null;
       }
