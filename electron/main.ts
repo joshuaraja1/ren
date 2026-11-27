@@ -34,6 +34,8 @@ import { consumeAgentJobCapture } from "./agent-job-capture.js";
 import { wantsCurrentScreen, wantsSpatialGuidance } from "./screen-intent.js";
 import { createFreeCadModel, planCadModel, wantsCadCreation } from "./cad-model.js";
 import { wantsToDelegateCurrentTask, wantsGuidedWorkflow } from "./guided-workflow.js";
+import { performComputerAction, planComputerAction, readComputerTarget, type ComputerAction } from "./computer-operator.js";
+import { wantsComputerExecution } from "./computer-intent.js";
 
 type Illustration = { image: string; preview: boolean; width: number; height: number; registration?: ImageRegistration };
 type ActiveVisual = { lesson: VisualLesson; displayId: number; createdAt: number; referenceImage?: string };
@@ -58,6 +60,7 @@ let activeAskRequest: ActiveAskRequest | null = null;
 let imageRequestBusy = false;
 let imageRequestedFor: VisualLesson | null = null;
 let pendingVisualDecision = false;
+let computerOperatorBusy = false;
 let voiceShortcutActive = false;
 const speechOutputControllers = new Map<string, AbortController>();
 let visualGeneration = 0;
@@ -667,6 +670,85 @@ app.whenReady().then(() => {
         return { answer: `I created an editable FreeCAD model named ${spec.title}.${openError ? ` I saved it at ${output}, but could not open it: ${openError}.` : " It is open in FreeCAD."}${assumptions} Check the dimensions and fit before using it for fabrication or analysis.`, annotations: [], followUps: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false, provider: "vision" as const };
       } finally {
         if (activeAskRequest?.controller === controller) activeAskRequest = null;
+      }
+    }
+    if (wantsComputerExecution(value.question, value.history)) {
+      if (computerOperatorBusy) throw new Error("Ren is already working in an app.");
+      if (!value.contextToken) throw new Error("Invalid screen action request.");
+      const captured = lastCaptureData?.token === value.contextToken ? lastCaptureData : null;
+      if (!captured?.frames[0]) throw new Error("Screen context expired. Ask again.");
+      const displayId = captureSession.consume(value.contextToken);
+      lastCaptureData = null;
+      const display = screen.getAllDisplays().find((item) => item.id === displayId);
+      if (!display) throw new Error("The display changed. Ask again.");
+      if (process.platform !== "darwin") throw new Error("App control is currently available on macOS only.");
+      if (!systemPreferences.isTrustedAccessibilityClient(false)) throw new Error("Enable Accessibility for Ren in macOS Settings to let it click and type in other apps.");
+      const credentials = await visionCredentials();
+      if (!credentials) throw new Error("Connect a vision model in Ren settings to operate another app.");
+      const originalTask = wantsToDelegateCurrentTask(value.question)
+        ? value.history.find((turn) => turn.role === "user" && wantsGuidedWorkflow(turn.content))?.content
+        : undefined;
+      if (wantsToDelegateCurrentTask(value.question) && !originalTask) return { answer: "Tell me which task you want me to do in the visible app.", annotations: [], followUps: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false, provider: "vision" as const };
+      const task = originalTask ? `${originalTask}\nThe user now asks Ren to do this task for them.` : value.question;
+      const controller = new AbortController();
+      activeAskRequest = { token: value.contextToken, controller };
+      computerOperatorBusy = true;
+      const mainWasVisible = Boolean(mainWindow?.isVisible());
+      mainWindow?.hide();
+      overlayWindow?.hide();
+      const script = app.isPackaged ? join(process.resourcesPath, "ren-input.swift") : join(currentDirectory, "..", "scripts", "ren-input.swift");
+      let image = captured.frames[0];
+      let firstSample = captured.firstSample;
+      let secondSample = captured.secondSample;
+      const actions: ComputerAction[] = [];
+      let unchanged = 0;
+      let waits = 0;
+      let replans = 0;
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 160));
+        const targetApp = await readComputerTarget(script, controller.signal);
+        for (let step = 0; step < 24; step++) {
+          if (controller.signal.aborted || voicePaused) throw new Error("Ren stopped operating the app.");
+          if (!screen.getAllDisplays().some((item) => item.id === displayId && JSON.stringify(item.bounds) === JSON.stringify(display.bounds))) throw new Error("The display changed during this task.");
+          const action = await planComputerAction(task, image, actions, credentials, controller.signal);
+          const beforeAction = await captureDisplay(displayId, captured.thumbnailSize);
+          if (!beforeAction) throw new Error("Ren could not recheck the screen before acting.");
+          if (!isSameStableScreen(firstSample, secondSample, motionSample(beforeAction))) {
+            if (++replans > 2) throw new Error("The screen changed while Ren was choosing an action, so it stopped.");
+            image = beforeAction.toDataURL();
+            firstSample = motionSample(beforeAction);
+            await new Promise((resolve) => setTimeout(resolve, 120));
+            secondSample = motionSample(await captureDisplay(displayId, captured.thumbnailSize) ?? beforeAction);
+            continue;
+          }
+          replans = 0;
+          if (action.action === "done") return { answer: action.summary || "The requested task is complete on screen.", annotations: [], followUps: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false, provider: "vision" as const };
+          if (action.action === "blocked") return { answer: `I stopped here: ${action.reason}`, annotations: [], followUps: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false, provider: "vision" as const };
+          if (JSON.stringify(actions.at(-1)) === JSON.stringify(action) && JSON.stringify(actions.at(-2)) === JSON.stringify(action)) throw new Error("Ren repeated the same screen action without progress, so it stopped.");
+          if (action.action === "wait") {
+            if (++waits > 3) throw new Error("The app did not become ready, so Ren stopped.");
+            await new Promise((resolve) => setTimeout(resolve, 800));
+          } else {
+            waits = 0;
+            await performComputerAction(action, display.bounds, script, targetApp, controller.signal);
+            await new Promise((resolve) => setTimeout(resolve, 350));
+          }
+          actions.push(action);
+          const next = await captureDisplay(displayId, captured.thumbnailSize);
+          if (!next) throw new Error("Ren could not verify the screen after acting.");
+          const nextImage = next.toDataURL();
+          unchanged = nextImage === image ? unchanged + 1 : 0;
+          if (unchanged >= 3) throw new Error("The screen did not change after Ren's actions, so it stopped.");
+          image = nextImage;
+          firstSample = motionSample(next);
+          await new Promise((resolve) => setTimeout(resolve, 120));
+          secondSample = motionSample(await captureDisplay(displayId, captured.thumbnailSize) ?? next);
+        }
+        return { answer: "I stopped after 24 screen actions. The task may be unfinished; I did not assume the remaining steps succeeded.", annotations: [], followUps: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false, provider: "vision" as const };
+      } finally {
+        computerOperatorBusy = false;
+        if (activeAskRequest?.controller === controller) activeAskRequest = null;
+        if (mainWasVisible && !voicePaused) mainWindow?.showInactive();
       }
     }
     const useScreen = wantsCurrentScreen(value.question, value.history);

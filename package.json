@@ -72,6 +72,10 @@
     ],
     "extraResources": [
       {
+        "from": "scripts/ren-input.swift",
+        "to": "ren-input.swift"
+      },
+      {
         "from": "scripts/freecad-create.py",
         "to": "freecad-create.py"
       },

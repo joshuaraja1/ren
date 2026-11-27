@@ -23,6 +23,8 @@ describe("screen context routing", () => {
     expect(wantsCurrentScreen("Create a CAD model of this object")).toBe(true);
     expect(wantsCurrentScreen("Next step", [{ role: "user", content: "Walk me through CAD in FreeCAD" }, { role: "assistant", content: "Select the sketch tool." }])).toBe(true);
     expect(wantsCurrentScreen("Next step", [{ role: "user", content: "Tell me a joke" }])).toBe(false);
+    expect(wantsCurrentScreen("Click the visible button for me")).toBe(true);
+    expect(wantsCurrentScreen("Do it for me", [{ role: "user", content: "Walk me through meshing this part" }])).toBe(true);
   });
 
   it("only requests spatial guidance for direct pointing requests", () => {

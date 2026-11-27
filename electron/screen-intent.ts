@@ -1,5 +1,6 @@
 import { wantsVisualCreation } from "./visual-intent.js";
 import { continuesGuidedWorkflow, hasGuidedWorkflowContext, wantsGuidedWorkflow, wantsToDelegateCurrentTask } from "./guided-workflow.js";
+import { wantsComputerExecution } from "./computer-intent.js";
 
 const explicitScreen = /\b(?:screen|screenshot|display|cursor|pointer|window|webpage|browser tab|photo|picture|image|video|visible|on[- ]screen|this app|this page|this software|this program|in (?:the|this) (?:(?:cad|fea|fem) )?(?:app|software|program)|overlay)\b/i;
 const referencedVisual = /\b(?:this|that|these|those)\s+(?:part|diagram|chart|graph|button|menu|icon|object|region|area|component|drawing)\b/i;
@@ -10,6 +11,7 @@ const guidedScreenSteps = /\b(?:show me how|walk me through|guide me through)\b[
 export function wantsCurrentScreen(question: string, history: { role: "user" | "assistant"; content: string }[] = []) {
   const clean = question.trim();
   if ((continuesGuidedWorkflow(clean) || wantsToDelegateCurrentTask(clean)) && hasGuidedWorkflowContext(history)) return true;
+  if (wantsComputerExecution(clean, history)) return true;
   if (wantsGuidedWorkflow(clean)) return true;
   if (/\b(?:cad|freecad|parametric)\b[^.!?]{0,100}\b(?:this|that|on (?:my|the) screen)\b/i.test(clean)) return true;
   if (wantsVisualCreation(clean) || explicitScreen.test(clean) || referencedVisual.test(clean) || pointingQuestion.test(clean)) return true;
