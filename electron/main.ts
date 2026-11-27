@@ -98,7 +98,6 @@ function sendOverlayIllustration(value: Illustration | null) {
 
 const collapsedSize = { width: 190, height: 38 };
 const expandedSize = { width: 475, height: 620 };
-let lastPanelCollapseAt = 0;
 
 function onboardingMarkerPath() { return join(app.getPath("userData"), "onboarding-complete"); }
 function hasCompletedOnboarding() { return existsSync(onboardingMarkerPath()); }
@@ -544,7 +543,6 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("ren:set-expanded", (event, expanded: unknown) => {
     requireMainRenderer(event);
-    if (expanded === false) lastPanelCollapseAt = Date.now();
     positionMainWindow(expanded === true);
     if (expanded === true) mainWindow?.showInactive();
   });
@@ -981,7 +979,10 @@ app.whenReady().then(() => {
   });
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
-    else if (Date.now() - lastPanelCollapseAt > 800) mainWindow?.webContents.send("ren:open-home");
+    else {
+      positionMainWindow(false);
+      mainWindow?.showInactive();
+    }
   });
 });
 
