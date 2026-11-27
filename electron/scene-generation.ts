@@ -28,6 +28,21 @@ function matchesPiAttachment(scene: SceneSpec, template: SceneSpec): boolean {
     && Math.abs(cable.position[2] - module.position[2]) < 2);
 }
 
+/** Reject an obviously unrelated subject before showing generated geometry. */
+export function matchesLessonSubject(scene: SceneSpec, lesson: VisualLesson): boolean {
+  const categories = [
+    /\b(?:desktop|computer|pc|laptop|raspberry\s*pi|motherboard)\b/i,
+    /\b(?:phone|smartphone|handset|cellular|iphone)\b/i,
+    /\b(?:bicycle|bike|cycle)\b/i,
+    /\b(?:lamp|light fixture)\b/i,
+    /\b(?:aircraft|airplane|aeroplane|jet|f-?35)\b/i,
+    /\b(?:turbine|generator)\b/i,
+  ];
+  const titleCategory = categories.findIndex((pattern) => pattern.test(lesson.title));
+  const sceneCategory = categories.findIndex((pattern) => pattern.test(scene.subject));
+  return titleCategory < 0 || sceneCategory < 0 || titleCategory === sceneCategory;
+}
+
 export async function generateSceneSpec(
   lesson: VisualLesson,
   question: string,
@@ -74,7 +89,7 @@ export async function generateSceneSpec(
     let parsed: unknown;
     try { parsed = JSON.parse(content); } catch { parsed = null; }
     const scene = validateSceneSpec(parsed, lesson.parts.map((part) => part.id));
-    if (scene && (!template || matchesPiAttachment(scene, template))
+    if (scene && matchesLessonSubject(scene, lesson) && (!template || matchesPiAttachment(scene, template))
       && (!wantsAssemblySequence(question) || scene.assembly)) return template?.assembly ? { ...scene, assembly: template.assembly } : scene;
   }
   throw new Error("Ren could not construct a coherent 3D model of that subject. Try naming the main parts.");

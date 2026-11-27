@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { generateSceneSpec, wantsAssemblyAnimation, wantsAssemblySequence, wantsSubject3D } from "./scene-generation.js";
+import { generateSceneSpec, matchesLessonSubject, wantsAssemblyAnimation, wantsAssemblySequence, wantsSubject3D } from "./scene-generation.js";
 import { raspberryPiCameraTemplate } from "./scene-templates.js";
 import { validateVisualLesson } from "./visual-lesson.js";
 
@@ -23,6 +23,20 @@ const model = {
 const reply = (value: unknown) => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(value) } }] }), { status: 200 });
 
 describe("generic subject model generation", () => {
+  it("rejects a geometrically valid model of the wrong subject", () => {
+    const desktop = { ...lesson, title: "Desktop computer assembly" };
+    expect(matchesLessonSubject({ ...model, subject: "Bicycle front wheel", fidelity: "conceptual" }, desktop)).toBe(false);
+    expect(matchesLessonSubject({ ...model, subject: "Open desktop computer tower", fidelity: "conceptual" }, desktop)).toBe(true);
+    expect(matchesLessonSubject({ ...model, subject: "Cellular handset", fidelity: "conceptual" }, { ...lesson, title: "Mobile phone internals" })).toBe(true);
+  });
+
+  it("retries an unrelated generated object before displaying a model", async () => {
+    const fetcher = vi.fn(async () => reply(fetcher.mock.calls.length === 1
+      ? { ...model, subject: "Bicycle front wheel" } : model)) as unknown as typeof fetch;
+    const result = await generateSceneSpec(lesson, "Show a 3D phone", credentials, new AbortController().signal, fetcher);
+    expect(result.subject).toBe("Classic cell phone");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
   it("recognizes explicit 3D requests without treating ordinary 2D requests as 3D", () => {
     expect(wantsSubject3D("Make me a rotatable model of this phone")).toBe(true);
     expect(wantsSubject3D("Show a three-dimensional heart diagram")).toBe(true);
