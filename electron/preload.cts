@@ -22,21 +22,29 @@ contextBridge.exposeInMainWorld("ren", {
   wakeStart: (sampleRate: number) => ipcRenderer.invoke("ren:wake-start", sampleRate),
   wakeFeed: (samples: number[]) => ipcRenderer.invoke("ren:wake-feed", samples),
   wakeStop: () => ipcRenderer.invoke("ren:wake-stop"),
+  voiceDiagnostic: (stage: string, requestId: string) => ipcRenderer.send("ren:voice-diagnostic", stage, requestId),
   speechAvailable: () => ipcRenderer.invoke("ren:speech-available"),
   speechStart: (sampleRate: number) => ipcRenderer.invoke("ren:speech-start", sampleRate),
   speechFeed: (samples: number[]) => ipcRenderer.invoke("ren:speech-feed", samples),
   speechFinish: () => ipcRenderer.invoke("ren:speech-finish"),
   speechStop: () => ipcRenderer.invoke("ren:speech-stop"),
+  onSpeechInput: (listener: (input: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, input: unknown) => listener(input);
+    ipcRenderer.on("ren:speech-input", handler);
+    return () => ipcRenderer.removeListener("ren:speech-input", handler);
+  },
   deepgramStatus: () => ipcRenderer.invoke("ren:deepgram-status"),
   saveDeepgramKey: (key: string) => ipcRenderer.invoke("ren:deepgram-save", key),
   clearDeepgramKey: () => ipcRenderer.invoke("ren:deepgram-clear"),
   speak: (id: string, text: string) => ipcRenderer.invoke("ren:speak", id, text),
+  cancelSpeech: (id: string) => ipcRenderer.invoke("ren:speak-cancel", id),
   onSpeechData: (listener: (data: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: unknown) => listener(data);
     ipcRenderer.on("ren:speech-data", handler);
     return () => ipcRenderer.removeListener("ren:speech-data", handler);
   },
   ask: (request: unknown) => ipcRenderer.invoke("ren:ask", request),
+  cancelAsk: (contextToken?: string) => ipcRenderer.invoke("ren:ask-cancel", contextToken),
   clearAnnotations: () => ipcRenderer.invoke("ren:clear-annotations"),
   generateIllustration: (automatic?: boolean) => ipcRenderer.invoke("ren:generate-illustration", automatic === true),
   onIllustration: (listener: (image: unknown) => void) => {
@@ -54,6 +62,7 @@ contextBridge.exposeInMainWorld("ren", {
     ipcRenderer.on("ren:visual-lesson", handler);
     return () => ipcRenderer.removeListener("ren:visual-lesson", handler);
   },
+  overlayReady: () => ipcRenderer.send("ren:overlay-ready"),
   onOrbitPointer: (listener: (point: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, point: unknown) => listener(point);
     ipcRenderer.on("ren:orbit-pointer", handler);
@@ -73,6 +82,11 @@ contextBridge.exposeInMainWorld("ren", {
     const handler = () => listener();
     ipcRenderer.on("ren:open-panel", handler);
     return () => ipcRenderer.removeListener("ren:open-panel", handler);
+  },
+  onOpenHome: (listener: () => void) => {
+    const handler = () => listener();
+    ipcRenderer.on("ren:open-home", handler);
+    return () => ipcRenderer.removeListener("ren:open-home", handler);
   },
   voiceShortcutAvailable: () => ipcRenderer.invoke("ren:voice-shortcut-available"),
   voiceModeStatus: () => ipcRenderer.invoke("ren:voice-mode"),

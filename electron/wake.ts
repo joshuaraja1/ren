@@ -33,13 +33,14 @@ export function startWake(sampleRate: number) {
       featConfig: { sampleRate: 16000, featureDim: 80 },
       modelConfig: {
         transducer: { encoder: join(model, "encoder.onnx"), decoder: join(model, "decoder.onnx"), joiner: join(model, "joiner.onnx") },
-        tokens: join(model, "tokens.txt"), numThreads: 2, provider: "cpu", debug: 0,
+        tokens: join(model, "tokens.txt"), numThreads: 1, provider: "cpu", debug: 0,
       },
       keywordsFile: join(model, "keywords.txt"),
-      keywordsThreshold: 0.4,
+      keywordsThreshold: 0.3,
     }) as Spotter;
     stream = spotter.createStream();
     resampler = sampleRate === 16000 ? null : new sherpa.LinearResampler(sampleRate, 16000) as Resampler;
+    lastWake = 0;
     return true;
   } catch {
     spotter = null; stream = null; resampler = null;
@@ -62,4 +63,4 @@ export function feedWake(samples: unknown) {
   return true;
 }
 
-export function stopWake() { spotter = null; stream = null; resampler = null; }
+export function stopWake() { spotter = null; stream = null; resampler = null; lastWake = 0; }

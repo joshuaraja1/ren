@@ -6,8 +6,10 @@ type ActiveSpeech = {
   socket: WebSocket;
   budget: RealtimeAudioBudget;
   transcript: string;
+  endOfTurn: boolean;
   finish?: { resolve(value: string): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
 };
+export type SpeechInputEvent = { transcript?: string; error?: string };
 let active: ActiveSpeech | null = null;
 let speechGeneration = 0;
 const rates = new Set([8000, 16000, 24000, 44100, 48000]);
@@ -26,7 +28,7 @@ function closeSpeech(current: ActiveSpeech, error?: Error) {
   }
 }
 
-export async function startSpeech(sampleRate: number) {
+export async function startSpeech(sampleRate: number, onEvent?: (event: SpeechInputEvent) => void) {
   if (active || !rates.has(sampleRate)) return false;
   const generation = speechGeneration;
   const key = await deepgramKey();
@@ -35,10 +37,10 @@ export async function startSpeech(sampleRate: number) {
   url.searchParams.set("model", "flux-general-en");
   url.searchParams.set("encoding", "linear16");
   url.searchParams.set("sample_rate", String(sampleRate));
-  url.searchParams.set("eot_threshold", "1.0");
-  url.searchParams.set("eot_timeout_ms", "60000");
+  url.searchParams.set("eot_threshold", "0.7");
+  url.searchParams.set("eot_timeout_ms", "5000");
   const socket = new WebSocket(url, { headers: { Authorization: `Token ${key}` }, handshakeTimeout: 10_000 });
-  const current: ActiveSpeech = { socket, budget: new RealtimeAudioBudget(sampleRate), transcript: "" };
+  const current: ActiveSpeech = { socket, budget: new RealtimeAudioBudget(sampleRate), transcript: "", endOfTurn: false };
   active = current;
   socket.on("message", (data) => {
     if (active !== current) return;
@@ -46,12 +48,20 @@ export async function startSpeech(sampleRate: number) {
       const message = JSON.parse(String(data)) as { type?: string; event?: string; transcript?: string };
       if (message.type === "TurnInfo" && typeof message.transcript === "string") {
         if (message.transcript.trim()) current.transcript = message.transcript;
-        if (message.event === "EndOfTurn" && current.finish) closeSpeech(current);
+        if (message.event === "EndOfTurn") {
+          current.endOfTurn = true;
+          if (current.finish) closeSpeech(current);
+          else if (current.transcript.trim()) onEvent?.({ transcript: current.transcript.trim() });
+        }
+      } else if (message.type === "FatalError") {
+        const error = new Error("Deepgram stopped dictation. Check your voice connection and key.");
+        onEvent?.({ error: error.message });
+        closeSpeech(current, error);
       }
     } catch { /* Ignore malformed provider events. */ }
   });
-  socket.on("error", () => { if (active === current) closeSpeech(current, new Error("Deepgram connection failed. Check your key and network.")); });
-  socket.on("close", () => { if (active === current) closeSpeech(current, new Error("Deepgram disconnected during dictation.")); });
+  socket.on("error", () => { if (active === current) { const error = new Error("Deepgram connection failed. Check your key and network."); onEvent?.({ error: error.message }); closeSpeech(current, error); } });
+  socket.on("close", () => { if (active === current) { const error = new Error("Deepgram disconnected during dictation."); onEvent?.({ error: error.message }); closeSpeech(current, error); } });
   try {
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("Deepgram connection timed out.")), 10_000);
@@ -65,8 +75,10 @@ export async function startSpeech(sampleRate: number) {
 
 export async function feedSpeech(samples: unknown) {
   const current = active;
-  if (!current || current.socket.readyState !== WebSocket.OPEN || !Array.isArray(samples) || samples.length === 0 || samples.length > 8192 || !samples.every((value) => typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= 1) || !current.budget.accept(samples.length)) return false;
-  if (current.socket.bufferedAmount > 1_000_000) return false;
+  if (!current || current.socket.readyState !== WebSocket.OPEN) throw new Error("The voice connection closed while Ren was listening. Please try again.");
+  if (!Array.isArray(samples) || samples.length === 0 || samples.length > 8192 || !samples.every((value) => typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= 1)) throw new Error("Ren received invalid microphone audio. Please try again.");
+  if (!current.budget.accept(samples.length)) throw new Error("Microphone audio arrived faster than Ren could stream it. Please try again.");
+  if (current.socket.bufferedAmount > 1_000_000) throw new Error("The voice connection could not keep up with microphone audio. Please try again.");
   const pcm = Buffer.allocUnsafe(samples.length * 2);
   samples.forEach((sample, index) => pcm.writeInt16LE(Math.round(sample < 0 ? sample * 32768 : sample * 32767), index * 2));
   current.socket.send(pcm);
@@ -76,6 +88,7 @@ export async function feedSpeech(samples: unknown) {
 export async function finishSpeech() {
   const current = active;
   if (!current || current.socket.readyState !== WebSocket.OPEN) return "";
+  if (current.endOfTurn) { const transcript = current.transcript.trim(); closeSpeech(current); return transcript; }
   return new Promise<string>((resolve, reject) => {
     const timer = setTimeout(() => closeSpeech(current), 8_000);
     current.finish = { resolve, reject, timer };

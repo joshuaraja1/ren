@@ -2,9 +2,10 @@ import "dotenv/config";
 import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, screen, session, shell, systemPreferences, Tray } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { askTeacher, type Annotation } from "./provider.js";
 import { feedWake, startWake, stopWake, wakeAvailable } from "./wake.js";
+import { recordVoiceStage } from "./voice-diagnostics.js";
 import { feedSpeech, finishSpeech, speechAvailable, startSpeech, stopSpeech } from "./speech.js";
 import { clearDeepgramKey, deepgramStatus, saveDeepgramKey } from "./deepgram-settings.js";
 import { streamWithDeepgram } from "./deepgram-tts.js";
@@ -18,22 +19,26 @@ import { hasMeaningfulMotion } from "./frame-motion.js";
 import { isSameStableScreen } from "./screen-continuity.js";
 import { canPlaceSpatialVisual } from "./visual-safety.js";
 import { generateIllustration, imageManifest, imagePrompt } from "./image-render.js";
-import { generateSceneSpec } from "./scene-generation.js";
+import { generateSceneSpec, wantsAssemblyAnimation, wantsAssemblySequence } from "./scene-generation.js";
 import { generateHostedIllustration } from "./hosted-image-render.js";
 import { filterOpaquePositions, locateImageParts, type ImageRegistration } from "./image-registration.js";
 import { validateVisualLesson } from "./visual-lesson.js";
-import { likelyVisualFollowUp, requestedVisualDimension, wantsPriorVisualIn3D, wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
+import { likelyVisualFollowUp, requestedVisualDimension, wantsPriorAssemblyGuide, wantsPriorVisualIn3D, wantsReferenceRecreation, wantsVisualCreation } from "./visual-intent.js";
 import { centerRequestedLesson } from "./visual-presentation.js";
 import { answerForInteractiveScene, interactiveSceneFor, tagRequestedInteractiveScene } from "./interactive-scene.js";
 import { CaptureSession } from "./capture-session.js";
+import { cancelActiveAsk, type ActiveAskRequest } from "./ask-cancellation.js";
 import { requestMacScreenCaptureAccess } from "./mac-screen-permission.js";
 import type { VisualLesson } from "./visual-lesson.js";
 import { AgentJobManager } from "./agent-jobs.js";
 import { consumeAgentJobCapture } from "./agent-job-capture.js";
+import { shouldUseCurrentScreen, wantsCurrentScreen, wantsSpatialGuidance } from "./screen-intent.js";
+import { wantsToDelegateCurrentTask, wantsGuidedWorkflow } from "./guided-workflow.js";
+import { activateComputerTarget, performComputerAction, planComputerAction, readComputerTarget, type ComputerAction } from "./computer-operator.js";
+import { wantsComputerExecution } from "./computer-intent.js";
 
 type Illustration = { image: string; preview: boolean; width: number; height: number; registration?: ImageRegistration };
 type ActiveVisual = { lesson: VisualLesson; displayId: number; createdAt: number; referenceImage?: string };
-type ScenePreview = { lesson: VisualLesson; displayId: number; owner: string; generation: number };
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 let mainWindow: BrowserWindow | null = null;
@@ -49,17 +54,15 @@ let circleInputActive = false;
 const captureSession = new CaptureSession();
 let lastCaptureData: { token: string; generation: number; frames: string[]; pointer: { x: number; y: number }; focus?: { x: number; y: number; width: number; height: number }; firstSample: Uint8Array; secondSample: Uint8Array; dynamicContent: boolean; thumbnailSize: { width: number; height: number } } | null = null;
 let lastVisualLesson: ActiveVisual | null = null;
-let pendingScenePreview: ScenePreview | null = null;
 let screenCaptureBusy = false;
-let pendingAnswerToken: string | null = null;
-let activeCaptureToken: string | null = null;
 let imageRenderAbort: AbortController | null = null;
-let activeAskController: AbortController | null = null;
+let activeAskRequest: ActiveAskRequest | null = null;
 let imageRequestBusy = false;
 let imageRequestedFor: VisualLesson | null = null;
 let pendingVisualDecision = false;
+let computerOperatorBusy = false;
 let voiceShortcutActive = false;
-const speechOutputControllers = new Set<AbortController>();
+const speechOutputControllers = new Map<string, AbortController>();
 let visualGeneration = 0;
 let permissionRequest: Promise<ReturnType<typeof permissionStatus>> | null = null;
 let overlayAnnotations: Annotation[] = [];
@@ -70,7 +73,6 @@ let focusOverlaySnapshot: {
   lesson: VisualLesson | null;
   illustration: Illustration | null;
   visual: ActiveVisual | null;
-  scenePreview: ScenePreview | null;
   bounds: Electron.Rectangle;
   visible: boolean;
   generation: number;
@@ -93,9 +95,9 @@ function sendOverlayIllustration(value: Illustration | null) {
 }
 
 
-const collapsedSize = { width: 236, height: 58 };
-const expandedSize = { width: 420, height: 560 };
-const voicePanelSize = { width: 300, height: 142 };
+
+const collapsedSize = { width: 190, height: 38 };
+const expandedSize = { width: 475, height: 620 };
 
 function onboardingMarkerPath() { return join(app.getPath("userData"), "onboarding-complete"); }
 function hasCompletedOnboarding() { return existsSync(onboardingMarkerPath()); }
@@ -110,19 +112,19 @@ function permissionStatus() {
   return { ready: screenAccess === "granted", microphone, screen: screenAccess, interaction: circleInputActive ? "granted" : accessibility ? "unavailable" : "not-granted" };
 }
 
-function positionMainWindow(expanded: boolean, displayId?: number, tall = false) {
+function positionMainWindow(expanded: boolean, displayId?: number) {
   if (!mainWindow) return;
   const display = (displayId && screen.getAllDisplays().find((item) => item.id === displayId))
     || (expanded ? screen.getDisplayNearestPoint(screen.getCursorScreenPoint()) : screen.getPrimaryDisplay());
   const workArea = display.workArea;
-  const size = expanded ? tall ? expandedSize : voicePanelSize : collapsedSize;
-  mainWindow.setBounds({ x: Math.round(workArea.x + (workArea.width - size.width) / 2), y: workArea.y, ...size }, true);
+  const size = expanded ? expandedSize : collapsedSize;
+  mainWindow.setBounds({ x: Math.round(workArea.x + (workArea.width - size.width) / 2), y: expanded ? workArea.y + 8 : display.bounds.y, ...size }, false);
 }
 
 function repositionMainWindow(displayId?: number) {
   const bounds = mainWindow?.getBounds();
   if (!bounds) return;
-  positionMainWindow(bounds.width !== collapsedSize.width, displayId, bounds.height === expandedSize.height);
+  positionMainWindow(bounds.width !== collapsedSize.width, displayId);
 }
 
 function createOverlayWindow() {
@@ -175,7 +177,7 @@ function requireMainRenderer(event: Electron.IpcMainInvokeEvent) {
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    ...expandedSize,
+    ...collapsedSize,
     ...(process.platform === "darwin" ? { type: "panel" as const } : {}),
     frame: false,
     transparent: true,
@@ -200,10 +202,8 @@ function createMainWindow() {
   mainWindow.setAlwaysOnTop(true, "screen-saver");
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   mainWindow.once("ready-to-show", () => {
-    const access = permissionStatus();
-    const needsOnboarding = !access.ready || (process.platform === "darwin" && access.microphone !== "granted");
-    positionMainWindow(needsOnboarding, undefined, needsOnboarding);
-    if (needsOnboarding) mainWindow?.show();
+    positionMainWindow(false);
+    if (!voicePaused) mainWindow?.showInactive();
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith("https://")) void shell.openExternal(url);
@@ -229,7 +229,8 @@ function voiceMode() { return { paused: voicePaused, alwaysOn: alwaysOnVoice }; 
 function updateTrayMenu() {
   if (!tray) return;
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: "Open Ren", click: () => mainWindow?.webContents.send("ren:open-panel") },
+    { label: "Open Ren panel", click: () => mainWindow?.webContents.send("ren:open-home") },
+    { label: "AI settings", click: () => mainWindow?.webContents.send("ren:open-panel") },
     { label: "Start voice conversation", enabled: !voicePaused, click: () => mainWindow?.webContents.send("ren:activate-voice") },
     { label: alwaysOnVoice ? "Turn always-on voice off" : "Turn always-on voice on", click: () => setAlwaysOnVoice(!alwaysOnVoice) },
     { label: voicePaused ? "Resume Ren" : "Pause Ren", click: () => setVoicePaused(!voicePaused) },
@@ -240,7 +241,6 @@ function updateTrayMenu() {
 
 function setAlwaysOnVoice(value: boolean) {
   alwaysOnVoice = value;
-  try { writeFileSync(join(app.getPath("userData"), "voice-mode.json"), JSON.stringify({ alwaysOn: value }), { mode: 0o600 }); } catch { /* session still works */ }
   updateTrayMenu();
   mainWindow?.webContents.send("ren:voice-mode", voiceMode());
 }
@@ -252,8 +252,8 @@ function setVoicePaused(value: boolean) {
     visualGeneration += 1;
     stopWake();
     stopSpeech();
-    for (const controller of speechOutputControllers) controller.abort();
-    activeAskController?.abort();
+    for (const controller of speechOutputControllers.values()) controller.abort();
+    activeAskRequest?.controller.abort();
     agentJobs.cancelAll();
     imageRenderAbort?.abort();
     imageRenderAbort = null;
@@ -267,10 +267,18 @@ function setVoicePaused(value: boolean) {
 }
 
 app.whenReady().then(() => {
-  try { alwaysOnVoice = JSON.parse(readFileSync(join(app.getPath("userData"), "voice-mode.json"), "utf8")).alwaysOn === true; } catch { /* default is wake mode */ }
+  // Hands-free listening is session-only. A relaunch must never reopen a live
+  // microphone conversation because a previous session left it enabled.
+  alwaysOnVoice = false;
   if (permissionStatus().ready && app.isPackaged) app.setLoginItemSettings({ openAtLogin: true });
   createMainWindow();
   createOverlayWindow();
+  ipcMain.on("ren:overlay-ready", (event) => {
+    if (event.sender !== overlayWindow?.webContents) return;
+    event.sender.send("ren:annotations", overlayAnnotations);
+    event.sender.send("ren:visual-lesson", overlayLesson);
+    event.sender.send("ren:illustration", overlayIllustration);
+  });
   createTray();
   agentJobs.onUpdate((snapshot) => mainWindow?.webContents.send("ren:job-update", snapshot));
   voiceShortcutActive = globalShortcut.register("CommandOrControl+Shift+Space", () => {
@@ -301,7 +309,7 @@ app.whenReady().then(() => {
   });
   let lastOrbitPointer = "";
   const orbitCursorTimer = setInterval(() => {
-    const visual = pendingScenePreview?.generation === visualGeneration ? pendingScenePreview : lastVisualLesson;
+    const visual = lastVisualLesson;
     if (!visual || visual.lesson.layout !== "centered" || !overlayWindow?.isVisible()) return;
     const display = screen.getAllDisplays().find((item) => item.id === visual.displayId);
     if (!display) return;
@@ -321,20 +329,22 @@ app.whenReady().then(() => {
       lesson: overlayLesson,
       illustration: overlayIllustration,
       visual: lastVisualLesson,
-      scenePreview: pendingScenePreview,
       bounds: overlayWindow.getBounds(),
       visible: overlayWindow.isVisible(),
       generation: visualGeneration,
     };
-    captureSession.invalidate();
-    lastCaptureData = null;
+    if (firstProgress) {
+      captureSession.invalidate();
+      lastCaptureData = null;
+    }
     const annotatingCurrentVisual = lastVisualLesson?.displayId === displayId;
     if (firstProgress && !annotatingCurrentVisual) {
       sendOverlayLesson(null);
     }
-    overlayWindow.setBounds(display.bounds);
+    const currentBounds = overlayWindow.getBounds();
+    if (currentBounds.x !== display.bounds.x || currentBounds.y !== display.bounds.y || currentBounds.width !== display.bounds.width || currentBounds.height !== display.bounds.height) overlayWindow.setBounds(display.bounds);
     sendOverlayAnnotations([{ id: "circle-focus", type: "path", points, color: "#327d87" }]);
-    overlayWindow.showInactive();
+    if (!overlayWindow.isVisible()) overlayWindow.showInactive();
   }
   function cancelFocusPath() {
     selectedFocus = null;
@@ -344,7 +354,6 @@ app.whenReady().then(() => {
     if (!snapshot) return;
     if (snapshot.generation !== visualGeneration) return;
     lastVisualLesson = snapshot.visual;
-    pendingScenePreview = snapshot.scenePreview;
     overlayWindow.setBounds(snapshot.bounds);
     if (overlayLesson !== snapshot.lesson) sendOverlayLesson(snapshot.lesson);
     if (overlayIllustration !== snapshot.illustration) sendOverlayIllustration(snapshot.illustration);
@@ -360,10 +369,6 @@ app.whenReady().then(() => {
       lastVisualLesson = null;
       sendOverlayIllustration(null);
     }
-    if (pendingScenePreview && pendingScenePreview.displayId !== displayId) {
-      visualGeneration += 1;
-      pendingScenePreview = null;
-    }
     focusOverlaySnapshot = null;
   }
   function invalidateSpatialContext() {
@@ -377,7 +382,6 @@ app.whenReady().then(() => {
     captureSession.invalidate();
     lastCaptureData = null;
     lastVisualLesson = null;
-    pendingScenePreview = null;
     sendOverlayAnnotations([]);
     sendOverlayLesson(null);
     sendOverlayIllustration(null);
@@ -392,8 +396,8 @@ app.whenReady().then(() => {
     if (process.platform === "darwin" && !systemPreferences.isTrustedAccessibilityClient(false)) return false;
     circleInputActive = startCircleInput({
       onTripleControl: () => {
-        if (voicePaused) { setVoicePaused(false); setAlwaysOnVoice(true); }
-        else setAlwaysOnVoice(!alwaysOnVoice);
+        if (voicePaused) setVoicePaused(false);
+        setAlwaysOnVoice(!alwaysOnVoice);
       },
       onSketchProgress: (displayId, points) => { if (!voicePaused) showFocusPath(displayId, points); },
       onSketchComplete: (displayId, points) => {
@@ -419,29 +423,22 @@ app.whenReady().then(() => {
       },
       onCancel: cancelFocusPath,
       onScroll: () => {
-        // The answer can finish against its captured frame. Spatial annotations
-        // are checked against the live screen after the answer returns.
-        const token = activeCaptureToken;
-        if (token && captureSession.isCurrent(token)) captureSession.invalidate();
-      },
-      onInteraction: () => {
-        // Do not cancel an explicitly requested diagram while someone browses.
-        const token = activeCaptureToken;
-        if (token && captureSession.isCurrent(token)) captureSession.invalidate();
-        // A user may keep browsing while an explicitly requested illustration renders.
-        // Display removal, a new question, and Clear drawings still cancel it.
+        // A spoken request may arrive while the user is still browsing. Keep
+        // the captured frame for the answer; fresh-frame checks below decide
+        // whether any spatial guidance is still safe to draw.
       },
     });
     return circleInputActive;
   }
-  if (permissionStatus().ready) enableCircleInput();
+  // Voice activation must remain available even if screen capture is denied.
+  enableCircleInput();
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
     callback(permission === "media" && webContents === mainWindow?.webContents);
   });
 
   ipcMain.handle("ren:permission-status", (event) => {
     requireMainRenderer(event);
-    if (!permissionRequest && permissionStatus().ready && !circleInputActive && (process.platform !== "darwin" || systemPreferences.isTrustedAccessibilityClient(false))) enableCircleInput();
+    if (!permissionRequest && !circleInputActive && (process.platform !== "darwin" || systemPreferences.isTrustedAccessibilityClient(false))) enableCircleInput();
     return permissionStatus();
   });
   ipcMain.handle("ren:vision-status", (event) => event.sender === mainWindow?.webContents ? visionStatus() : null);
@@ -469,11 +466,16 @@ app.whenReady().then(() => {
     return permissionStatus();
   });
   ipcMain.handle("ren:wake-available", () => wakeAvailable());
+  ipcMain.on("ren:voice-diagnostic", (event, stage: unknown, requestId: unknown) => {
+    if (event.sender === mainWindow?.webContents) recordVoiceStage(stage, requestId);
+  });
   ipcMain.handle("ren:wake-start", (event, sampleRate: unknown) => !voicePaused && event.sender === mainWindow?.webContents && typeof sampleRate === "number" && startWake(sampleRate));
   ipcMain.handle("ren:wake-feed", (event, samples: unknown) => !voicePaused && event.sender === mainWindow?.webContents && feedWake(samples));
   ipcMain.handle("ren:wake-stop", (event) => { if (event.sender === mainWindow?.webContents) stopWake(); });
   ipcMain.handle("ren:speech-available", (event) => event.sender === mainWindow?.webContents && speechAvailable());
-  ipcMain.handle("ren:speech-start", (event, sampleRate: unknown) => !voicePaused && event.sender === mainWindow?.webContents && typeof sampleRate === "number" && startSpeech(sampleRate));
+  ipcMain.handle("ren:speech-start", (event, sampleRate: unknown) => !voicePaused && event.sender === mainWindow?.webContents && typeof sampleRate === "number" && startSpeech(sampleRate, (input) => {
+    if (!event.sender.isDestroyed()) event.sender.send("ren:speech-input", input);
+  }));
   ipcMain.handle("ren:speech-feed", (event, samples: unknown) => !voicePaused && event.sender === mainWindow?.webContents && feedSpeech(samples));
   ipcMain.handle("ren:speech-finish", (event) => !voicePaused && event.sender === mainWindow?.webContents ? finishSpeech() : "");
   ipcMain.handle("ren:speech-stop", (event) => event.sender === mainWindow?.webContents ? stopSpeech() : undefined);
@@ -486,15 +488,33 @@ app.whenReady().then(() => {
     if (typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Invalid speech request.");
     const sender = event.sender;
     const controller = new AbortController();
-    speechOutputControllers.add(controller);
+    speechOutputControllers.set(id, controller);
     void streamWithDeepgram(value, (chunk) => {
       if (!controller.signal.aborted && !sender.isDestroyed()) sender.send("ren:speech-data", { id, chunk: Buffer.from(chunk).toString("base64") });
     }, controller.signal).then(() => {
       if (!sender.isDestroyed()) sender.send("ren:speech-data", { id, done: true });
     }).catch((reason: unknown) => {
       if (!sender.isDestroyed()) sender.send("ren:speech-data", { id, error: reason instanceof Error ? reason.message : "Deepgram speech failed." });
-    }).finally(() => { speechOutputControllers.delete(controller); });
+    }).finally(() => { if (speechOutputControllers.get(id) === controller) speechOutputControllers.delete(id); });
     return true;
+  });
+  ipcMain.handle("ren:speak-cancel", (event, id: unknown) => {
+    requireMainRenderer(event);
+    if (typeof id !== "string") return false;
+    const controller = speechOutputControllers.get(id);
+    if (!controller) return false;
+    controller.abort();
+    speechOutputControllers.delete(id);
+    return true;
+  });
+  ipcMain.handle("ren:ask-cancel", (event, contextToken: unknown) => {
+    requireMainRenderer(event);
+    const result = cancelActiveAsk(contextToken, activeAskRequest, captureSession);
+    if (result.invalidatedCapture) {
+      visualGeneration += 1;
+      overlayWindow?.hide();
+    }
+    return result.cancelled;
   });
   ipcMain.handle("ren:request-permissions", (event) => {
     requireMainRenderer(event);
@@ -514,8 +534,8 @@ app.whenReady().then(() => {
         if (canComplete) writeFileSync(onboardingMarkerPath(), new Date().toISOString(), { encoding: "utf8", mode: 0o600 });
         if (permissionStatus().ready) {
           if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: true });
-          enableCircleInput();
         }
+        enableCircleInput();
         return permissionStatus();
       } finally {
         if (wasOnTop) mainWindow?.setAlwaysOnTop(true, "screen-saver");
@@ -527,15 +547,14 @@ app.whenReady().then(() => {
     requireMainRenderer(event);
     if (process.platform === "darwin") await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${kind === "microphone" ? "Privacy_Microphone" : "Privacy_ScreenCapture"}`);
   });
-  ipcMain.handle("ren:set-expanded", (event, expanded: unknown, tall: unknown) => {
+  ipcMain.handle("ren:set-expanded", (event, expanded: unknown) => {
     requireMainRenderer(event);
-    positionMainWindow(expanded === true, undefined, tall === true);
+    positionMainWindow(expanded === true);
     if (expanded === true) mainWindow?.showInactive();
   });
   ipcMain.handle("ren:set-companion-visible", (event, visible: unknown) => {
     requireMainRenderer(event);
-    if (visible === true) mainWindow?.showInactive();
-    else if (visible === false) mainWindow?.hide();
+    if (visible === true || (visible === false && !voicePaused)) mainWindow?.showInactive();
   });
 
   ipcMain.handle("ren:list-sources", async (event) => {
@@ -567,7 +586,6 @@ app.whenReady().then(() => {
     lastCaptureData = null;
     if (!preservedVisual) { imageRenderAbort?.abort(); imageRenderAbort = null; }
     const contextToken = captureSession.issue(display.id);
-    activeCaptureToken = contextToken;
     mainWindow?.setOpacity(0);
     if (!preservedVisual) {
       sendOverlayAnnotations([]);
@@ -618,7 +636,6 @@ app.whenReady().then(() => {
     } finally {
       mainWindow?.setOpacity(1);
       if (lastCaptureData?.token === contextToken && showDuringAnswer && lastVisualLesson === preservedVisual && generation === visualGeneration) overlayWindow?.showInactive();
-      if (activeCaptureToken === contextToken) activeCaptureToken = null;
       screenCaptureBusy = false;
     }
   });
@@ -627,66 +644,200 @@ app.whenReady().then(() => {
     requireMainRenderer(event);
     if (voicePaused) throw new Error("Ren is paused. Resume it before asking.");
     const value = parseAskRequest(request);
+    if (wantsComputerExecution(value.question, value.history)) {
+      if (computerOperatorBusy) throw new Error("Ren is already working in an app.");
+      if (!value.contextToken) throw new Error("Invalid screen action request.");
+      const captured = lastCaptureData?.token === value.contextToken ? lastCaptureData : null;
+      if (!captured?.frames[0]) throw new Error("Screen context expired. Ask again.");
+      const displayId = captureSession.consume(value.contextToken);
+      lastCaptureData = null;
+      const display = screen.getAllDisplays().find((item) => item.id === displayId);
+      if (!display) throw new Error("The display changed. Ask again.");
+      if (process.platform !== "darwin") throw new Error("App control is currently available on macOS only.");
+      if (!systemPreferences.isTrustedAccessibilityClient(false)) throw new Error("Enable Accessibility for Ren in macOS Settings to let it click and type in other apps.");
+      const credentials = await visionCredentials();
+      if (!credentials) throw new Error("Connect a vision model in Ren settings to operate another app.");
+      const originalTask = wantsToDelegateCurrentTask(value.question)
+        ? value.history.find((turn) => turn.role === "user" && wantsGuidedWorkflow(turn.content))?.content
+        : undefined;
+      if (wantsToDelegateCurrentTask(value.question) && !originalTask) return { answer: "Tell me which task you want me to do in the visible app.", annotations: [], followUps: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false, provider: "vision" as const };
+      const task = originalTask ? `${originalTask}\nThe user now asks Ren to do this task for them.` : value.question;
+      const controller = new AbortController();
+      activeAskRequest = { token: value.contextToken, controller };
+      computerOperatorBusy = true;
+      const mainWasVisible = Boolean(mainWindow?.isVisible());
+      mainWindow?.hide();
+      overlayWindow?.hide();
+      const script = app.isPackaged ? join(process.resourcesPath, "ren-input.swift") : join(currentDirectory, "..", "scripts", "ren-input.swift");
+      let image = captured.frames[0];
+      let firstSample = captured.firstSample;
+      let secondSample = captured.secondSample;
+      const actions: ComputerAction[] = [];
+      let unchanged = 0;
+      let waits = 0;
+      let replans = 0;
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 160));
+        const targetApp = await readComputerTarget(script, task, display.bounds, controller.signal);
+        await activateComputerTarget(script, targetApp, display.bounds, controller.signal);
+        const initialScreen = await captureDisplay(displayId, captured.thumbnailSize);
+        if (!initialScreen) throw new Error("Ren could not view the requested app after bringing it forward.");
+        image = initialScreen.toDataURL();
+        firstSample = motionSample(initialScreen);
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        secondSample = motionSample(await captureDisplay(displayId, captured.thumbnailSize) ?? initialScreen);
+        for (let step = 0; step < 24; step++) {
+          if (controller.signal.aborted || voicePaused) throw new Error("Ren stopped operating the app.");
+          if (!screen.getAllDisplays().some((item) => item.id === displayId && JSON.stringify(item.bounds) === JSON.stringify(display.bounds))) throw new Error("The display changed during this task.");
+          const action = await planComputerAction(task, image, actions, credentials, controller.signal);
+          await activateComputerTarget(script, targetApp, display.bounds, controller.signal);
+          const beforeAction = await captureDisplay(displayId, captured.thumbnailSize);
+          if (!beforeAction) throw new Error("Ren could not recheck the screen before acting.");
+          if (!isSameStableScreen(firstSample, secondSample, motionSample(beforeAction))) {
+            if (++replans > 2) throw new Error("The screen changed while Ren was choosing an action, so it stopped.");
+            image = beforeAction.toDataURL();
+            firstSample = motionSample(beforeAction);
+            await new Promise((resolve) => setTimeout(resolve, 120));
+            secondSample = motionSample(await captureDisplay(displayId, captured.thumbnailSize) ?? beforeAction);
+            continue;
+          }
+          replans = 0;
+          if (action.action === "done") return { answer: action.summary || "The requested task is complete on screen.", annotations: [], followUps: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false, provider: "vision" as const };
+          if (action.action === "blocked") return { answer: `I stopped here: ${action.reason}`, annotations: [], followUps: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false, provider: "vision" as const };
+          if (JSON.stringify(actions.at(-1)) === JSON.stringify(action) && JSON.stringify(actions.at(-2)) === JSON.stringify(action)) throw new Error("Ren repeated the same screen action without progress, so it stopped.");
+          if (action.action === "wait") {
+            if (++waits > 3) throw new Error("The app did not become ready, so Ren stopped.");
+            await new Promise((resolve) => setTimeout(resolve, 800));
+          } else {
+            waits = 0;
+            await performComputerAction(action, display.bounds, script, targetApp, controller.signal);
+            await new Promise((resolve) => setTimeout(resolve, 350));
+          }
+          actions.push(action);
+          const next = await captureDisplay(displayId, captured.thumbnailSize);
+          if (!next) throw new Error("Ren could not verify the screen after acting.");
+          const nextImage = next.toDataURL();
+          unchanged = nextImage === image ? unchanged + 1 : 0;
+          if (unchanged >= 3) throw new Error("The screen did not change after Ren's actions, so it stopped.");
+          image = nextImage;
+          firstSample = motionSample(next);
+          await new Promise((resolve) => setTimeout(resolve, 120));
+          secondSample = motionSample(await captureDisplay(displayId, captured.thumbnailSize) ?? next);
+        }
+        return { answer: "I stopped after 24 screen actions. The task may be unfinished; I did not assume the remaining steps succeeded.", annotations: [], followUps: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false, provider: "vision" as const };
+      } finally {
+        computerOperatorBusy = false;
+        if (activeAskRequest?.controller === controller) activeAskRequest = null;
+        if (mainWasVisible && !voicePaused) mainWindow?.showInactive();
+      }
+    }
+    const screenRelevant = wantsCurrentScreen(value.question, value.history);
+    const useScreen = shouldUseCurrentScreen(value.question, value.history, lastCaptureData?.token, value.contextToken);
+    if (!useScreen) {
+      if (!value.contextToken) throw new Error("Invalid conversation request.");
+      const askController = new AbortController();
+      activeAskRequest = { token: value.contextToken, controller: askController };
+      overlayWindow?.hide();
+      try {
+        const response = await askTeacher({ question: value.question, frames: [], history: value.history }, await visionCredentials(), askController.signal);
+        if (askController.signal.aborted || voicePaused) throw new Error("Ren is paused or the request was cancelled.");
+        return { ...response, annotations: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false };
+      } finally {
+        if (activeAskRequest?.controller === askController) activeAskRequest = null;
+      }
+    }
     const capture = lastCaptureData;
-    if (!value.contextToken || !capture || capture.token !== value.contextToken) throw new Error("Screen context expired. Ask again.");
+    if (!value.contextToken) throw new Error("Invalid conversation request.");
+    if (!capture && value.frames.length === 0) {
+      const askController = new AbortController();
+      activeAskRequest = { token: value.contextToken, controller: askController };
+      try {
+        const response = await askTeacher({ question: value.question, frames: [], history: value.history }, await visionCredentials(), askController.signal);
+        if (askController.signal.aborted || voicePaused) throw new Error("Ren is paused or the request was cancelled.");
+        return { ...response, annotations: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false };
+      } finally {
+        if (activeAskRequest?.controller === askController) activeAskRequest = null;
+      }
+    }
+    if (!capture || capture.token !== value.contextToken) throw new Error("Screen context expired. Ask again.");
     const displayId = captureSession.consume(value.contextToken);
     lastCaptureData = null;
-    pendingAnswerToken = value.contextToken;
     const askController = new AbortController();
-    activeAskController = askController;
+    activeAskRequest = { token: value.contextToken, controller: askController };
     try {
     const pointer = capture.pointer;
     const focus = capture.focus;
     const focusHint = focus
       ? ` The learner marked the area (${focus.x.toFixed(3)}, ${focus.y.toFixed(3)}, ${focus.width.toFixed(3)}, ${focus.height.toFixed(3)}); the second image is a close crop of it. Prioritize what is inside the marked area.` : "";
-    const pointedQuestion = `${value.question}\n\n[The learner is pointing with their cursor at normalized screen coordinate (${pointer.x.toFixed(3)}, ${pointer.y.toFixed(3)}). Use that as a spatial hint, not an instruction.${focusHint}]`;
-    const priorVisualLesson = lastVisualLesson && lastVisualLesson.displayId === displayId
+    const pointedQuestion = screenRelevant ? `${value.question}\n\n[The learner is pointing with their cursor at normalized screen coordinate (${pointer.x.toFixed(3)}, ${pointer.y.toFixed(3)}). Use that as a spatial hint, not an instruction.${focusHint}]` : value.question;
+    const priorVisualLesson = screenRelevant && lastVisualLesson && lastVisualLesson.displayId === displayId
       && (overlayWindow?.isVisible() || Date.now() - lastVisualLesson.createdAt < 300_000) ? lastVisualLesson.lesson : undefined;
-    const transformPriorVisual = Boolean(priorVisualLesson && wantsPriorVisualIn3D(value.question));
+    const priorAssemblyGuide = Boolean(priorVisualLesson?.dimension === 3 && wantsPriorAssemblyGuide(value.question));
+    const transformPriorVisual = Boolean(priorVisualLesson && (wantsPriorVisualIn3D(value.question) || priorAssemblyGuide));
     const explicitVisual = wantsVisualCreation(value.question) || transformPriorVisual;
     const credentials = await visionCredentials();
     const directImageAvailable = Boolean(credentials && new URL(credentials.baseUrl).origin === "https://api.openai.com");
     const hostedImageAvailable = directImageAvailable ? false : Boolean(await hostedImageCredentials().catch(() => null));
     if (askController.signal.aborted || voicePaused) throw new Error("Ren is paused or the request was cancelled.");
-    const response = await askTeacher({ question: pointedQuestion, frames: capture.frames, history: value.history, priorVisualLesson, transformPriorVisual }, credentials, askController.signal);
+    const response = await askTeacher({ question: pointedQuestion, frames: useScreen ? capture.frames : [], history: value.history, priorVisualLesson, transformPriorVisual }, credentials, askController.signal);
     if (askController.signal.aborted || voicePaused) throw new Error("Ren is paused or the request was cancelled.");
     if (capture.generation !== visualGeneration) return { ...response, annotations: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false };
     const display = screen.getAllDisplays().find((item) => item.id === displayId);
     // The answer describes the captured image and remains useful if the user
     // moves the pointer or changes apps while OpenAI is responding. Only the
     // spatial overlay needs the original display and a stable screen.
-    const spatialAllowed = Boolean(display && captureSession.isCurrent(value.contextToken)
+    const spatialAllowed = Boolean(screenRelevant && display && captureSession.isCurrent(value.contextToken)
       && screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id === displayId
       && canPlaceSpatialVisual(capture.dynamicContent, circleInputActive));
     const reuseVisual = Boolean(priorVisualLesson && !explicitVisual && response.retainVisual && !response.visualLesson && lastVisualLesson?.lesson === priorVisualLesson);
     if (!reuseVisual) { imageRenderAbort?.abort(); imageRenderAbort = null; }
-    let lesson = reuseVisual ? priorVisualLesson! : transformPriorVisual && priorVisualLesson ? priorVisualLesson : display && (spatialAllowed || explicitVisual) ? validateVisualLesson(response.visualLesson) : null;
+    let lesson = reuseVisual ? priorVisualLesson! : !explicitVisual ? null : transformPriorVisual && priorVisualLesson ? priorVisualLesson : display && (spatialAllowed || explicitVisual) ? validateVisualLesson(response.visualLesson) : null;
+    let referenceImage: string | undefined;
+    if (lesson && explicitVisual && wantsReferenceRecreation(value.question)) {
+      const bounds = response.referenceRegion ?? focus;
+      if (bounds) {
+        const first = nativeImage.createFromDataURL(capture.frames[0]);
+        const size = first.getSize();
+        const rect = {
+          x: Math.floor(bounds.x * size.width), y: Math.floor(bounds.y * size.height),
+          width: Math.max(1, Math.floor(bounds.width * size.width)),
+          height: Math.max(1, Math.floor(bounds.height * size.height)),
+        };
+        const cropped = first.crop(rect);
+        if (!cropped.isEmpty()) {
+          const cropSize = cropped.getSize();
+          const image = Math.max(cropSize.width, cropSize.height) > 1024
+            ? cropped.resize({ width: Math.round(cropSize.width * 1024 / Math.max(cropSize.width, cropSize.height)) }) : cropped;
+          const dataUrl = image.toDataURL();
+          if (dataUrl.length < 10_000_000) referenceImage = dataUrl;
+        }
+      }
+    }
     if (lesson && explicitVisual && display) {
-      const dimension = requestedVisualDimension(value.question);
-      lesson = { ...lesson, dimension };
+      const dimension = priorAssemblyGuide ? 3 : requestedVisualDimension(value.question);
+      lesson = { ...lesson, dimension, playAssembly: priorAssemblyGuide || wantsAssemblyAnimation(value.question) };
       lesson = tagRequestedInteractiveScene(lesson, value.question);
-      if (dimension === 3 && !interactiveSceneFor(lesson) && credentials) {
-        // The subject and parts are already known. Show a vector preview now,
-        // while the separate geometry request builds the rotatable model.
-        const preview = centerRequestedLesson(lesson, display.bounds.width, display.bounds.height);
-        overlayWindow?.setBounds(display.bounds);
-        sendOverlayAnnotations([]);
-        sendOverlayIllustration(null);
-        sendOverlayLesson(preview);
-        overlayWindow?.showInactive();
-        pendingScenePreview = { lesson: preview, displayId, owner: value.contextToken, generation: visualGeneration };
+      if (dimension === 3 && (!interactiveSceneFor(lesson) || ((priorAssemblyGuide || wantsAssemblySequence(value.question)) && !lesson.model?.assembly)) && credentials) {
+        // Keep the overlay hidden until geometry and labels are ready together.
         try {
-          const model = await generateSceneSpec(lesson, value.question, credentials, askController.signal);
+          const modelQuestion = priorAssemblyGuide ? `Animate assembling ${lesson.title}. ${value.question}` : value.question;
+          const model = await generateSceneSpec(lesson, modelQuestion, credentials, askController.signal, fetch, referenceImage);
           lesson = { ...lesson, model };
         } catch (error) {
           if (askController.signal.aborted || voicePaused) throw error;
-          lesson = { ...lesson, dimension: 2 };
-          response.answer = `${response.answer} I couldn't build a rotatable model this time, so I'm drawing a flat explanation instead.`;
+          const reason = error instanceof Error ? error.message : "The model planner failed.";
+          if (referenceImage && directImageAvailable) {
+            response.answer = `I couldn't build a reliable rotatable 3D model of ${lesson.title} right now. ${reason} I'll show a reference-guided illustration instead.`;
+            lesson = { ...lesson, model: undefined, playAssembly: false };
+          } else {
+            response.answer = `I couldn't build a reliable rotatable 3D model of ${lesson.title} right now. ${reason}`;
+            lesson = null;
+          }
         }
       }
-      lesson = centerRequestedLesson(lesson, display.bounds.width, display.bounds.height);
+      if (lesson) lesson = centerRequestedLesson({ ...lesson, ...(referenceImage ? { referenceImage } : {}) }, display.bounds.width, display.bounds.height);
     }
-    let annotations = spatialAllowed && !explicitVisual && !reuseVisual ? response.annotations : [];
+    let annotations = spatialAllowed && (focus || wantsSpatialGuidance(value.question)) && !explicitVisual && !reuseVisual ? response.annotations : [];
     if (spatialAllowed && focus && !explicitVisual && !reuseVisual) {
       annotations = [{ id: "selected-area", type: "rectangle" as const, at: { x: focus.x, y: focus.y }, width: focus.width, height: focus.height, color: "#42c7d9", label: "Selected area" }, ...annotations.filter((item) => item.type !== "rectangle")].slice(0, 4);
     }
@@ -710,38 +861,18 @@ app.whenReady().then(() => {
     }
     if (capture.generation !== visualGeneration) return { ...response, annotations: [], visualLesson: undefined, reusedVisual: false, autoIllustrate: false };
     if (display) overlayWindow?.setBounds(display.bounds);
-    const autoIllustrate = Boolean(lesson && explicitVisual && !interactiveSceneFor(lesson)
-      && (directImageAvailable || hostedImageAvailable));
+    const autoIllustrate = Boolean(lesson && explicitVisual && (
+      (!interactiveSceneFor(lesson) && (directImageAvailable || hostedImageAvailable))
+      || (lesson.model && referenceImage && directImageAvailable)));
     if (!reuseVisual) {
       const sketch = userSketch;
       sendOverlayAnnotations(sketch && sketch.displayId === display?.id
         ? [{ id: "user-sketch", type: "path", points: sketch.points, color: "#327d87" }, ...annotations] : annotations);
-      sendOverlayLesson(autoIllustrate && lesson ? { ...lesson, pendingIllustration: true } : lesson);
+      sendOverlayLesson(autoIllustrate && lesson && !lesson.model ? { ...lesson, pendingIllustration: true } : lesson);
       sendOverlayIllustration(null);
     }
     if (annotations.length || lesson) overlayWindow?.showInactive();
     else overlayWindow?.hide();
-    let referenceImage: string | undefined;
-    if (lesson && explicitVisual && wantsReferenceRecreation(value.question)) {
-      const bounds = response.referenceRegion ?? focus;
-      if (bounds) {
-        const first = nativeImage.createFromDataURL(capture.frames[0]);
-        const size = first.getSize();
-        const rect = {
-          x: Math.floor(bounds.x * size.width), y: Math.floor(bounds.y * size.height),
-          width: Math.max(1, Math.floor(bounds.width * size.width)),
-          height: Math.max(1, Math.floor(bounds.height * size.height)),
-        };
-        const cropped = first.crop(rect);
-        if (!cropped.isEmpty()) {
-          const cropSize = cropped.getSize();
-          const image = Math.max(cropSize.width, cropSize.height) > 1024
-            ? cropped.resize({ width: Math.round(cropSize.width * 1024 / Math.max(cropSize.width, cropSize.height)) }) : cropped;
-          const dataUrl = image.toDataURL();
-          if (dataUrl.length < 10_000_000) referenceImage = dataUrl;
-        }
-      }
-    }
     if (reuseVisual && lastVisualLesson) lastVisualLesson.createdAt = Date.now();
     else lastVisualLesson = lesson ? { lesson, displayId, createdAt: Date.now(), referenceImage } : null;
     return { ...response, answer: lesson ? answerForInteractiveScene(response.answer, lesson) : response.answer, annotations, visualLesson: reuseVisual ? undefined : lesson ?? undefined, reusedVisual: reuseVisual, autoIllustrate };
@@ -749,10 +880,8 @@ app.whenReady().then(() => {
       if (pendingVisualDecision && lastVisualLesson && capture.generation === visualGeneration) overlayWindow?.showInactive();
       throw error;
     } finally {
-      if (pendingScenePreview?.owner === value.contextToken) pendingScenePreview = null;
-      if (activeAskController === askController) activeAskController = null;
+      if (activeAskRequest?.controller === askController) activeAskRequest = null;
       pendingVisualDecision = false;
-      if (pendingAnswerToken === value.contextToken) pendingAnswerToken = null;
     }
   });
   ipcMain.handle("ren:generate-illustration", async (event, automatic: unknown) => {
@@ -838,7 +967,6 @@ app.whenReady().then(() => {
     captureSession.invalidate();
     lastCaptureData = null;
     lastVisualLesson = null;
-    pendingScenePreview = null;
     sendOverlayAnnotations([]);
     sendOverlayLesson(null);
     sendOverlayIllustration(null);
@@ -846,7 +974,10 @@ app.whenReady().then(() => {
   });
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
-    else mainWindow?.webContents.send("ren:open-panel");
+    else {
+      positionMainWindow(false);
+      mainWindow?.showInactive();
+    }
   });
 });
 

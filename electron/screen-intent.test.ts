@@ -1,0 +1,76 @@
+import { describe, expect, it } from "vitest";
+import { requiresVisibleScreen, shouldUseCurrentScreen, wantsCurrentScreen, wantsSpatialGuidance } from "./screen-intent.js";
+
+describe("screen context routing", () => {
+  it("requires a current frame for app guidance and its next step, while allowing general guidance", () => {
+    const appHistory = [{ role: "user" as const, content: "Walk me through modeling a bracket in AeroSketch" }, { role: "assistant" as const, content: "Start a sketch." }];
+    expect(requiresVisibleScreen("Walk me through modeling a bracket in AeroSketch")).toBe(true);
+    expect(requiresVisibleScreen("Next step", appHistory)).toBe(true);
+    expect(requiresVisibleScreen("Walk me through solving this equation")).toBe(true);
+    expect(requiresVisibleScreen("Walk me through solving quadratic equations")).toBe(false);
+    expect(requiresVisibleScreen("Next step", [{ role: "user", content: "Walk me through solving quadratic equations" }])).toBe(false);
+  });
+  it("uses a current capture for any question but never a mismatched capture", () => {
+    expect(shouldUseCurrentScreen("How do bicycle gears work?", [], "fresh-token", "fresh-token")).toBe(true);
+    expect(shouldUseCurrentScreen("Why?", [{ role: "user", content: "How do gears work?" }], "new-token", "new-token")).toBe(true);
+    expect(shouldUseCurrentScreen("How do bicycle gears work?", [], "old-token", "other-token")).toBe(false);
+    expect(shouldUseCurrentScreen("What is on this screen?", [], undefined, "request-token")).toBe(true);
+  });
+  it("keeps ordinary voice conversation off the screen path", () => {
+    expect(wantsCurrentScreen("Tell me a joke about bicycles")).toBe(false);
+    expect(wantsCurrentScreen("Why did you stop responding to me?")).toBe(false);
+    expect(wantsCurrentScreen("What is a video codec?")).toBe(false);
+    expect(wantsCurrentScreen("How do games work?")).toBe(false);
+    expect(wantsCurrentScreen("How do bicycle gears work?", [{ role: "user", content: "Tell me a joke" }])).toBe(false);
+  });
+
+  it("uses the screen for explicit references and related follow-ups", () => {
+    expect(wantsCurrentScreen("What does this error on my screen mean? ")).toBe(true);
+    expect(wantsCurrentScreen("What does this part do?")).toBe(true);
+    expect(wantsCurrentScreen("What is this? ")).toBe(true);
+    expect(wantsCurrentScreen("Why?", [{ role: "user", content: "Explain this screenshot" }, { role: "assistant", content: "It shows a warning." }])).toBe(true);
+    expect(wantsCurrentScreen("Why does the fan help?", [{ role: "user", content: "Draw a diagram of the hover system" }, { role: "assistant", content: "Here is the fan." }])).toBe(true);
+    expect(wantsCurrentScreen("How do I run FEA in this software?")).toBe(true);
+    expect(wantsCurrentScreen("Show me how to build a bracket in this CAD app")).toBe(true);
+    expect(wantsCurrentScreen("How do I run FEA in AeroSketch?")).toBe(true);
+    expect(wantsCurrentScreen("How can I create a table using Excel?")).toBe(true);
+    expect(wantsCurrentScreen("How do I mesh a part in ansys?")).toBe(true);
+    expect(wantsCurrentScreen("What should I click in figma?")).toBe(true);
+    expect(wantsCurrentScreen("How do I do this?")).toBe(true);
+    expect(wantsCurrentScreen("Can you help me with this?")).toBe(true);
+    expect(wantsCurrentScreen("Summarize what I'm reading")).toBe(true);
+    expect(wantsCurrentScreen("What am I looking at?")).toBe(true);
+    expect(wantsCurrentScreen("What is happening in this video?")).toBe(true);
+    expect(wantsCurrentScreen("Explain this YouTube video")).toBe(true);
+    expect(wantsCurrentScreen("Summarize the research article")).toBe(true);
+    expect(wantsCurrentScreen("Explain this diagram")).toBe(true);
+    expect(wantsCurrentScreen("Explain this dashboard")).toBe(true);
+    expect(wantsCurrentScreen("What is happening in this game?")).toBe(true);
+    expect(wantsCurrentScreen("Summarize this spreadsheet")).toBe(true);
+    expect(wantsCurrentScreen("Help me find the sketch tool")).toBe(true);
+    expect(wantsCurrentScreen("How do I build this plane in my design software?")).toBe(true);
+    expect(wantsCurrentScreen("Walk me through making a bracket in AeroSketch")).toBe(true);
+    expect(wantsCurrentScreen("I want to design a bracket; can you walk me through it step by step?")).toBe(true);
+    expect(wantsCurrentScreen("Guide me through titration in this chemistry app")).toBe(true);
+    expect(wantsCurrentScreen("Create a CAD model of this object")).toBe(true);
+    expect(wantsCurrentScreen("Next step", [{ role: "user", content: "Walk me through CAD in AeroSketch" }, { role: "assistant", content: "Select the sketch tool." }])).toBe(true);
+    expect(wantsCurrentScreen("Next step", [{ role: "user", content: "Tell me a joke" }])).toBe(false);
+    expect(wantsCurrentScreen("Click the visible button for me")).toBe(true);
+    expect(wantsCurrentScreen("Do it for me", [{ role: "user", content: "Walk me through meshing this part" }])).toBe(true);
+    const guided = [{ role: "user" as const, content: "Teach me how to build an aircraft wing in this CAD app" }, { role: "assistant" as const, content: "First, start a new sketch on the visible plane." }];
+    expect(wantsCurrentScreen("I can't find the sketch tool", guided)).toBe(true);
+    expect(wantsCurrentScreen("That didn't work", guided)).toBe(true);
+    expect(wantsCurrentScreen("What do I click now?", guided)).toBe(true);
+    expect(wantsCurrentScreen("I'm stuck", [{ role: "user", content: "Tell me a joke" }])).toBe(false);
+  });
+
+  it("only requests spatial guidance for direct pointing requests", () => {
+    expect(wantsSpatialGuidance("Where is the Apple menu? Point to it.")).toBe(true);
+    expect(wantsSpatialGuidance("Help me find the export button")).toBe(true);
+    expect(wantsSpatialGuidance("Help me find a job")).toBe(false);
+    expect(wantsSpatialGuidance("What does this error mean?")).toBe(false);
+    expect(wantsSpatialGuidance("Show me how to run FEM analysis in this software")).toBe(true);
+    expect(wantsSpatialGuidance("Walk me through meshing on my screen")).toBe(true);
+    expect(wantsSpatialGuidance("Next step")).toBe(true);
+  });
+});

@@ -11,7 +11,10 @@ const distance = (a: AbsolutePoint, b: AbsolutePoint) => Math.hypot(a.x - b.x, a
 const clamp = (value: number) => Math.min(1, Math.max(0, value));
 
 export function addCirclePoint(points: AbsolutePoint[], point: AbsolutePoint) {
-  if (points.length >= 180 || (points.length && distance(points.at(-1)!, point) < 4)) return false;
+  if (points.length && distance(points.at(-1)!, point) < 3) return false;
+  // Keep long gestures responsive without truncating them in the middle of a
+  // circle or rectangle. Retain the first point so closing still works.
+  if (points.length >= 1024) points.splice(1, points.length - 1, ...points.slice(1).filter((_, index) => index % 2 === 1));
   points.push(point);
   return true;
 }

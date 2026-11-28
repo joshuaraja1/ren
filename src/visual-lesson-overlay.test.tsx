@@ -4,7 +4,7 @@ import { centerRequestedLesson } from "../electron/visual-presentation";
 import type { VisualLesson } from "../electron/visual-lesson";
 import type { Point, RenBridge } from "./contracts";
 import { vi } from "vitest";
-import { calloutPageSize } from "./visual-lesson-overlay";
+import { calloutPageSize, modelCalloutLayout } from "./visual-lesson-overlay";
 
 it("sizes callout pages for short, medium, and tall diagram areas", () => {
   expect(calloutPageSize(400)).toBe(2);
@@ -12,22 +12,45 @@ it("sizes callout pages for short, medium, and tall diagram areas", () => {
   expect(calloutPageSize(700)).toBe(6);
 });
 
+it("places general 3D callouts on their nearest side and in vertical part order", () => {
+  const parts = ["frame", "screen", "battery", "board", "camera", "port"].map((id) => ({ id }));
+  const anchors = { frame: { x: .2, y: .5 }, screen: { x: .7, y: .7 }, battery: { x: .3, y: .8 }, board: { x: .8, y: .2 }, camera: { x: .1, y: .1 }, port: { x: .9, y: .9 } };
+  const layout = modelCalloutLayout(parts, anchors);
+  expect(layout.camera.side).toBe("left");
+  expect(layout.board.side).toBe("right");
+  expect(layout.camera.slot).toBeLessThan(layout.frame.slot);
+  expect(layout.frame.slot).toBeLessThan(layout.battery.slot);
+  expect(layout.board.slot).toBeLessThan(layout.screen.slot);
+  expect(layout.screen.slot).toBeLessThan(layout.port.slot);
+  expect(layout.camera.column).toBeGreaterThanOrEqual(.03);
+  expect(layout.camera.column).toBeLessThanOrEqual(.34);
+  expect(layout.port.column).toBeGreaterThanOrEqual(.66);
+  expect(layout.port.column).toBeLessThanOrEqual(.86);
+});
+
 it("shows a projected machine and connected callouts when WebGL is unavailable", async () => {
   const lesson: VisualLesson = {
     version: 1, layout: "centered", title: "Pump", placement: { x: .1, y: .1, width: .8, height: .8 },
     parts: [{ id: "motor", label: "Motor", explanation: "Drives the pump.", x: .3, y: .5 }, { id: "impeller", label: "Impeller", explanation: "Moves water.", x: .7, y: .5 }],
     connections: [{ from: "motor", to: "impeller", label: "drives" }],
+    referenceImage: "data:image/png;base64,dGVzdA==",
     model: { version: 1, subject: "Pump", fidelity: "conceptual", primitives: [
       { partId: "motor", kind: "cylinder", position: [-1, 0, 0], scale: [1, 1, 1], rotation: [0, 0, 0], color: "#4689bb" },
       { partId: "impeller", kind: "sphere", position: [1, 0, 0], scale: [1, 1, 1], rotation: [0, 0, 0], color: "#d59d4e" },
-    ], anchors: [{ partId: "motor", position: [-1, 0, 0] }, { partId: "impeller", position: [1, 0, 0] }] },
+    ], anchors: [{ partId: "motor", position: [-1, 0, 0] }, { partId: "impeller", position: [1, 0, 0] }],
+    assembly: [{ partId: "impeller", from: [0, 0, 2], instruction: "Seat the impeller." }] },
   };
-  const { container } = render(<VisualLessonOverlay lesson={lesson} />);
+  const { container, rerender } = render(<VisualLessonOverlay lesson={lesson} />);
   await waitFor(() => expect(container.querySelector(".scene-fallback")).toBeInTheDocument());
   expect(container.querySelectorAll(".scene-fallback > g")).toHaveLength(2);
   expect(container.querySelector(".scene-fallback > line")).toBeInTheDocument();
+  expect(container.querySelector(".interactive-source-reference img")).toHaveAttribute("src", lesson.referenceImage);
+  rerender(<VisualLessonOverlay lesson={lesson} illustration={{ image: "data:image/png;base64,bWF0Y2hlZA==", preview: false, width: 500, height: 500 }} />);
+  expect(container.querySelector(".interactive-source-reference img")).toHaveAttribute("src", "data:image/png;base64,bWF0Y2hlZA==");
+  expect(container).toHaveTextContent("Reference-guided illustration");
   expect(container.querySelectorAll(".interactive-jet-lines line")).toHaveLength(2);
   expect(container).toHaveTextContent("3D view unavailable");
+  expect(container.querySelector(".interactive-assembly-step")).not.toBeInTheDocument();
 });
 
 it("shows a connected vector graph when conceptual 3D cannot start", async () => {
@@ -85,7 +108,7 @@ it("shows a labeled vector preview while a subject-specific 3D model is planned"
   expect(container).toHaveTextContent("Atrium");
 });
 
-it("shows every generated-model part without placing twelve callouts on top of each other", () => {
+it("shows every generated-model label together without sequential paging", () => {
   const listeners = new Set<(point: Point) => void>();
   const previous = window.ren;
   window.ren = { onOrbitPointer(listener: (point: Point) => void) { listeners.add(listener); return () => { listeners.delete(listener); }; } } as unknown as RenBridge;
@@ -100,27 +123,24 @@ it("shows every generated-model part without placing twelve callouts on top of e
     },
   };
   const { container, unmount } = render(<VisualLessonOverlay lesson={lesson} />);
-  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(6);
-  expect(container).toHaveTextContent("Parts 1–6 of 12");
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(12);
   expect(container).toHaveTextContent("Illustrative 3D model · approximate geometry");
   expect(container).toHaveTextContent("Part 1");
   vi.useFakeTimers();
   act(() => { for (const listener of listeners) listener({ x: .9, y: .5 }); });
-  expect(container).toHaveTextContent("Parts 1–6 of 12");
-  act(() => { for (const listener of listeners) listener({ x: .96, y: .04 }); vi.advanceTimersByTime(701); });
-  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(6);
-  expect(container).toHaveTextContent("Parts 7–12 of 12");
   expect(container).toHaveTextContent("Part 12");
-  expect(container.querySelectorAll(".illustrated-lesson-part.left")).toHaveLength(3);
-  expect(container.querySelectorAll(".illustrated-lesson-part.right")).toHaveLength(3);
+  act(() => { for (const listener of listeners) listener({ x: .96, y: .04 }); vi.advanceTimersByTime(701); });
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(12);
+  expect(container).toHaveTextContent("Part 12");
+  expect(container.querySelectorAll(".illustrated-lesson-part.left")).toHaveLength(6);
+  expect(container.querySelectorAll(".illustrated-lesson-part.right")).toHaveLength(6);
   const originalHeight = window.innerHeight;
   Object.defineProperty(window, "innerHeight", { configurable: true, value: 500 });
   act(() => window.dispatchEvent(new Event("resize")));
-  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(2);
-  expect(container).toHaveTextContent("Parts 1–2 of 12");
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(12);
   Object.defineProperty(window, "innerHeight", { configurable: true, value: 700 });
   act(() => window.dispatchEvent(new Event("resize")));
-  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(4);
+  expect(container.querySelectorAll(".illustrated-lesson-part")).toHaveLength(12);
   Object.defineProperty(window, "innerHeight", { configurable: true, value: originalHeight });
   act(() => window.dispatchEvent(new Event("resize")));
   unmount();

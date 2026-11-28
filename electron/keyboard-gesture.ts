@@ -9,8 +9,8 @@ export class TripleControlGesture {
   constructor(
     private readonly controlKeys: ReadonlySet<number>,
     private readonly onTripleControl: () => void,
-    private readonly maxGapMs = 650,
-    private readonly maxTapMs = 400,
+    private readonly maxGapMs = 900,
+    private readonly maxTapMs = 650,
   ) {}
 
   keyDown(event: { keycode: number; altKey: boolean; metaKey: boolean; shiftKey: boolean }, now = Date.now()) {

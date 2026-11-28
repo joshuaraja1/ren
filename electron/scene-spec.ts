@@ -6,6 +6,8 @@ export type ScenePrimitive = {
   scale: [number, number, number];
   rotation: [number, number, number];
   color: string;
+  /** Translucent housings can expose internal parts without removing them. */
+  opacity?: number;
   /** Local XY outline for an extruded silhouette, normalized around its center. */
   outline?: [number, number][];
 };
@@ -16,6 +18,8 @@ export type SceneSpec = {
   fidelity: "conceptual";
   primitives: ScenePrimitive[];
   anchors: { partId: string; position: [number, number, number] }[];
+  /** Ordered illustrative assembly. `from` is an offset from the final position. */
+  assembly?: { partId: string; from: [number, number, number]; instruction: string }[];
 };
 
 const record = (value: unknown): Record<string, unknown> | null =>
@@ -58,7 +62,7 @@ export function validateSceneSpec(value: unknown, partIds: Iterable<string>): Sc
   const raw = record(value);
   const ids = new Set(partIds);
   if (!raw || raw.version !== 1 || !Array.isArray(raw.primitives) || !Array.isArray(raw.anchors)
-    || raw.primitives.length < 2 || raw.primitives.length > 40 || raw.anchors.length !== ids.size
+    || raw.primitives.length < 2 || raw.primitives.length > 40 || raw.anchors.length > ids.size
     || ids.size < 2 || ids.size > 12 || typeof raw.subject !== "string") return null;
   const subject = raw.subject.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 100);
   if (!subject) return null;
@@ -71,12 +75,15 @@ export function validateSceneSpec(value: unknown, partIds: Iterable<string>): Sc
       || !["box", "sphere", "cylinder", "cone", "torus", "capsule", "extrusion"].includes(String(primitive.kind))) return null;
     const position = vector(primitive.position, -5, 5);
     const scale = vector(primitive.scale, .02, 5);
-    const rotation = vector(primitive.rotation, -Math.PI * 2, Math.PI * 2);
+    const rotation = primitive.rotation === undefined ? [0, 0, 0] as [number, number, number]
+      : vector(primitive.rotation, -Math.PI * 2, Math.PI * 2);
     if (!position || !scale || !rotation || typeof primitive.color !== "string" || !/^#[0-9a-f]{6}$/i.test(primitive.color)) return null;
+    const opacity = primitive.opacity === undefined ? undefined : primitive.opacity;
+    if (opacity !== undefined && (typeof opacity !== "number" || !Number.isFinite(opacity) || opacity < .15 || opacity > 1)) return null;
     const shape = primitive.kind === "extrusion" ? outline(primitive.outline) : null;
     if (primitive.kind === "extrusion" && !shape) return null;
     represented.add(primitive.partId);
-    primitives.push({ partId: primitive.partId, kind: primitive.kind as ScenePrimitive["kind"], position, scale, rotation, color: primitive.color, ...(shape ? { outline: shape } : {}) });
+    primitives.push({ partId: primitive.partId, kind: primitive.kind as ScenePrimitive["kind"], position, scale, rotation, color: primitive.color, ...(opacity !== undefined ? { opacity } : {}), ...(shape ? { outline: shape } : {}) });
   }
   if (represented.size !== ids.size) return null;
   const center = primitives[0].position;
@@ -88,13 +95,39 @@ export function validateSceneSpec(value: unknown, partIds: Iterable<string>): Sc
     const anchor = record(item);
     if (!anchor || typeof anchor.partId !== "string" || !ids.has(anchor.partId) || anchored.has(anchor.partId)) return null;
     const position = vector(anchor.position, -5, 5);
-    if (!position) return null;
-    const nearby = primitives.some((primitive) => primitive.partId === anchor.partId
-      && Math.hypot(...position.map((value, axis) => value - primitive.position[axis])) <= Math.max(...primitive.scale) / 2 + 1.5);
-    if (!nearby) return null;
+    const matching = primitives.filter((primitive) => primitive.partId === anchor.partId);
+    const nearest = position ? matching.reduce((best, primitive) =>
+      Math.hypot(...position.map((value, axis) => value - primitive.position[axis]))
+      < Math.hypot(...position.map((value, axis) => value - best.position[axis])) ? primitive : best, matching[0]) : matching[0];
+    const nearby = position && Math.hypot(...position.map((value, axis) => value - nearest.position[axis]))
+      <= Math.hypot(...nearest.scale.map((size) => size / 2)) + .2;
     anchored.add(anchor.partId);
-    anchors.push({ partId: anchor.partId, position });
+    anchors.push({ partId: anchor.partId, position: nearby ? position : nearest.position });
   }
-  if (anchored.size !== ids.size) return null;
-  return { version: 1, subject, fidelity: "conceptual", primitives, anchors };
+  for (const partId of ids) {
+    if (anchored.has(partId)) continue;
+    const primitive = primitives.find((item) => item.partId === partId)!;
+    anchors.push({ partId, position: primitive.position });
+  }
+  let assembly: SceneSpec["assembly"];
+  if (Array.isArray(raw.assembly) && raw.assembly.length === ids.size - 1) {
+    const steps: NonNullable<SceneSpec["assembly"]> = [];
+    const seen = new Set<string>();
+    for (const item of raw.assembly) {
+      const step = record(item);
+      if (!step || typeof step.partId !== "string" || !ids.has(step.partId) || seen.has(step.partId)) break;
+      const from = vector(step.from, -5, 5);
+      const rawInstruction = typeof step.instruction === "string" ? step.instruction.replace(/[\u0000-\u001f\u007f]/g, " ").trim() : "";
+      const prefix = rawInstruction.slice(0, 220);
+      const lastSentence = Math.max(prefix.lastIndexOf(". "), prefix.lastIndexOf("! "), prefix.lastIndexOf("? "));
+      const instruction = rawInstruction.length <= 220 ? rawInstruction
+        : lastSentence >= 40 ? prefix.slice(0, lastSentence + 1)
+          : `${prefix.slice(0, prefix.lastIndexOf(" "))}…`;
+      if (!from || Math.hypot(...from) < .3 || !instruction) break;
+      seen.add(step.partId);
+      steps.push({ partId: step.partId, from, instruction });
+    }
+    if (steps.length === raw.assembly.length) assembly = steps;
+  }
+  return { version: 1, subject, fidelity: "conceptual", primitives, anchors, ...(assembly ? { assembly } : {}) };
 }

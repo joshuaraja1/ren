@@ -3,7 +3,7 @@ dist/
 dist-electron/
 dist-server/
 release/
-release-permission-test/
+release-*/
 coverage/
 playwright-report/
 test-results/
@@ -14,4 +14,5 @@ test-results/
 *.log
 *.tsbuildinfo
 build/icon.iconset/
+__pycache__/
 

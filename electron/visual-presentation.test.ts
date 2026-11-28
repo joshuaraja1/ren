@@ -82,6 +82,8 @@ it("preserves every part of a 3D model while the overlay pages its callouts", ()
     },
   };
   const centered = centerRequestedLesson(lessonWithModel, 1600, 900);
+  expect(centered.placement.width * 1600).toBe(900);
+  expect(centered.placement.height * 900).toBe(650);
   expect(centered.parts).toHaveLength(10);
   expect(centered.connections).toHaveLength(9);
   expect(centered.model?.anchors).toHaveLength(10);

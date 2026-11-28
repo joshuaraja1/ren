@@ -39,6 +39,133 @@ describe("follow-up validation", () => {
 });
 
 describe("provider privacy boundary", () => {
+  it("grounds every turn in its own image as screen sharing starts and stops", async () => {
+    const fetchCall = vi.fn(async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "I can see a chart on this screen.", annotations: [] }) } }] }) }));
+    vi.stubGlobal("fetch", fetchCall);
+    const credentials = { apiKey: "test", model: "vision", baseUrl: "https://example.com/v1" };
+    const history = [
+      { role: "user" as const, content: "Explain this chart on my screen" },
+      { role: "assistant" as const, content: "I can see a chart on your screen." },
+    ];
+    try {
+      const shared = await askTeacher({ question: "Explain this chart on my screen", frames: ["data:image/png;base64,test"], history: [] }, credentials);
+      expect(shared.answer).toContain("I can see a chart");
+      const unshared = await askTeacher({ question: "Why?", frames: [], history }, credentials);
+      expect(unshared.answer).toMatch(/I can't see your screen right now/);
+      expect(unshared.annotations).toEqual([]);
+      expect(unshared.followUps).toEqual([]);
+      const invalid = await askTeacher({ question: "What changed?", frames: [""], history }, credentials);
+      expect(invalid.answer).toMatch(/I can't see your screen right now/);
+      const resumed = await askTeacher({ question: "What changed?", frames: ["data:image/png;base64,test"], history }, credentials);
+      expect(resumed.answer).toContain("I can see a chart");
+      expect(fetchCall).toHaveBeenCalledTimes(2);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("does not invent the next app control after a guided screen capture fails", async () => {
+    const fetchCall = vi.fn();
+    vi.stubGlobal("fetch", fetchCall);
+    try {
+      const history = [
+        { role: "user" as const, content: "Walk me through modeling a bracket in AeroSketch" },
+        { role: "assistant" as const, content: "Start a sketch in the current workbench." },
+      ];
+      const answer = await askTeacher({ question: "Next step", frames: [], history }, { apiKey: "test", model: "vision", baseUrl: "https://example.com/v1" });
+      expect(answer.answer).toMatch(/I can't see your screen right now/);
+      expect(fetchCall).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("tells the model that an unrecognized software workflow has no visible controls", async () => {
+    let systemPrompt = "";
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {
+      const body = JSON.parse(String(options.body)) as { messages: Array<{ role: string; content: string }> };
+      systemPrompt = body.messages[0].content;
+      return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "I can guide you from the description, but cannot verify the interface.", visualLesson: null }) } }] }) };
+    }));
+    try {
+      await askTeacher({ question: "Walk me through modeling a bracket in figma", frames: [], history: [] }, { apiKey: "test", model: "vision", baseUrl: "https://example.com/v1" });
+      expect(systemPrompt).toContain("No current screen image was supplied");
+      expect(systemPrompt).toContain("Do not say");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("treats a CAD or FEA workflow as guidance, not a generated model or solver result", async () => {
+    const calls: Array<{ messages: Array<{ content: unknown }> }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {
+      calls.push(JSON.parse(String(options.body)));
+      return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "I can guide you through the setup.", visualLesson: null }) } }] }) };
+    }));
+    try {
+      const credentials = { apiKey: "test", model: "vision", baseUrl: "https://example.com/v1" };
+      await askTeacher({ question: "Create a 3D CAD model of a bracket", frames: [], history: [] }, credentials);
+      await askTeacher({ question: "Run FEA on this bracket", frames: [], history: [] }, credentials);
+      expect(calls).toHaveLength(2);
+      for (const call of calls) {
+        expect(String(call.messages[0].content)).toContain("Do not claim to have controlled engineering software");
+        expect(String(call.messages[0].content)).not.toContain("visualLesson is REQUIRED");
+      }
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("uses a supplied CAD screen for visible next-step guidance", async () => {
+    let body: { messages: Array<{ content: unknown }> } | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {
+      body = JSON.parse(String(options.body));
+      return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "Select the visible analysis workbench first.", annotations: [] }) } }] }) };
+    }));
+    try {
+      await askTeacher({ question: "Show me how to run FEA in this software", frames: ["data:image/png;base64,test"], history: [] }, { apiKey: "test", model: "vision", baseUrl: "https://example.com/v1" });
+      expect(String(body?.messages[0].content)).toContain("identify the visible app");
+      expect(String(body?.messages[0].content)).toContain("annotate the first relevant control");
+      expect(String(body?.messages[0].content)).not.toContain("visualLesson is REQUIRED");
+      expect(JSON.stringify(body?.messages.at(-1)?.content)).toContain("data:image/png;base64,test");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("uses visible content without assuming an app workflow", async () => {
+    let body: { messages: Array<{ content: unknown }> } | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {
+      body = JSON.parse(String(options.body));
+      return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "The visible chart compares two results.", annotations: [] }) } }] }) };
+    }));
+    try {
+      await askTeacher({ question: "Explain this diagram", frames: ["data:image/png;base64,test"], history: [] }, { apiKey: "test", model: "vision", baseUrl: "https://example.com/v1" });
+      expect(String(body?.messages[0].content)).toContain("a video, an article, a diagram");
+      expect(String(body?.messages[0].content)).not.toContain("Give exactly one concrete next action");
+      expect(JSON.stringify(body?.messages.at(-1)?.content)).toContain("data:image/png;base64,test");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("continues a guided workflow with the new screen and prior step", async () => {
+    let body: { messages: Array<{ content: unknown }> } | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {
+      body = JSON.parse(String(options.body));
+      return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "Open the mesh settings next.", annotations: [] }) } }] }) };
+    }));
+    try {
+      await askTeacher({ question: "Next step", frames: ["data:image/png;base64,test"], history: [
+        { role: "user", content: "Walk me through a simulation in this app" },
+        { role: "assistant", content: "Select the analysis container." },
+      ] }, { apiKey: "test", model: "vision", baseUrl: "https://example.com/v1" });
+      expect(String(body?.messages[0].content)).toContain("Give exactly one concrete next action");
+      expect(JSON.stringify(body?.messages.at(-1)?.content)).toContain("data:image/png;base64,test");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("answers ordinary voice questions without claiming screen access", async () => {
+    let body: { messages: Array<{ content: unknown }> } | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {
+      body = JSON.parse(String(options.body));
+      return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "Bicycles move when pedaling turns the rear wheel." }) } }] }) };
+    }));
+    try {
+      await askTeacher({ question: "How does a bicycle work?", frames: [], history: [] }, { apiKey: "test", model: "vision", baseUrl: "https://example.com/v1" });
+      expect(String(body?.messages[0].content)).toMatch(/No screen\s+image is supplied/);
+      expect(JSON.stringify(body?.messages.at(-1)?.content)).not.toContain("image_url");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("keeps screen frames local in demo mode", async () => {
     const fetchCall = vi.fn();
     vi.stubGlobal("fetch", fetchCall);
@@ -68,7 +195,7 @@ describe("provider privacy boundary", () => {
       return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "**The selected area** is a chart." }) } }] }) };
     }));
     try {
-      const result = await askTeacher({ question: "Explain this", frames: [], history: [] }, { apiKey: "test-key", model: "gpt-6-sol", baseUrl: "https://api.openai.com/v1" });
+      const result = await askTeacher({ question: "Explain this", frames: ["data:image/png;base64,test"], history: [] }, { apiKey: "test-key", model: "gpt-6-sol", baseUrl: "https://api.openai.com/v1" });
       expect(body).toMatchObject({ model: "gpt-6-sol", reasoning_effort: "medium" });
       expect(result.answer).toBe("The selected area is a chart.");
     } finally { vi.unstubAllGlobals(); }
@@ -191,7 +318,7 @@ describe("provider privacy boundary", () => {
   it("returns an actionable error when the provider times out", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new DOMException("aborted", "TimeoutError"); }));
     try {
-      await expect(askTeacher({ question: "Explain this", frames: [], history: [] }, { apiKey: "test-key", model: "vision-model", baseUrl: "https://example.com/v1" })).rejects.toThrow(/took too long/);
+      await expect(askTeacher({ question: "Explain finite elements", frames: [], history: [] }, { apiKey: "test-key", model: "vision-model", baseUrl: "https://example.com/v1" })).rejects.toThrow(/took too long/);
     } finally { vi.unstubAllGlobals(); }
   });
 });

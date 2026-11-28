@@ -15,7 +15,7 @@ const mock = vi.hoisted(() => {
     start: vi.fn(),
     stop: vi.fn(),
   };
-  const keys = { Ctrl: 29, CtrlRight: 3613, Alt: 56, AltRight: 3640, Meta: 3675, MetaRight: 3676, Escape: 1 };
+  const keys = { Ctrl: 29, CtrlRight: 3613, Alt: 56, AltRight: 3640, Meta: 3675, MetaRight: 3676, Shift: 42, ShiftRight: 54, Escape: 1 };
   return { hook, keys, listeners, cursor: { x: 500, y: 400 } };
 });
 
@@ -52,6 +52,30 @@ const traceCircle = () => {
 beforeEach(() => { mock.cursor = { x: 570, y: 400 }; });
 afterEach(() => { stopCircleInput(); mock.listeners.clear(); vi.clearAllMocks(); });
 
+it("toggles voice after three Control taps without treating modifiers as screen interaction", () => {
+  const onTripleControl = vi.fn();
+  const onInteraction = vi.fn();
+  const clock = vi.spyOn(Date, "now");
+  try {
+    expect(startCircleInput({ onProgress: vi.fn(), onComplete: vi.fn(), onCancel: vi.fn(), onScroll: vi.fn(), onTripleControl, onInteraction })).toBe(true);
+    for (let index = 0; index < 3; index++) {
+      clock.mockReturnValue(100 + index * 220);
+      emit("keydown", event(mock.keys.Ctrl, true, false));
+      clock.mockReturnValue(160 + index * 220);
+      emit("keyup", event(mock.keys.Ctrl, false, false));
+    }
+    expect(onTripleControl).toHaveBeenCalledOnce();
+    expect(onInteraction).not.toHaveBeenCalled();
+    for (let index = 0; index < 3; index++) {
+      clock.mockReturnValue(900 + index * 220);
+      emit("keydown", event(mock.keys.Ctrl, true, false));
+      clock.mockReturnValue(960 + index * 220);
+      emit("keyup", event(mock.keys.Ctrl, false, false));
+    }
+    expect(onTripleControl).toHaveBeenCalledTimes(2);
+  } finally { clock.mockRestore(); }
+});
+
 it.each([
   ["Control then Option", [mock.keys.Ctrl, mock.keys.Alt]],
   ["Option then Control", [mock.keys.Alt, mock.keys.Ctrl]],
@@ -87,4 +111,50 @@ it("cancels an unfinished Control+Option circle on Escape", () => {
   expect(onCancel).toHaveBeenCalledTimes(1);
   expect(onComplete).not.toHaveBeenCalled();
   expect(onTripleControl).not.toHaveBeenCalled();
+});
+
+it("keeps a long drawn square through the last edge and closes it", () => {
+  const onComplete = vi.fn();
+  expect(startCircleInput({ onProgress: vi.fn(), onComplete, onCancel: vi.fn(), onScroll: vi.fn() })).toBe(true);
+  mock.cursor = { x: 200, y: 200 };
+  emit("keydown", event(mock.keys.Ctrl, true, false));
+  emit("keydown", event(mock.keys.Alt, true, true));
+  const corners = [{ x: 600, y: 200 }, { x: 600, y: 600 }, { x: 200, y: 600 }, { x: 205, y: 200 }];
+  let from = { x: 200, y: 200 };
+  for (const corner of corners) {
+    for (let index = 1; index <= 120; index++) {
+      mock.cursor = { x: from.x + (corner.x - from.x) * index / 120, y: from.y + (corner.y - from.y) * index / 120 };
+      emit("mousemove", event(0, index % 10 !== 0, index % 10 !== 0));
+    }
+    from = corner;
+  }
+  emit("keyup", event(mock.keys.Alt, true, false));
+  expect(onComplete).toHaveBeenCalledOnce();
+  const path = onComplete.mock.calls[0][1].points;
+  expect(path.length).toBeGreaterThan(180);
+  expect(path.at(-1)).toEqual(path[0]);
+});
+
+it("snaps a long freehand sketch closed when the pointer returns near its start", () => {
+  const onSketchComplete = vi.fn();
+  expect(startCircleInput({ onProgress: vi.fn(), onComplete: vi.fn(), onCancel: vi.fn(), onScroll: vi.fn(), onSketchComplete })).toBe(true);
+  const sketchEvent = (keycode: number, metaKey: boolean, altKey: boolean): KeyEvent =>
+    ({ keycode, ctrlKey: false, altKey, metaKey, shiftKey: false });
+  mock.cursor = { x: 250, y: 250 };
+  emit("keydown", sketchEvent(mock.keys.Meta, true, false));
+  emit("keydown", sketchEvent(mock.keys.Alt, true, true));
+  const corners = [{ x: 500, y: 250 }, { x: 500, y: 500 }, { x: 250, y: 500 }, { x: 257, y: 250 }];
+  let from = { x: 250, y: 250 };
+  for (const corner of corners) {
+    for (let index = 1; index <= 70; index++) {
+      mock.cursor = { x: from.x + (corner.x - from.x) * index / 70, y: from.y + (corner.y - from.y) * index / 70 };
+      emit("mousemove", sketchEvent(0, true, true));
+    }
+    from = corner;
+  }
+  emit("keyup", sketchEvent(mock.keys.Alt, true, false));
+  expect(onSketchComplete).toHaveBeenCalledOnce();
+  const path = onSketchComplete.mock.calls[0][1];
+  expect(path.length).toBeGreaterThan(180);
+  expect(path.at(-1)).toEqual(path[0]);
 });
