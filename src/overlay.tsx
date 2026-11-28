@@ -44,12 +44,14 @@ export function Overlay() {
       </svg>
       {annotations.map((item) => {
         const at = item.type === "arrow" ? item.to : item.type === "path" || item.type === "polygon" ? item.points.at(-1)! : item.at;
+        if (!at) return null;
         const style = { ...pos(at), color: item.color || "#e7653a" };
-        if (item.type === "diagram") return <div key={item.id} className="diagram-card" style={style}><strong>{item.title}</strong>{item.lines.map((line) => <span key={line}>{line}</span>)}</div>;
-        if (item.type === "point") return <div key={item.id} className="point-mark" style={style}>{item.label && <span>{item.label}</span>}</div>;
-        if (item.type === "text") return <div key={item.id} className="text-mark" style={style}>{item.text}</div>;
+        const edge = `${at.x >= .82 ? " at-right" : at.x <= .18 ? " at-left" : ""}${at.y >= .82 ? " at-bottom" : ""}`;
+        if (item.type === "diagram") return <div key={item.id} className={`diagram-card${edge}`} style={style}><strong>{item.title}</strong>{item.lines.map((line) => <span key={line}>{line}</span>)}</div>;
+        if (item.type === "point") return <div key={item.id} className={`point-mark${edge}`} style={style}>{item.label && <span>{item.label}</span>}</div>;
+        if (item.type === "text") return <div key={item.id} className={`text-mark${edge}`} style={style}>{item.text}</div>;
         const label = "label" in item ? item.label : undefined;
-        return label ? <div key={`${item.id}-label`} className="text-mark" style={style}>{label}</div> : null;
+        return label ? <div key={`${item.id}-label`} className={`text-mark${edge}`} style={style}>{label}</div> : null;
       })}
       {visualLesson && <VisualLessonOverlay lesson={visualLesson} illustration={illustration} />}
     </div>

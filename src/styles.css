@@ -366,6 +366,8 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--listen);
 .panel-chrome { border-radius: 50%; font-size: 17px; }
 .panel-tab:hover, .panel-chrome:hover { color: white; background: rgba(255,255,255,.12); }
 .panel-home { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 9px; padding: 4px 14px 14px; }
+.panel-setup { flex: none; align-self: start; padding: 7px 10px; border: 1px solid rgba(128,174,255,.35); border-radius: 10px; color: #dceaff; background: rgba(79,126,207,.14); font-size: 11px; cursor: pointer; }
+.panel-setup:hover { background: rgba(79,126,207,.24); }
 .panel-hero { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 20px; border: 1px solid rgba(255,255,255,.09); border-radius: 21px; background: linear-gradient(155deg, rgba(32,36,43,.62), rgba(13,15,19,.8) 50%, rgba(9,11,15,.88)); box-shadow: inset 0 1px rgba(255,255,255,.06); }
 .hero-heading { display: flex; align-items: center; justify-content: space-between; }
 .hero-kicker, .step-kicker { color: #80aeff; font-size: 10px; font-weight: 800; letter-spacing: .16em; }

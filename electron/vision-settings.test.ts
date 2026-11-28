@@ -37,6 +37,20 @@ describe("vision provider settings", () => {
     }
   });
 
+  it("keeps the saved key when the user changes only the model", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "ren-vision-"));
+    process.env.REN_TEST_SETTINGS_DIR = directory;
+    try {
+      await saveVisionSettings({ apiKey: "secret-test-key", model: "first-model", baseUrl: "https://api.openai.com/v1" });
+      const status = await saveVisionSettings({ apiKey: "", model: "second-model", baseUrl: "https://api.openai.com/v1" });
+      expect(status.model).toBe("second-model");
+      expect(await visionCredentials()).toEqual({ apiKey: "secret-test-key", model: "second-model", baseUrl: "https://api.openai.com/v1" });
+    } finally {
+      delete process.env.REN_TEST_SETTINGS_DIR;
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the OpenAI destination bound to its encrypted key", async () => {
     const directory = await mkdtemp(join(tmpdir(), "ren-vision-"));
     process.env.REN_TEST_SETTINGS_DIR = directory;

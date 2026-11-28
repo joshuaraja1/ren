@@ -34,6 +34,29 @@ describe("Ren voice interface", () => {
     } finally { window.ren = undefined; }
   });
 
+  it("keeps text questions and settings available when microphone access is denied", async () => {
+    const ask = vi.fn(async () => ({ answer: "Here is the answer.", annotations: [], provider: "demo" as const }));
+    window.ren = {
+      platform: "darwin", permissionStatus: async () => ({ ready: false, microphone: "denied", screen: "granted", interaction: "granted" }),
+      wakeAvailable: async () => false, onFocusSelection: () => () => {},
+      setExpanded: async () => {}, setCompanionVisible: async () => {}, speechStop: async () => {},
+      captureContext: async () => ({ frames: [], pointer: { x: .5, y: .5 }, contextToken: crypto.randomUUID() }), ask,
+    } as unknown as RenBridge;
+    try {
+      render(<App />);
+      fireEvent.click(await screen.findByRole("button", { name: /start speaking to ren/i }), { shiftKey: true });
+      expect(screen.getByRole("textbox", { name: /ask ren/i })).toBeVisible();
+      expect(screen.getByRole("button", { name: /microphone off.*enable voice/i })).toBeVisible();
+      fireEvent.click(screen.getByRole("button", { name: /open ren settings/i }));
+      expect(screen.getByLabelText(/deepgram api key/i)).toBeVisible();
+      expect(screen.getByRole("button", { name: /enable microphone/i })).toBeVisible();
+      fireEvent.click(screen.getByRole("button", { name: /home/i }));
+      fireEvent.change(screen.getByRole("textbox", { name: /ask ren/i }), { target: { value: "Explain the moon" } });
+      fireEvent.click(screen.getByRole("button", { name: /send ren prompt/i }));
+      await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({ question: "Explain the moon" })));
+    } finally { window.ren = undefined; }
+  });
+
   it("attempts a fresh capture for an ordinary question, then answers if capture is unavailable", async () => {
     const captureContext = vi.fn(async () => { throw new Error("Screen Recording is unavailable"); });
     const ask = vi.fn(async () => ({ answer: "Pedaling turns the wheel.", annotations: [], provider: "demo" as const }));

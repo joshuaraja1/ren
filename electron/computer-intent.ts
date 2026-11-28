@@ -5,7 +5,7 @@ export function mentionsNamedTarget(question: string): boolean {
 }
 
 export function wantsComputerExecution(question: string, history: { role: "user" | "assistant"; content: string }[] = []): boolean {
-  if (/^(?:how|where|why|what|show me how|walk me through|guide me through)\b/i.test(question.trim())) return false;
+  if (/^(?:how|where|why|what|(?:(?:can|could|would|will) you\s+)?(?:explain|describe|teach|tell me|show me|walk me through|guide me through|help me understand))\b/i.test(question.trim())) return false;
   const visibleAction = /\b(?:click|type|drag|scroll|select|press|fill out|move the cursor)\b.{0,100}\b(?:this|that|the|for me|on (?:my|the) screen)\b/i.test(question)
     || /\bdraw\b.{0,100}\b(?:on (?:my|the) screen|in (?:this|the|my) (?:app|software|program))\b/i.test(question);
   const actionRequest = /\b(?:do|perform|complete|finish|set up|configure|operate|make|create|build|run)\b/i.test(question);

@@ -62,6 +62,34 @@ describe("provider privacy boundary", () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
+  it("does not invent the next app control after a guided screen capture fails", async () => {
+    const fetchCall = vi.fn();
+    vi.stubGlobal("fetch", fetchCall);
+    try {
+      const history = [
+        { role: "user" as const, content: "Walk me through modeling a bracket in AeroSketch" },
+        { role: "assistant" as const, content: "Start a sketch in the current workbench." },
+      ];
+      const answer = await askTeacher({ question: "Next step", frames: [], history }, { apiKey: "test", model: "vision", baseUrl: "https://example.com/v1" });
+      expect(answer.answer).toMatch(/I can't see your screen right now/);
+      expect(fetchCall).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("tells the model that an unrecognized software workflow has no visible controls", async () => {
+    let systemPrompt = "";
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {
+      const body = JSON.parse(String(options.body)) as { messages: Array<{ role: string; content: string }> };
+      systemPrompt = body.messages[0].content;
+      return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ answer: "I can guide you from the description, but cannot verify the interface.", visualLesson: null }) } }] }) };
+    }));
+    try {
+      await askTeacher({ question: "Walk me through modeling a bracket in figma", frames: [], history: [] }, { apiKey: "test", model: "vision", baseUrl: "https://example.com/v1" });
+      expect(systemPrompt).toContain("No current screen image was supplied");
+      expect(systemPrompt).toContain("Do not say");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("treats a CAD or FEA workflow as guidance, not a generated model or solver result", async () => {
     const calls: Array<{ messages: Array<{ content: unknown }> }> = [];
     vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {

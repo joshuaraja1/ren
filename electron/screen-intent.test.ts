@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { shouldUseCurrentScreen, wantsCurrentScreen, wantsSpatialGuidance } from "./screen-intent.js";
+import { requiresVisibleScreen, shouldUseCurrentScreen, wantsCurrentScreen, wantsSpatialGuidance } from "./screen-intent.js";
 
 describe("screen context routing", () => {
+  it("requires a current frame for app guidance and its next step, while allowing general guidance", () => {
+    const appHistory = [{ role: "user" as const, content: "Walk me through modeling a bracket in AeroSketch" }, { role: "assistant" as const, content: "Start a sketch." }];
+    expect(requiresVisibleScreen("Walk me through modeling a bracket in AeroSketch")).toBe(true);
+    expect(requiresVisibleScreen("Next step", appHistory)).toBe(true);
+    expect(requiresVisibleScreen("Walk me through solving this equation")).toBe(true);
+    expect(requiresVisibleScreen("Walk me through solving quadratic equations")).toBe(false);
+    expect(requiresVisibleScreen("Next step", [{ role: "user", content: "Walk me through solving quadratic equations" }])).toBe(false);
+  });
   it("uses a current capture for any question but never a mismatched capture", () => {
     expect(shouldUseCurrentScreen("How do bicycle gears work?", [], "fresh-token", "fresh-token")).toBe(true);
     expect(shouldUseCurrentScreen("Why?", [{ role: "user", content: "How do gears work?" }], "new-token", "new-token")).toBe(true);

@@ -63,7 +63,7 @@ function makeHarness(transcripts: string[], ask: RenBridge["ask"]) {
   });
 
   const speechStart = vi.fn(async () => true);
-  const speechFeed = vi.fn(async () => true);
+  const speechFeed = vi.fn(async (_samples: number[]) => true);
   const speechFinish = vi.fn(async () => transcripts.shift() ?? "");
   const wakeFeed = vi.fn(async (_samples: number[]) => false);
   const voiceDiagnostic = vi.fn();
@@ -106,7 +106,7 @@ function makeHarness(transcripts: string[], ask: RenBridge["ask"]) {
 
   return {
     renderApp: () => render(<App />),
-    speechStart, speechStop, speechFinish, wakeFeed, voiceDiagnostic, cancelSpeech, cancelAsk, speak, captureContext, stoppedSources, audioSources,
+    speechStart, speechFeed, speechStop, speechFinish, wakeFeed, voiceDiagnostic, cancelSpeech, cancelAsk, speak, captureContext, stoppedSources, audioSources,
     startAgentJob, cancelAgentJob, runningJob,
     get processAudio() { return processAudio; },
     get speechData() { return speechData; },
@@ -153,6 +153,32 @@ describe("voice interruption and follow-ups", () => {
     now += 2_100;
     harness.silence();
     await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({ question: "explain the wheel" })));
+  });
+
+  it("preserves speech between a standalone wake phrase and the next dictation stream", async () => {
+    let now = 10_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const firstTranscript = deferred<string>();
+    const ask = vi.fn(async () => response("The answer."));
+    const harness = makeHarness(["How does the engine work?"], ask as RenBridge["ask"]);
+    harness.speechFinish.mockImplementationOnce(() => firstTranscript.promise);
+    harness.wakeFeed.mockResolvedValueOnce(true);
+    harness.renderApp();
+    await waitFor(() => expect(harness.processAudio).toBeTypeOf("function"));
+    harness.feedFrames(1);
+    await waitFor(() => expect(harness.speechStart).toHaveBeenCalledOnce());
+    now += 2_100;
+    harness.silence();
+    await waitFor(() => expect(harness.speechFinish).toHaveBeenCalledOnce());
+
+    harness.feedFrames(3);
+    await act(async () => firstTranscript.resolve("Hey Ren"));
+    await waitFor(() => expect(harness.speechStart).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(harness.speechFeed.mock.calls.length).toBeGreaterThanOrEqual(3));
+    expect(harness.speechFeed.mock.calls.filter(([samples]) => Math.abs(samples[0] - .03) < .001)).toHaveLength(4);
+    now += 2_100;
+    harness.silence();
+    await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({ question: "How does the engine work?" })));
   });
 
   it("keeps consecutive wake audio while the detector is processing", async () => {

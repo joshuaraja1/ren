@@ -8,6 +8,8 @@ const visibleActivity = /\b(?:i(?:'m| am)|we(?:'re| are))\s+(?:watching|reading|
 const pointingQuestion = /\b(?:what(?:'s| is| does)|where(?:'s| is)|which|look at|read|explain|summari[sz]e|point to|highlight|circle|mark|show me)\b.{0,65}\b(?:this|that|these|those|here|there|it)\s*[?.!]*$/i;
 const spatialGuidance = /\b(?:point (?:to|at)|show me where|highlight|mark|circle|draw (?:an? )?arrow|where (?:do i|is the|are the))\b|\bhelp me find\b[^.!?]{0,80}\b(?:button|control|menu|tab|toolbar|panel|tool|icon)\b/i;
 const guidedScreenSteps = /\b(?:show me how|walk me through|guide me through)\b[^.!?]{0,140}\b(?:on (?:my|the) screen|in (?:the|this) (?:app|software|program))\b/i;
+const softwareWorkflow = /\b(?:cad|fea|fem|software|app|program|screen|window|toolbar|menu|button|workbench|solver)\b/i;
+const namedSoftwareWorkflow = /\b(?:in|using|with)\s+[A-Z][\w.+-]{2,35}\b/;
 
 /** A request that cannot be grounded in the current display without an image. */
 export function referencesVisibleScreen(question: string, history: { role: "user" | "assistant"; content: string }[] = []) {
@@ -17,6 +19,13 @@ export function referencesVisibleScreen(question: string, history: { role: "user
   const priorUser = [...history].reverse().find((turn) => turn.role === "user")?.content;
   return Boolean(priorUser && directReference(priorUser)
     && /^(?:why|how|what(?:'s| is| about| changed)|where|which|and|can you explain|tell me more|is that|does that)\b/i.test(clean));
+}
+
+/** A screen-led workflow needs a current frame before Ren can verify controls or progress. */
+export function requiresVisibleScreen(question: string, history: { role: "user" | "assistant"; content: string }[] = []) {
+  if (referencesVisibleScreen(question, history)) return true;
+  const screenWorkflow = (value: string) => wantsGuidedWorkflow(value) && (softwareWorkflow.test(value) || namedSoftwareWorkflow.test(value));
+  return screenWorkflow(question) || Boolean(continuesGuidedWorkflow(question) && history.some((turn) => turn.role === "user" && screenWorkflow(turn.content)));
 }
 
 export function wantsCurrentScreen(question: string, history: { role: "user" | "assistant"; content: string }[] = []) {

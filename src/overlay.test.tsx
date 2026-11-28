@@ -41,3 +41,23 @@ it("restores an in-app visual lesson when the overlay renderer becomes ready", (
     window.ren = priorBridge;
   }
 });
+
+it("keeps edge labels inside the display and ignores an empty live path", () => {
+  const priorBridge = window.ren;
+  window.ren = {
+    onAnnotations(listener: (value: Annotation[]) => void) {
+      listener([
+        { id: "empty", type: "path", points: [] },
+        { id: "edge-text", type: "text", at: { x: .98, y: .97 }, text: "Edge label" },
+        { id: "edge-diagram", type: "diagram", at: { x: .02, y: .98 }, title: "Edge diagram", lines: ["A step"] },
+      ]);
+      return () => {};
+    },
+    onVisualLesson: () => () => {}, onIllustration: () => () => {}, overlayReady: () => {},
+  } as unknown as RenBridge;
+  try {
+    render(<Overlay />);
+    expect(screen.getByText("Edge label")).toHaveClass("at-right", "at-bottom");
+    expect(screen.getByText("Edge diagram").parentElement).toHaveClass("at-left", "at-bottom");
+  } finally { window.ren = priorBridge; }
+});

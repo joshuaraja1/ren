@@ -8,7 +8,7 @@ The first desktop prototype lives in a small top-edge overlay. After one-time OS
 permission onboarding, point with the cursor and say “Hey Ren,” or click the Ren
 pebble. The bundled wake model recognizes “Hey Ren” on-device. Ren then
 streams the spoken question to Deepgram for transcription, or accepts a typed question. Ren
-captures the cursor's display only when a question is asked, infers the subject
+captures the cursor's display automatically for every submitted question, infers the subject
 automatically, and can place validated teaching visuals in a click-through
 overlay. A deterministic
 demo teacher keeps the interaction testable without credentials.
@@ -29,7 +29,7 @@ npm install
 npm run dev
 ```
 
-Open **Connect AI** in Ren and enter a Deepgram API key for voice and an OpenAI API key for screen answers. Ren encrypts both keys with operating-system secure storage and does not display them again. The small “Hey Ren” wake detector stays on-device. After wake, spoken audio goes to Deepgram for transcription. Ren sends the reply text to Deepgram for speech. When you ask a screen question, Ren sends an on-demand screen image and your question to OpenAI (`gpt-5.4-mini` by default). Both services may charge for usage. On Linux, saving keys requires a system keyring. Ren does not run Ollama or a local speech model.
+Open **Connect AI** in Ren and enter a Deepgram API key for voice and an OpenAI API key for answers. Ren encrypts both keys with operating-system secure storage and does not display them again. The small “Hey Ren” wake detector stays on-device. After wake, spoken audio goes to Deepgram for transcription. Ren sends the reply text to Deepgram for speech. Ren automatically sends a fresh screen image with every submitted question to OpenAI (`gpt-6-sol` by default), so questions can refer to visible content without special wording. Both services may charge for usage. On Linux, saving keys requires a system keyring. Ren does not run Ollama or a local speech model.
 
 For development, `.env.example` supports `DEEPGRAM_API_KEY`, `OPENAI_API_KEY`, and optional `REN_MODEL`. Environment files are ignored by git. Without configured keys, Ren shows a setup notice and cannot use cloud voice or inspect screen contents.
 
@@ -48,15 +48,18 @@ See [the release guide](docs/RELEASE.md) for the production signing gates.
 
 ## Current boundary
 
-Ren 0.1 captures a full-display image only when a question is submitted. It
+Ren 0.1 captures a full-display image for every submitted question. It
 adds a circled-region crop when available and extra frames when the screen is
 visibly changing. It does not understand video before the captured moment.
-It does not continuously record the screen, click, type, or control other
-applications. Wake recognition runs on-device and sends no ambient audio to Deepgram. After the wake phrase, Ren streams the spoken question to Deepgram and submits it after a pause; the mic button can finish it sooner. Deepgram Flux currently supports English in Ren, and typing remains available if it mishears. If the wake
+It does not continuously record the screen. Ren can attempt bounded click, drag,
+scroll, type, and key actions in the visible app when explicitly asked, checking
+the display before and after each action; this does not guarantee every app or
+task can be completed. Wake recognition runs on-device and sends no ambient audio to Deepgram. After the wake phrase, Ren streams the spoken question to Deepgram and submits it after a pause; the mic button can finish it sooner. Deepgram Flux currently supports English in Ren, and typing remains available if it mishears. If the wake
 engine cannot start, the pebble stays clickable. System-audio
 transcript and richer temporal video understanding remain on the roadmap.
-Voice-created agents that act in other apps after showing an approved plan are
-specified in [the requirements](docs/VOICE_AGENTS.md) and are not yet available.
+Long-running agent jobs currently investigate the screen and, when needed,
+research the web. They do not operate other apps. The screen operator is a
+separate path for explicit action requests.
 Connected parts diagrams and realistic generated lesson images, composed
 directly over the user's current screen, are specified in
 [the visual teaching plan](docs/VISUAL_TEACHING.md). Current drawings remain
