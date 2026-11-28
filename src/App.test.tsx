@@ -69,6 +69,7 @@ describe("Ren voice interface", () => {
     try {
       render(<App />);
       fireEvent.click(await screen.findByRole("button", { name: /start speaking to ren/i }), { shiftKey: true });
+      expect(screen.getByRole("button", { name: /screen access off.*enable context/i })).toBeVisible();
       fireEvent.change(screen.getByRole("textbox", { name: /ask ren/i }), { target: { value: "How do bicycle gears work?" } });
       fireEvent.click(screen.getByRole("button", { name: /send ren prompt/i }));
       await waitFor(() => expect(ask).toHaveBeenCalledWith(expect.objectContaining({ question: "How do bicycle gears work?", frames: [], contextToken: expect.any(String) })));
